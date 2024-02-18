@@ -8,6 +8,7 @@ from pandeia.engine.calc_utils import (
 )
 from pandeia.engine.instrument_factory import InstrumentFactory
 
+from navset_jwst import navset_card_tab_jwst
 import pandeia_interface as jwst
 import source_catalog as nea
 planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
@@ -73,12 +74,6 @@ options = {
     "prism": "prism (not recommended)",
 }
 
-inst_panels = []
-for inst in instruments:
-    nav_select = ui.input_select(f'select_{inst}', '',{}, width='400px')
-    inst_panels.append(ui.nav_panel(inst, nav_select))
-
-
 
 app_ui = ui.page_fluid(
     ui.h2("Gen TSO: General JWST ETC for exoplanet time-series observations"),
@@ -95,34 +90,36 @@ app_ui = ui.page_fluid(
     # Instrument / detector:
     ui.card(
         ui.layout_columns(
-            ui.card(
-                ui.layout_columns(
-                    ui.layout_columns(
-                        ui.p("Select an instrument:"),
-                        ui.p("Select a detector:"),
-                        col_widths=[12,12],
-                    ),
-                    ui.navset_pill(
-                        *inst_panels,
-                        id="inst_tab",
-                    ),
-                    col_widths=[3,9],
-                    class_="pb-0 mb-0",
+            navset_card_tab_jwst(
+                ui.nav_panel('MIRI', 'Select an instrument and detector'),
+                ui.nav_panel('NIRCam', 'Select an instrument and detector'),
+                ui.nav_panel('NIRISS', 'Select an instrument and detector'),
+                ui.nav_panel('NIRSpec', 'Select an instrument and detector'),
+                id="inst_tab",
+                placement='below',
+                footer=ui.input_select(
+                    "select_det",
+                    "",
+                    choices = {},
+                    width='400px'
                 ),
             ),
             ui.card(
                 ui.input_checkbox_group(
-                    "checkbox_group",
-                    "Observation type:",
-                    {
+                    id="checkbox_group",
+                    label="Observation type:",
+                    choices={
                         "spec": "spectroscopy",
                         "photo": "photometry",
                     },
+                    selected=['spec'],
                 ),
             ),
             col_widths=[9, 3],
+            #class_="pb-0 mb-0",
         ),
     ),
+
 
     ui.layout_columns(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -246,25 +243,26 @@ app_ui = ui.page_fluid(
 )
 
 def update_inst_select(input):
-    print(f"You selected me: {input.inst_tab.get()}")
-
     inst_name = input.inst_tab.get()
-    modes = [
-        det.label
+    print(f"You selected me: {inst_name}")
+    modes = {
+        det.name: det.label
         for det in detectors
         if det.instrument == inst_name
-    ]
-    x = input.checkbox_group()
+    }
+    obs_types = input.checkbox_group()
     #print(f"You clicked this button! {x}  {inst_name}")
-    choices = []
-    if 'spec' in x:
-        choices += list(modes)
-    if 'photo' in x:
-        choices.append('X')
+    choices = {}
+    if 'spec' in obs_types:
+        choices['Spectroscopy'] = modes
+    if 'photo' in obs_types:
+        choices['Photometry'] = {
+            val: val
+            for val in 'X Y'.split()
+        }
 
-    selector = f'select_{inst_name}'
     ui.update_select(
-        selector,
+        'select_det',
         #label="Select input label " + str(len(x)),
         choices=choices,
         #selected=x[len(x) - 1] if len(x) > 0 else None,
