@@ -116,7 +116,6 @@ app_ui = ui.page_fluid(
                 ),
             ),
             col_widths=[9, 3],
-            #class_="pb-0 mb-0",
         ),
     ),
 
@@ -172,28 +171,28 @@ app_ui = ui.page_fluid(
             # Grism/filter
             ui.panel_well(
                 ui.input_select(
-                    "cmap",
-                    "Grism",
-                    options,
+                    id="grism",
+                    label="Grism",
+                    choices=options,
                 ),
                 ui.input_select(
-                    "filter",
-                    "Filter",
-                    options,
+                    id="filter",
+                    label="Filter",
+                    choices=options,
                 ),
                 class_="pb-0 mb-0",
             ),
             # subarray / readout
             ui.panel_well(
                 ui.input_select(
-                    "subarray",
-                    "Subarray",
-                    options,
+                    id="subarray",
+                    label="Subarray",
+                    choices=options,
                 ),
                 ui.input_select(
-                    "readout",
-                    "Readout pattern",
-                    options,
+                    id="readout",
+                    label="Readout pattern",
+                    choices=options,
                 ),
                 class_="pb-0 mb-0",
             ),
@@ -268,6 +267,35 @@ def update_inst_select(input):
         #selected=x[len(x) - 1] if len(x) > 0 else None,
     )
 
+def update_detector(input):
+    det_name = input.select_det.get()
+    #print(input.select_det.get())
+    for detector in detectors:
+        if detector.name == det_name:
+            break
+    else:
+        return
+    #print(f'I want this one: {detector}')
+    ui.update_select(
+        'grism',
+        label=detector.grism_title,
+        choices=detector.grisms,
+    )
+    ui.update_select(
+        'filter',
+        label=detector.filter_title,
+        choices=detector.filters,
+    )
+    ui.update_select(
+        'subarray',
+        choices=detector.subarrays,
+    )
+    ui.update_select(
+        'readout',
+        choices=detector.readout,
+    )
+    # update subarray, readout
+
 def server(input, output, session):
 
     @output
@@ -323,12 +351,17 @@ def server(input, output, session):
         update_inst_select(input)
 
     @reactive.Effect
+    @reactive.event(input.select_det)
+    def _():
+        update_detector(input)
+
+    @reactive.Effect
     @reactive.event(input.button)
     def _():
-        print(f"You clicked the button! {dir(input.selector)}")
+        #print(f"You clicked the button! {dir(input.selector)}")
         #print(f"You clicked the button! {input.inst_tab.get()}")
         #print(f"You clicked the button! {input.selected()}")
-
+        print(input.select_det.get())
 
 
 app = App(app_ui, server)
