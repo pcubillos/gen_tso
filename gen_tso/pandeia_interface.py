@@ -12,7 +12,8 @@ from pandeia.engine.calc_utils import (
 #from pandeia.engine.instrument_factory import InstrumentFactory
 
 
-@dataclass(frozen=True, order=True)
+#@dataclass(frozen=True, order=True)
+@dataclass(order=True)
 class Detector:
     name: str
     label: str
@@ -118,6 +119,18 @@ def generate_all_instruments():
         subarrays,
         readout,
     )
+
+    bots.wl_ranges = {
+        'G140M/F070LP': (0.70, 1.27),
+        'G140M/F100LP': (0.97, 1.84),
+        'G235M/F170LP': (1.66, 3.07),
+        'G395M/F290LP': (2.87, 5.10),
+        'G140H/F070LP': (0.81, 1.27),
+        'G140H/F100LP': (0.97, 1.82),
+        'G235H/F170LP': (1.66, 3.05),
+        'G395H/F290LP': (2.87, 5.14),
+        'PRISM/CLEAR': (0.60, 5.30),
+    }
 
 
     detectors = [

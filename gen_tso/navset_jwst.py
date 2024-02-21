@@ -34,7 +34,7 @@ class NavSetCardJWST(NavSet):
 
     def __init__(
         self,
-        *args: NavSetArg | MetadataNode | Sequence[MetadataNode],
+        *args,
         ul_class: str,
         id: Optional[str],
         selected: Optional[str],
@@ -90,7 +90,7 @@ class NavSetCardJWST(NavSet):
 
 
 def navset_card_tab_jwst(
-    *args: NavSetArg | MetadataNode | Sequence[MetadataNode],
+    *args,
     id: Optional[str] = None,
     selected: Optional[str] = None,
     title: Optional[TagChild] = None,

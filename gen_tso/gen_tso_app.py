@@ -1,6 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
+
 from shiny import ui, render, reactive, App
+from shiny.experimental.ui import card_body
+import plotly.express as px
+from shinywidgets import output_widget, render_plotly
+
+import pandas as pd
 
 from pandeia.engine.calc_utils import (
     build_default_calc,
@@ -11,8 +17,9 @@ from pandeia.engine.instrument_factory import InstrumentFactory
 from navset_jwst import navset_card_tab_jwst
 import pandeia_interface as jwst
 import source_catalog as nea
-planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
 
+
+planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
 
 
 # GEN TSO preamble
@@ -37,33 +44,83 @@ spec_modes = {
 
 
 detectors = jwst.generate_all_instruments()
-
-def get_detector(label):
-    for det in detectors:
-        if det.label == label:
-            return det
-
 instruments = np.unique([det.instrument for det in detectors])
 
+def get_detector(name):
+    for det in detectors:
+        if det.name == name:
+            return det
 
+
+
+def filter_data_frame():
+    """
+    To be moved into pandeia_interface.py
+    """
+    filters_df = pd.DataFrame()
+
+    telescope = 'jwst'
+    for inst_name in instruments:
+        print(f'\nThis is {inst_name}')
+        instrument = inst_name.lower()
+        ins_config = get_instrument_config(telescope, instrument)
+        mode = spec_modes[instrument]
+        calculation = build_default_calc(telescope, instrument, mode)
+        configs = []
+        labels = []
+        if inst_name == 'NIRISS':
+            continue
+        if inst_name == 'NIRSpec':
+            gratings = ins_config['config_constraints']['dispersers']
+            for grating, filters in gratings.items():
+                for filter in filters['filters']:
+                    configs.append({
+                        'disperser': grating,
+                        'filter': filter,
+                    })
+                    labels.append(f'{grating.upper()}/{filter.upper()}')
+        if inst_name == 'NIRCam' or inst_name == 'MIRI':
+            filters = ins_config['strategy_config'][mode]['aperture_sizes']
+            for filter in filters.keys():
+                configs.append({'filter': filter})
+                labels.append(filter.upper())
+
+        #print(calculation['configuration']['instrument'])
+        for config,label in zip(configs,labels):
+            calculation['configuration']['instrument'].update(config)
+            inst = InstrumentFactory(
+                config=calculation['configuration'], webapp=True,
+            )
+            print(inst_name, config['filter'].upper())
+            wl_range = inst.get_wave_range()
+            if inst_name != 'MIRI':
+                wl_filter = inst.get_wave_filter()
+                wl_range['wmin'] = np.amin(wl_filter)
+                wl_range['wmax'] = np.amax(wl_filter)
+            wl_arr = np.linspace(wl_range['wmin'], wl_range['wmax'], 100)
+            qe = inst.get_total_eff(wl_arr)
+            if mode == 'bots':
+                det = get_detector('bots')
+                wl_min, wl_max = det.wl_ranges[label]
+                qe[(wl_arr<wl_min) | (wl_arr>wl_max)] = 0.0
+            df = pd.DataFrame(dict(
+                wl=wl_arr,
+                qe=qe,
+                filter=label,
+                instrument=inst_name,
+            ))
+            filters_df = pd.concat((filters_df, df))
+    return filters_df
+
+filters_df = filter_data_frame()
+
+
+# Placeholder
 telescope = 'jwst'
 instrument = 'nircam'
 ins_config = get_instrument_config(telescope, instrument)
 mode = spec_modes[instrument]
 all_filters = list(ins_config['strategy_config'][mode]['aperture_sizes'])
-
-calculation = build_default_calc(telescope, instrument, mode)
-wl = []
-qe = []
-for filter in all_filters:
-    calculation['configuration']['instrument']['filter'] = filter
-    inst = InstrumentFactory(
-        config=calculation['configuration'], webapp=True,
-    )
-    wl_range = inst.get_wave_range()
-    wl_arr = np.linspace(wl_range['wmin'], wl_range['wmax'], 100)
-    wl.append(wl_arr)
-    qe.append(inst.get_total_eff(wl_arr))
 
 
 # Placeholder
@@ -124,50 +181,46 @@ app_ui = ui.page_fluid(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The target
         ui.card(
-            #ui.p("Select target"),
-            #ui.input_text("x", "", placeholder="Enter target name"),
+            ui.card_header("Target", class_="bg-primary"),
             ui.input_selectize(
                 'target',
-                'Select a target',
+                'Known target?',
                 planets,
                 selected='',
                 multiple=False,
             ),
-            ui.input_radio_buttons(  
-                "star_model",  
-                "",  
-                {"1": "kurucz", "2": "phoenix", "3": "custom"},  
+            ui.p("Stellar SED model:"),
+            ui.input_radio_buttons(
+                "star_model",
+                "",
+                {"1": "kurucz", "2": "phoenix", "3": "custom"},
                 inline=True,
-            ), 
-            ui.p("SED custom"),
+            ),
+            ui.p("System properties:"),
             # Target props
             ui.layout_column_wrap(
                 # Row 1
                 ui.p("T_eff (K):"),
                 ui.input_text("teff", "", placeholder="Teff"),
-                ui.output_text("teff_nea"),
                 # Row 2
                 ui.p("log(g):"),
                 ui.input_text("logg", "", placeholder="log(g)"),
-                ui.p("(NEA val)"),
                 # Row 3
                 ui.p("Ks mag:"),
                 ui.input_text("ksmag", "", placeholder="Ks mag"),
-                ui.p("(NEA val)"),
-                width=1/3,
+                width=1/2,
                 fixed_width=False,
                 heights_equal='all',
                 fill=False,
                 fillable=True,
             ),
-
             ui.input_action_button("button", "Click me"),
-            # Breeds
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The detector setup
         ui.card(
+            ui.card_header("Detector setup", class_="bg-primary"),
             # Grism/filter
             ui.panel_well(
                 ui.input_select(
@@ -210,36 +263,36 @@ app_ui = ui.page_fluid(
                     1,
                     min=1, max=100,
                 ),
-                ui.input_switch("switch", "Match obs. time", False),  
+                ui.input_switch("switch", "Match obs. time", False),
                 class_="pb-0 mb-0",
             ),
         ),
 
-        # Results?
-        ui.card(
-            ui.p("Results?"),
-            ui.output_plot("plot_filters"), 
+        # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+        # Results
+        ui.layout_columns(
+            ui.card(
+                ui.card_header("Filter throughput"),
+                card_body(
+                    output_widget("plotly_filters", fillable=True),
+                    padding='1px',
+                ),
+                full_screen=True,
+                height='275px',
+                class_="bg-primary",
+                #class_="bg-primary px-n3 mx-n3 gap-0",
+                #class_="bg-primary lead",
+            ),
+            ui.card(
+                ui.p("Results"),
+                ui.output_plot("plot_filters"),
+            ),
+            col_widths=[12,12],
         ),
         col_widths=[3, 3, 6],
     ),
-
-    #ui.layout_sidebar(
-    #    ui.panel_sidebar(
-    #        ui.input_numeric(
-    #            "resolution", label="Resolution", value=250, min=10,
-    #            step=50,
-    #        ),
-    #        ui.panel_well(
-    #                tags.strong("Model parameters"),
-    #                par_sliders,
-    #            class_="pb-1 mb-3",
-    #        ),
-    #    ),
-    #    ui.panel_main(
-    #        ui.output_plot("plot")
-    #    )
-    #)
 )
+
 
 def update_inst_select(input):
     inst_name = input.inst_tab.get()
@@ -294,19 +347,46 @@ def update_detector(input):
         'readout',
         choices=detector.readout,
     )
-    # update subarray, readout
+
 
 def server(input, output, session):
+    @render_plotly
+    def plotly_filters():
+        inst_name = input.inst_tab.get()
+        # Eventually, I want to plot-code this by detector
+        #det_name = input.select_det.get()
+        fig = px.line(
+            filters_df.query(f"instrument=='{inst_name}'"),
+            x="wl", y="qe", color='filter',
+            labels = {'qe': 'QE'},
+            #hover_name="filter",
+            #hover_data={
+            #    'filter': False, # remove species from hover data
+            #    'wl':':.2f', # customize hover for column of y attribute
+            #    'qe':':.3f', # add other column, customized formatting
+            #},
+        )
+        fig.update_traces(
+            hovertemplate=
+                'wl = %{x:.2f}<br>'+
+                'QE = %{y:.3f}'
+        )
+        fig.update_layout(
+            yaxis_title=None,
+            xaxis_title='wavelength (um)'
+        )
+        return fig
+
 
     @output
-    @render.plot(alt="A histogram")  
-    def plot_filters():  
+    @render.plot(alt="A histogram")
+    def plot_filters():
         fig = plt.figure()
         fig.set_size_inches(8,3)
         ax = plt.subplot(111)
-        for i,filter in enumerate(all_filters):
-            lw = 2.0 if i==0 else 1.25
-            ax.plot(wl[i], qe[i], lw=lw, label=filter)
+        #for i,filter in enumerate(all_filters):
+        #    lw = 2.0 if i==0 else 1.25
+        #    ax.plot(wl[i], qe[i], lw=lw, label=filter)
         ax.set_xlabel('wavelength (um)')
         ax.set_ylabel('throughput')
         ax.tick_params(which='both', direction='in')
@@ -339,7 +419,7 @@ def server(input, output, session):
     def text():
         print("You clicked my button!")
         #return f"Last values: {input.selected()}"
-    
+
     @reactive.Effect
     @reactive.event(input.inst_tab)
     def _():
