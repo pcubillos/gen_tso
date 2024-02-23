@@ -1,4 +1,8 @@
+# Copyright (c) 2024 Patricio Cubillos
+# Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
+
 from dataclasses import dataclass
+import json
 
 import numpy as np
 
@@ -8,7 +12,7 @@ from pandeia.engine.calc_utils import (
 )
 #from pandeia.engine.perform_calculation import perform_calculation
 #from pandeia.engine.etc3D import setup
-#import pandeia.engine.sed as sed
+import pandeia.engine.sed as sed
 #from pandeia.engine.instrument_factory import InstrumentFactory
 
 
@@ -141,4 +145,39 @@ def generate_all_instruments():
     ]
 
     return detectors
+
+
+
+def load_sed_list(source):
+    """
+    Load list of available PHOENIX or Kurucz stellar SED models
+
+    Parameters
+    ----------
+    source: String
+        SED source: 'phoenix' or 'k93models'
+    """
+    sed_path = sed.default_refdata_directory
+    with open(f'{sed_path}/sed/{source}/spectra.json', 'r') as f:
+        info = json.load(f)
+    teff = np.array([model['teff'] for model in info.values()])
+    log_g = np.array([model['log_g'] for model in info.values()])
+    names = np.array([model['display_string'] for model in info.values()])
+    tsort = np.argsort(teff)[::-1]
+    return names[tsort], teff[tsort], log_g[tsort]
+
+
+def find_closest_sed(m_teff, m_logg, teff, logg):
+    """
+    A vert simple cost-function to find the closest stellar model within
+    a non-regular Teff-log_g grid.
+    """
+    cost = (
+        np.abs(np.log10(teff/m_teff)) +
+        np.abs(logg-m_logg) / 15.0
+    )
+    idx = np.argmin(cost)
+    return idx
+
+
 
