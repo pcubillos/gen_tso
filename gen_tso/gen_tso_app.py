@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Patricio Cubillos
+# Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -20,6 +23,8 @@ import source_catalog as nea
 
 
 planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
+p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
+k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
 
 # GEN TSO preamble
@@ -145,37 +150,34 @@ app_ui = ui.page_fluid(
     #),
 
     # Instrument / detector:
-    ui.card(
-        ui.layout_columns(
-            navset_card_tab_jwst(
-                ui.nav_panel('MIRI', 'Select an instrument and detector'),
-                ui.nav_panel('NIRCam', 'Select an instrument and detector'),
-                ui.nav_panel('NIRISS', 'Select an instrument and detector'),
-                ui.nav_panel('NIRSpec', 'Select an instrument and detector'),
-                id="inst_tab",
-                placement='below',
-                footer=ui.input_select(
-                    "select_det",
-                    "",
-                    choices = {},
-                    width='400px'
-                ),
+    ui.layout_columns(
+        navset_card_tab_jwst(
+            ui.nav_panel('MIRI', ''),
+            ui.nav_panel('NIRCam', ''),
+            ui.nav_panel('NIRISS', ''),
+            ui.nav_panel('NIRSpec', ''),
+            id="inst_tab",
+            header="Select an instrument and detector",
+            footer=ui.input_select(
+                "select_det",
+                "",
+                choices = {},
+                width='400px'
             ),
-            ui.card(
-                ui.input_checkbox_group(
-                    id="checkbox_group",
-                    label="Observation type:",
-                    choices={
-                        "spec": "spectroscopy",
-                        "photo": "photometry",
-                    },
-                    selected=['spec'],
-                ),
-            ),
-            col_widths=[9, 3],
         ),
+        ui.card(
+            ui.input_checkbox_group(
+                id="checkbox_group",
+                label="Observation type:",
+                choices={
+                    "spec": "spectroscopy",
+                    "photo": "photometry",
+                },
+                selected=['spec'],
+            ),
+        ),
+        col_widths=[6,6],
     ),
-
 
     ui.layout_columns(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -186,16 +188,22 @@ app_ui = ui.page_fluid(
                 'target',
                 'Known target?',
                 planets,
-                selected='',
+                selected='WASP-80 b',
                 multiple=False,
             ),
-            ui.p("Stellar SED model:"),
-            ui.input_radio_buttons(
-                "star_model",
-                "",
-                {"1": "kurucz", "2": "phoenix", "3": "custom"},
-                inline=True,
+            ui.input_select(
+                id="star_model",
+                label="Stellar SED model",
+                choices=[
+                    "phoenix (auto)",
+                    "kurucz (auto)",
+                    "phoenix (select)",
+                    "kurucz (select)",
+                    "blackbody",
+                    "custom",
+                ],
             ),
+            ui.output_ui('choose_sed'),
             ui.p("System properties:"),
             # Target props
             ui.layout_column_wrap(
@@ -302,7 +310,11 @@ def update_inst_select(input):
         for det in detectors
         if det.instrument == inst_name
     }
-    obs_types = input.checkbox_group()
+    obs_types = [
+        'spec',
+        #'photo',
+        'acquisition',
+    ]
     #print(f"You clicked this button! {x}  {inst_name}")
     choices = {}
     if 'spec' in obs_types:
@@ -312,10 +324,13 @@ def update_inst_select(input):
             val: val
             for val in 'X Y'.split()
         }
+    if 'acquisition' in obs_types or True:
+        choices['Target acquisition'] = {
+            'nircam_target_acq': 'Target Acquisition'
+        }
 
     ui.update_select(
         'select_det',
-        #label="Select input label " + str(len(x)),
         choices=choices,
         #selected=x[len(x) - 1] if len(x) > 0 else None,
     )
@@ -371,9 +386,15 @@ def server(input, output, session):
                 'wl = %{x:.2f}<br>'+
                 'QE = %{y:.3f}'
         )
-        fig.update_layout(
-            yaxis_title=None,
-            xaxis_title='wavelength (um)'
+        fig.update_yaxes(
+            title_text=None,
+            autorangeoptions=dict(minallowed=0),
+        )
+        wl_range = [0.5, 13.5] if inst_name=='MIRI' else [0.5, 6.0]
+        fig.update_xaxes(
+            title_text='wavelength (um)',
+            title_standoff=0,
+            range=wl_range,
         )
         return fig
 
@@ -394,15 +415,15 @@ def server(input, output, session):
         ax.set_title("Palmer Penguin Masses")
         return fig
 
-    @render.text
-    @reactive.event(input.target)
-    def teff_nea():
-        print(input.target())
-        if input.target() not in planets:
-            return ""
-        index = planets.index(input.target())
-        print(index)
-        return f'{teff[index]:.1f}'
+    #@render.text
+    #@reactive.event(input.target)
+    #def teff_nea():
+    #    print(input.target())
+    #    if input.target() not in planets:
+    #        return ""
+    #    index = planets.index(input.target())
+    #    print(index)
+    #    return f'{teff[index]:.1f}'
 
     @reactive.Effect
     @reactive.event(input.target)
@@ -414,21 +435,56 @@ def server(input, output, session):
         ui.update_text('logg', value=f'{log_g[index]:.2f}')
         ui.update_text('ksmag', value=f'{ks_mag[index]:.3f}')
 
+    @render.ui
+    @reactive.event(input.star_model)
+    def choose_sed():
+        #print(input.star_model())
+        if 'auto' in input.star_model():
+            # find model
+            if input.teff() == '':
+                return
+            teff = float(input.teff())
+            logg = float(input.logg())
+            #print(repr(teff), repr(logg))
+            if 'kurucz' in input.star_model():
+                m_models, m_teff, m_logg = k_models, k_teff, k_logg
+            else:
+                m_models, m_teff, m_logg = p_models, p_teff, p_logg
+            idx = jwst.find_closest_sed(m_teff, m_logg, teff, logg)
+            #idx = 0
+            chosen_sed = m_models[idx]
+            return ui.p(
+                chosen_sed,
+                style='background:#EBEBEB',
+            )
+        if 'select' in input.star_model():
+            if 'kurucz' in input.star_model():
+                sed_choices = list(k_models)
+            else:
+                sed_choices = list(p_models)
+            return ui.input_select(
+                id="sed",
+                label="",
+                choices=sed_choices,
+            )
+
+
     @render.text
     @reactive.event(input.button)
     def text():
         print("You clicked my button!")
         #return f"Last values: {input.selected()}"
 
+
     @reactive.Effect
     @reactive.event(input.inst_tab)
     def _():
         update_inst_select(input)
 
-    @reactive.Effect
-    @reactive.event(input.checkbox_group)
-    def _():
-        update_inst_select(input)
+    #@reactive.Effect
+    #@reactive.event(input.checkbox_group)
+    #def _():
+    #    update_inst_select(input)
 
     @reactive.Effect
     @reactive.event(input.select_det)
