@@ -191,19 +191,6 @@ app_ui = ui.page_fluid(
                 selected='WASP-80 b',
                 multiple=False,
             ),
-            ui.input_select(
-                id="star_model",
-                label="Stellar SED model",
-                choices=[
-                    "phoenix (auto)",
-                    "kurucz (auto)",
-                    "phoenix (select)",
-                    "kurucz (select)",
-                    "blackbody",
-                    "custom",
-                ],
-            ),
-            ui.output_ui('choose_sed'),
             ui.p("System properties:"),
             # Target props
             ui.layout_column_wrap(
@@ -222,6 +209,19 @@ app_ui = ui.page_fluid(
                 fill=False,
                 fillable=True,
             ),
+            ui.input_select(
+                id="star_model",
+                label="Stellar SED model",
+                choices=[
+                    "phoenix (auto)",
+                    "kurucz (auto)",
+                    "phoenix (select)",
+                    "kurucz (select)",
+                    "blackbody",
+                    "custom",
+                ],
+            ),
+            ui.output_ui('choose_sed'),
             ui.input_action_button("button", "Click me"),
         ),
 
@@ -364,7 +364,24 @@ def update_detector(input):
     )
 
 
+def get_auto_sed(input):
+    if 'kurucz' in input.star_model():
+        m_models, m_teff, m_logg = k_models, k_teff, k_logg
+    elif 'phoenix' in input.star_model():
+        m_models, m_teff, m_logg = p_models, p_teff, p_logg
+    try:
+        teff = float(input.teff())
+        logg = float(input.logg())
+    except ValueError:
+        return m_models, None
+    idx = jwst.find_closest_sed(m_teff, m_logg, teff, logg)
+    chosen_sed = m_models[idx]
+    return m_models, chosen_sed
+
+
 def server(input, output, session):
+    my_sed = reactive.Value(None)
+
     @render_plotly
     def plotly_filters():
         inst_name = input.inst_tab.get()
@@ -436,38 +453,48 @@ def server(input, output, session):
         ui.update_text('ksmag', value=f'{ks_mag[index]:.3f}')
 
     @render.ui
-    @reactive.event(input.star_model)
+    @reactive.event(input.star_model, input.teff, input.logg)
     def choose_sed():
         #print(input.star_model())
         if 'auto' in input.star_model():
             # find model
-            if input.teff() == '':
-                return
-            teff = float(input.teff())
-            logg = float(input.logg())
-            #print(repr(teff), repr(logg))
-            if 'kurucz' in input.star_model():
-                m_models, m_teff, m_logg = k_models, k_teff, k_logg
-            else:
-                m_models, m_teff, m_logg = p_models, p_teff, p_logg
-            idx = jwst.find_closest_sed(m_teff, m_logg, teff, logg)
-            #idx = 0
-            chosen_sed = m_models[idx]
+            try:
+                teff = float(input.teff())
+            except ValueError:
+                raise ValueError("Can't select an SED, I need a valid Teff")
+            try:
+                logg = float(input.logg())
+            except ValueError:
+                raise ValueError("Can't select an SED, I need a valid log(g)")
+            m_models, chosen_sed = get_auto_sed(input)
+            my_sed.set(chosen_sed)
             return ui.p(
                 chosen_sed,
                 style='background:#EBEBEB',
             )
-        if 'select' in input.star_model():
-            if 'kurucz' in input.star_model():
-                sed_choices = list(k_models)
-            else:
-                sed_choices = list(p_models)
+        elif 'select' in input.star_model():
+            m_models, chosen_sed = get_auto_sed(input)
+            selected = chosen_sed
             return ui.input_select(
                 id="sed",
                 label="",
-                choices=sed_choices,
+                choices=list(m_models),
+                selected=selected,
             )
+        elif input.star_model() == 'blackbody':
+            if input.teff.get() != '':
+                teff = float(input.teff.get())
+                return ui.p(
+                    f'Blackbody(Teff={teff:.0f}K)',
+                    style='background:#EBEBEB',
+                )
 
+
+    @reactive.Effect
+    @reactive.event(input.sed)
+    def _():
+        my_sed.set(input.sed())
+        print(f'Choose an SED! ({input.sed()})')
 
     @render.text
     @reactive.event(input.button)
@@ -481,15 +508,12 @@ def server(input, output, session):
     def _():
         update_inst_select(input)
 
-    #@reactive.Effect
-    #@reactive.event(input.checkbox_group)
-    #def _():
-    #    update_inst_select(input)
 
     @reactive.Effect
     @reactive.event(input.select_det)
     def _():
         update_detector(input)
+
 
     @reactive.Effect
     @reactive.event(input.button)
@@ -498,6 +522,12 @@ def server(input, output, session):
         #print(f"You clicked the button! {input.inst_tab.get()}")
         #print(f"You clicked the button! {input.selected()}")
         print(input.select_det.get())
+        print(f'My favorite SED is: {my_sed.get()}')
+        #print(dir(choose_sed))
 
+    #@reactive.Effect
+    #@reactive.event(input.checkbox_group)
+    #def _():
+    #    update_inst_select(input)
 
 app = App(app_ui, server)

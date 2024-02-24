@@ -19,6 +19,7 @@ from shiny.ui import (
     card_header,
 )
 
+
 class NavSetCardJWST(NavSet):
     title: Optional[TagChild]
 
