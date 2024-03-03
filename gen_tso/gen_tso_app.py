@@ -8,6 +8,7 @@ from shiny import ui, render, reactive, App
 from shiny.experimental.ui import card_body
 import plotly.express as px
 from shinywidgets import output_widget, render_plotly
+from htmltools import HTML
 
 import pandas as pd
 
@@ -136,6 +137,11 @@ options = {
     "prism": "prism (not recommended)",
 }
 
+ra = 315.02582008947
+dec = -5.09445415116
+ra = 10.684
+dec = 41.268
+src = f'https://sky.esa.int/esasky/?target={ra}%20{dec}'
 
 app_ui = ui.page_fluid(
     ui.h2("Gen TSO: General JWST ETC for exoplanet time-series observations"),
@@ -292,8 +298,18 @@ app_ui = ui.page_fluid(
                 #class_="bg-primary lead",
             ),
             ui.card(
-                ui.p("Results"),
-                ui.output_plot("plot_filters"),
+                HTML(
+                    '<iframe '
+                    'height="100%" '
+                    'width="100%" '
+                    'style="overflow" '
+                    f'src="{src}" '
+                    'frameborder="0" allowfullscreen></iframe>',
+                    #id=resolve_id(id),
+                ),
+                #ui.output_plot("plot_filters"),
+                full_screen=True,
+                height='350px',
             ),
             col_widths=[12,12],
         ),
@@ -496,12 +512,6 @@ def server(input, output, session):
         my_sed.set(input.sed())
         print(f'Choose an SED! ({input.sed()})')
 
-    @render.text
-    @reactive.event(input.button)
-    def text():
-        print("You clicked my button!")
-        #return f"Last values: {input.selected()}"
-
 
     @reactive.Effect
     @reactive.event(input.inst_tab)
@@ -515,6 +525,11 @@ def server(input, output, session):
         update_detector(input)
 
 
+    #@render.text
+    #@reactive.event(input.button)
+    #def text():
+    #    return f"Last values: {input.selected()}"
+
     @reactive.Effect
     @reactive.event(input.button)
     def _():
@@ -523,11 +538,6 @@ def server(input, output, session):
         #print(f"You clicked the button! {input.selected()}")
         print(input.select_det.get())
         print(f'My favorite SED is: {my_sed.get()}')
-        #print(dir(choose_sed))
-
-    #@reactive.Effect
-    #@reactive.event(input.checkbox_group)
-    #def _():
-    #    update_inst_select(input)
+        print("You clicked my button!")
 
 app = App(app_ui, server)
