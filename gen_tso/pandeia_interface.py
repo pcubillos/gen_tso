@@ -1,10 +1,12 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
+import os
 
 import numpy as np
+import requests
 
 from pandeia.engine.calc_utils import (
 #    build_default_calc,
@@ -14,6 +16,9 @@ from pandeia.engine.calc_utils import (
 #from pandeia.engine.etc3D import setup
 import pandeia.engine.sed as sed
 #from pandeia.engine.instrument_factory import InstrumentFactory
+import pandeia.engine
+
+from synphot.config import conf, Conf
 
 
 #@dataclass(frozen=True, order=True)
@@ -53,6 +58,28 @@ def generate_all_instruments():
         subarrays,
         readout,
     )
+    lrs.ins_config = get_instrument_config(telescope, instrument)
+
+    #mrs_ts = Detector(
+    #    'mrs_ts',
+    #    'Medium Resolution Spectroscopy (MRS) time series',
+    #    'MIRI',
+    #    'spectroscopy',
+    #)
+
+    #imaging_ts = Detector(
+    #    'imaging_ts',
+    #    'Imaging time series',
+    #    'MIRI',
+    #    'photometry',
+    #)
+
+    #miri_ta = Detector(
+    #    'target_acq',
+    #    'Target Acquisition',
+    #    'MIRI',
+    #    'acquisition',
+    #)
 
 
     instrument = 'nircam'
@@ -75,6 +102,28 @@ def generate_all_instruments():
         subarrays,
         readout,
     )
+    nircam_grism.ins_config = get_instrument_config(telescope, instrument)
+
+    #nircam_grism = Detector(
+    #    'lw_ts',
+    #    'long wavelength time-series imaging',
+    #    'NIRCam',
+    #    'photometry',
+    #)
+
+    #nircam_grism = Detector(
+    #    'sw_ts',
+    #    'short wavelength time-series imaging',
+    #    'NIRCam',
+    #    'photometry',
+    #)
+
+    #nircam_ta = Detector(
+    #    'target_acq',
+    #    'Target Acquisition',
+    #    'NIRCam',
+    #    'acquisition',
+    #)
 
 
     instrument = 'niriss'
@@ -97,6 +146,14 @@ def generate_all_instruments():
         subarrays,
         readout,
     )
+    soss.ins_config = get_instrument_config(telescope, instrument)
+
+    #niriss_ta = Detector(
+    #    'target_acq',
+    #    'Target Acquisition',
+    #    'NIRISS',
+    #    'acquisition',
+    #)
 
 
     instrument = 'nirspec'
@@ -123,6 +180,7 @@ def generate_all_instruments():
         subarrays,
         readout,
     )
+    bots.ins_config = get_instrument_config(telescope, instrument)
 
     bots.wl_ranges = {
         'G140M/F070LP': (0.70, 1.27),
@@ -136,12 +194,27 @@ def generate_all_instruments():
         'PRISM/CLEAR': (0.60, 5.30),
     }
 
+    #nirspec_ta = Detector(
+    #    'target_acq',
+    #    'Target Acquisition',
+    #    'NIRSpec',
+    #    'acquisition',
+    #)
+
 
     detectors = [
         lrs,
+        #mrs,
+        #miri_imaging,
+        #miri_ta,
         nircam_grism,
+        #nircam_sw,
+        #nircam_lw,
+        #nircam_ta,
         soss,
+        #niriss_ta,
         bots,
+        #nirspec_ta,
     ]
 
     return detectors
