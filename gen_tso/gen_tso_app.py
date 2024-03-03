@@ -539,5 +539,23 @@ def server(input, output, session):
         print(input.select_det.get())
         print(f'My favorite SED is: {my_sed.get()}')
         print("You clicked my button!")
+        det_name = input.select_det.get()
+        for detector in detectors:
+            if detector.name == det_name:
+                break
+        else:
+            return
+        subarray = input.subarray.get().lower()
+        readout = input.readout.get().lower()
+        ngroup = input.groups.get()
+        nint = input.integrations.get()
+        nexp = 1
+        print(f'{subarray}  {readout}  {ngroup}  {nint}')
+        exp_time = jwst.exposure_time(
+            detector, nexp=nexp, nint=nint, ngroup=ngroup,
+            readout=readout, subarray=subarray,
+        )
+        print(f'Exposure time: {exp_time:.2f} s')
+        #print(dir(choose_sed))
 
 app = App(app_ui, server)
