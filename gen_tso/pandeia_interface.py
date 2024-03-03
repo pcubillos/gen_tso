@@ -21,6 +21,29 @@ import pandeia.engine
 from synphot.config import conf, Conf
 
 
+def check_pandeia_version():
+    # TBD: see what's going on here
+    pandeia.engine.pandeia_version()
+
+
+def fetch_vega():
+    # TBD: check synphot path exists
+
+    vega = Conf.vega_file
+    url = vega.defaultvalue
+    query_parameters = {}
+    response = requests.get(url, params=query_parameters)
+    if not response.ok:
+        print('Could not download Vega reference spectrum')
+        # show url, download manually?, put it in path
+
+    path = os.path.dirname(conf.vega_file)
+    if not os.path.exists(path):
+        os.mkdir(path)
+    with open(conf.vega_file, mode="wb") as file:
+        file.write(response.content)
+
+
 #@dataclass(frozen=True, order=True)
 @dataclass(order=True)
 class Detector:
