@@ -44,6 +44,41 @@ def fetch_vega():
         file.write(response.content)
 
 
+def exposure_time(
+        instrument, calculation=None,
+        nexp=None, nint=None, ngroup=None, readout=None, subarray=None,
+    ):
+    """
+    Based on pandeia.engine.exposure.
+    nircam full is not giving the right numbers, all else OK.
+    """
+    if isinstance(instrument, str):
+        telescope = 'jwst'
+        ins_config = get_instrument_config(telescope, instrument)
+    else:
+        ins_config = instrument.ins_config
+
+    tfffr  = ins_config['subarray_config']['default'][subarray]['tfffr']
+    tframe = ins_config['subarray_config']['default'][subarray]['tframe']
+    nframe = ins_config['readout_pattern_config'][readout]['nframe']
+    ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
+    ndrop1 = ndrop3 = 0
+    nreset1 = nreset2 = 1
+    if 'nreset1' in ins_config['readout_pattern_config'][readout]:
+        nreset1 = ins_config['readout_pattern_config'][readout]['nreset1']
+    if 'nreset2' in ins_config['readout_pattern_config'][readout]:
+        nreset2 = ins_config['readout_pattern_config'][readout]['nreset2']
+
+    exposure_time = nexp * (
+        tfffr * nint +
+        tframe * (
+            nreset1 + (nint-1) * nreset2 +
+            nint * (ndrop1 + (ngroup-1) * (nframe + ndrop2) + nframe + ndrop3)
+        )
+    )
+    return exposure_time
+
+
 #@dataclass(frozen=True, order=True)
 @dataclass(order=True)
 class Detector:
