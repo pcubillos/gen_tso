@@ -8,15 +8,14 @@ import os
 import numpy as np
 import requests
 
+import pandeia.engine
 from pandeia.engine.calc_utils import (
-#    build_default_calc,
+    build_default_calc,
     get_instrument_config,
 )
-#from pandeia.engine.perform_calculation import perform_calculation
-#from pandeia.engine.etc3D import setup
+from pandeia.engine.perform_calculation import perform_calculation
 import pandeia.engine.sed as sed
-#from pandeia.engine.instrument_factory import InstrumentFactory
-import pandeia.engine
+#from pandeia.engine.etc3D import setup
 
 from synphot.config import conf, Conf
 
@@ -58,6 +57,12 @@ def exposure_time(
     else:
         ins_config = instrument.ins_config
 
+    # When switching instrument, subarray and readout updates are not atomic
+    if subarray not in ins_config['subarray_config']['default']:
+        return 0.0
+    if readout not in ins_config['readout_pattern_config']:
+        return 0.0
+
     tfffr  = ins_config['subarray_config']['default'][subarray]['tfffr']
     tframe = ins_config['subarray_config']['default'][subarray]['tframe']
     nframe = ins_config['readout_pattern_config'][readout]['nframe']
@@ -79,7 +84,109 @@ def exposure_time(
     return exposure_time
 
 
-#@dataclass(frozen=True, order=True)
+class Calculation():
+    def __init__(self, instrument, mode):
+        self.telescope = 'jwst'
+        self.instrument = instrument
+        self.mode = mode
+        self.calc = build_default_calc(self.telescope, self.instrument, self.mode)
+
+    def get_configs(self, output=None):
+        ins_config = get_instrument_config(self.telescope, self.instrument)
+        config = ins_config['mode_config'][self.mode]
+
+        subarrays = config['subarrays']
+        screen_output = f'subarrays: {subarrays}\n'
+
+        if self.instrument == 'niriss':
+            readouts = ins_config['readout_patterns']
+        else:
+            readouts = config['readout_patterns']
+        screen_output += f'readout patterns: {readouts}\n'
+
+        if self.instrument == 'nirspec':
+            gratings_dict = ins_config['config_constraints']['dispersers']
+            gratings = filters = dispersers = []
+            for grating, filter_list in gratings_dict.items():
+                for filter in filter_list['filters']:
+                    gratings.append(f'{grating}/{filter}')
+            screen_output += f'grating/filter pairs: {gratings}'
+        else:
+            filters = config['filters']
+            dispersers = [disperser for disperser in config['dispersers']]
+            screen_output += f'dispersers: {dispersers}\n'
+            screen_output += f'filters: {filters}'
+
+        if output is None:
+            print(screen_output)
+        elif output == 'readouts':
+            return readouts
+        elif output == 'subarrays':
+            return subarrays
+        elif output == 'filters':
+            return filters
+        elif output == 'dispersers':
+            return dispersers
+        elif self.instrument=='nirspec' and output=='gratings':
+            return gratings
+        else:
+            raise ValueError(f"Invalid config output: '{output}'")
+
+
+    def set_scene(self, sed_type, sed_model, norm_band, norm_magnitude):
+        #'shape', 'position', 'spectrum'
+        # Start from scratch
+        scene = self.calc['scene'][0]
+        #'sed', 'normalization', 'extinction'
+        scene['spectrum']['sed']['sed_type'] = sed_type
+        if sed_type == 'flat':
+            scene['spectrum']['sed']['unit'] = sed_model
+        elif sed_type in ['phoenix', 'kurucz']:
+            scene['spectrum']['sed']['key'] = sed_model
+        elif sed_type == 'blackbody':
+            pass
+
+        scene['spectrum']['normalization'] = {
+            'type': 'photsys',
+            'bandpass': norm_band, #'2mass,ks',
+            'norm_flux': norm_magnitude,
+            'norm_fluxunit': 'vegamag',
+        }
+        self.calc['scene'] = [scene]
+
+    def perform_calculation(
+        self, nint, ngroup,
+        filter=None, readout=None, subarray=None, disperser=None,
+    ):
+        if readout is not None:
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+        if subarray is not None:
+            self.calc['configuration']['detector']['subarray'] = subarray
+
+        if self.instrument == 'nircam':
+            self.calc['configuration']['instrument']['disperser'] = 'grismr'
+            self.calc['configuration']['instrument']['filter'] = filter
+        elif self.instrument == 'nirspec':
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+            self.calc['configuration']['detector']['subarray'] = subarray
+            self.calc['configuration']['instrument']['disperser'] = disperser
+            self.calc['configuration']['instrument']['filter'] = filter
+        elif self.instrument == 'niriss':
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+            self.calc['configuration']['detector']['subarray'] = subarray
+            self.calc['strategy']['order'] = 1
+            # DataError: No mask configured for SOSS order 2.
+        elif self.instrument == 'miri':
+            pass
+
+        self.calc['configuration']['detector']['nexp'] = 1 # dither
+        self.calc['configuration']['detector']['nint'] = nint
+        self.calc['configuration']['detector']['ngroup'] = ngroup
+
+        self.report = perform_calculation(self.calc)
+
+
+# This is the front-end
 @dataclass(order=True)
 class Detector:
     name: str
@@ -91,21 +198,26 @@ class Detector:
     filter_title: str
     filters: list
     subarrays: list
-    readout: list
+    readouts: list
+    disperser_default: str
+    filter_default: str
+    subarray_default: str
+    readout_default: str
 
 
 def generate_all_instruments():
     telescope = 'jwst'
-    instrument = 'miri'
-    ins_config = get_instrument_config(telescope, instrument)
-    config = ins_config['mode_config']['lrsslitless']
 
-    dispersers = [disperser.upper() for disperser in config['dispersers']]
-    subarrays = [subarray.upper() for subarray in config['subarrays']]
-    readout = [read.upper() for read in config['readout_patterns']]
+    instrument = 'miri'
+    mode = 'lrsslitless'
+    cal = Calculation(instrument, mode)
+    dispersers = [d.upper() for d in cal.get_configs('dispersers')]
+    filters = ['']
+    subarrays = [s.upper() for s in cal.get_configs('subarrays')]
+    readouts = [r.upper() for r in cal.get_configs('readouts')]
 
     lrs = Detector(
-        'lrsslitless',
+        mode,
         'Low Resolution Spectroscopy (LRS)',
         'MIRI',
         'spectroscopy',
@@ -114,7 +226,11 @@ def generate_all_instruments():
         '',
         [''],
         subarrays,
-        readout,
+        readouts,
+        disperser_default=dispersers[0],
+        filter_default=filters[0],
+        subarray_default=subarrays[0],
+        readout_default=readouts[0],
     )
     lrs.ins_config = get_instrument_config(telescope, instrument)
 
@@ -139,26 +255,29 @@ def generate_all_instruments():
     #    'acquisition',
     #)
 
-
     instrument = 'nircam'
-    ins_config = get_instrument_config(telescope, instrument)
-    config = ins_config['mode_config']['ssgrism']
-
-    filters = [filter.upper() for filter in config['filters']]
-    subarrays = [subarray.upper() for subarray in config['subarrays']]
-    readout = [read.upper() for read in config['readout_patterns']]
+    mode = 'ssgrism'
+    cal = Calculation(instrument, mode)
+    dispersers = [d.upper() for d in cal.get_configs('dispersers')]
+    filters = [f.upper() for f in cal.get_configs('filters')]
+    subarrays = [s.upper() for s in cal.get_configs('subarrays')]
+    readouts = [r.upper() for r in cal.get_configs('readouts')]
 
     nircam_grism = Detector(
-        'ssgrism',
+        mode,
         'LW Grism Time Series',
         'NIRCam',
         'spectroscopy',
         'Grism',
-        ['GRISMR'],
+        dispersers,
         'Filter',
         filters,
         subarrays,
-        readout,
+        readouts,
+        disperser_default=dispersers[0],
+        filter_default=filters[3],
+        subarray_default=subarrays[3],
+        readout_default=readouts[0],
     )
     nircam_grism.ins_config = get_instrument_config(telescope, instrument)
 
@@ -185,24 +304,30 @@ def generate_all_instruments():
 
 
     instrument = 'niriss'
-    ins_config = get_instrument_config(telescope, instrument)
-    config = ins_config['mode_config']['soss']
-
-    filters = [filter.upper() for filter in config['filters']]
-    subarrays = [subarray.upper() for subarray in config['subarrays']]
-    readout = ['NIS', 'NISRAPID']
+    mode = 'soss'
+    cal = Calculation(instrument, mode)
+    dispersers = [d.upper() for d in cal.get_configs('dispersers')]
+    #dispersers = ['GR700XD (cross-dispersed)']
+    filters = [f.upper() for f in cal.get_configs('filters')]
+    subarrays = [s.upper() for s in cal.get_configs('subarrays')]
+    readouts = [r.upper() for r in cal.get_configs('readouts')]
+    readouts.reverse()
 
     soss = Detector(
-        'soss',
+        mode,
         'Single Object Slitless Spectroscopy (SOSS)',
         'NIRISS',
         'spectroscopy',
         'Disperser',
-        ['GR700XD (cross-dispersed)'],
+        dispersers,
         'Filter',
         filters,
         subarrays,
-        readout,
+        readouts,
+        disperser_default=dispersers[0],
+        filter_default=filters[0],
+        subarray_default=subarrays[0],
+        readout_default=readouts[0],
     )
     soss.ins_config = get_instrument_config(telescope, instrument)
 
@@ -215,42 +340,32 @@ def generate_all_instruments():
 
 
     instrument = 'nirspec'
-    ins_config = get_instrument_config(telescope, instrument)
-    config = ins_config['mode_config']['bots']
-    subarrays = [subarray.upper() for subarray in config['subarrays']]
-    readout = [read.upper() for read in config['readout_patterns']]
-
-    grating_filter = []
-    gratings = ins_config['config_constraints']['dispersers']
-    for grating, filters in gratings.items():
-        for filter in filters['filters']:
-            grating_filter.append(f'{grating}/{filter}'.upper())
+    mode = 'bots'
+    cal = Calculation(instrument, mode)
+    dispersers = ['S1600A1 (1.6" x 1.6")']
+    filters = [f.upper() for f in cal.get_configs('filters')]
+    subarrays = [s.upper() for s in cal.get_configs('subarrays')]
+    subarrays.reverse()
+    readouts = [r.upper() for r in cal.get_configs('readouts')]
+    readouts.reverse()
 
     bots = Detector(
-        'bots',
+        mode,
         'Bright Object Time Series (BOTS)',
         'NIRSpec',
         'spectroscopy',
-        'Grating/Filter',
-        grating_filter,
         'Slit',
-        ['S1600A1 (1.6" x 1.6")'],
+        dispersers,
+        'Grating/Filter',
+        filters,
         subarrays,
-        readout,
+        readouts,
+        disperser_default=dispersers[0],
+        filter_default=filters[6],
+        subarray_default=subarrays[0],
+        readout_default=readouts[0],
     )
     bots.ins_config = get_instrument_config(telescope, instrument)
-
-    bots.wl_ranges = {
-        'G140M/F070LP': (0.70, 1.27),
-        'G140M/F100LP': (0.97, 1.84),
-        'G235M/F170LP': (1.66, 3.07),
-        'G395M/F290LP': (2.87, 5.10),
-        'G140H/F070LP': (0.81, 1.27),
-        'G140H/F100LP': (0.97, 1.82),
-        'G235H/F170LP': (1.66, 3.05),
-        'G395H/F290LP': (2.87, 5.14),
-        'PRISM/CLEAR': (0.60, 5.30),
-    }
 
     #nirspec_ta = Detector(
     #    'target_acq',
