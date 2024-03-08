@@ -1,0 +1,6 @@
+shiny
+pandeia.engine
+astroquery
+plotly
+shinywidgets
+faicons
