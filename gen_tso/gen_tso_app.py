@@ -1,22 +1,22 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-import matplotlib.pyplot as plt
+import pickle
+
 import numpy as np
 
 from shiny import ui, render, reactive, App
 from shiny.experimental.ui import card_body
-import plotly.express as px
 from shinywidgets import output_widget, render_plotly
 from htmltools import HTML
 
-import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import faicons as fa
 
 from pandeia.engine.calc_utils import (
-    build_default_calc,
     get_instrument_config,
 )
-from pandeia.engine.instrument_factory import InstrumentFactory
 
 from navset_jwst import navset_card_tab_jwst
 import pandeia_interface as jwst
@@ -29,18 +29,6 @@ k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
 
 # GEN TSO preamble
-mode_labels = {
-    'lrsslitless': 'Low Resolution Spectroscopy (LRS)',
-    'mrs_ts': 'MRS Time Series',
-    'ssgrism': 'LW Grism Time Series',
-    'soss': 'Single Object Slitless Spectroscopy (SOSS)',
-    'bots': 'Bright Object Time Series (BOTS)',
-    # Imaging
-    'imaging_ts': 'Imaging Time Series',
-    'sw_ts': 'SW Time Series',
-    'lw_ts': 'LW Time Series',
-}
-
 spec_modes = {
     'miri': 'lrsslitless',
     'nircam': 'ssgrism',
@@ -52,73 +40,47 @@ spec_modes = {
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 
-def get_detector(name):
-    for det in detectors:
-        if det.name == name:
-            return det
-
+def get_detector(mode=None, instrument=None):
+    if mode is not None:
+        for det in detectors:
+            if det.name == mode:
+                return det
+        return None
 
 
 def filter_data_frame():
     """
     To be moved into pandeia_interface.py
     """
-    filters_df = pd.DataFrame()
-
-    telescope = 'jwst'
-    for inst_name in instruments:
-        print(f'\nThis is {inst_name}')
-        instrument = inst_name.lower()
-        ins_config = get_instrument_config(telescope, instrument)
-        mode = spec_modes[instrument]
-        calculation = build_default_calc(telescope, instrument, mode)
-        configs = []
-        labels = []
-        if inst_name == 'NIRISS':
+    filter_throughputs = {}
+    for inst_name,mode in spec_modes.items():
+        filter_throughputs[inst_name] = {}
+        if inst_name == 'niriss':
+            filter_throughputs[inst_name]['none'] = {}
             continue
-        if inst_name == 'NIRSpec':
-            gratings = ins_config['config_constraints']['dispersers']
-            for grating, filters in gratings.items():
-                for filter in filters['filters']:
-                    configs.append({
-                        'disperser': grating,
-                        'filter': filter,
-                    })
-                    labels.append(f'{grating.upper()}/{filter.upper()}')
-        if inst_name == 'NIRCam' or inst_name == 'MIRI':
-            filters = ins_config['strategy_config'][mode]['aperture_sizes']
-            for filter in filters.keys():
-                configs.append({'filter': filter})
-                labels.append(filter.upper())
 
-        #print(calculation['configuration']['instrument'])
-        for config,label in zip(configs,labels):
-            calculation['configuration']['instrument'].update(config)
-            inst = InstrumentFactory(
-                config=calculation['configuration'], webapp=True,
-            )
-            print(inst_name, config['filter'].upper())
-            wl_range = inst.get_wave_range()
-            if inst_name != 'MIRI':
-                wl_filter = inst.get_wave_filter()
-                wl_range['wmin'] = np.amin(wl_filter)
-                wl_range['wmax'] = np.amax(wl_filter)
-            wl_arr = np.linspace(wl_range['wmin'], wl_range['wmax'], 100)
-            qe = inst.get_total_eff(wl_arr)
-            if mode == 'bots':
-                det = get_detector('bots')
-                wl_min, wl_max = det.wl_ranges[label]
-                qe[(wl_arr<wl_min) | (wl_arr>wl_max)] = 0.0
-            df = pd.DataFrame(dict(
-                wl=wl_arr,
-                qe=qe,
-                filter=label,
-                instrument=inst_name,
-            ))
-            filters_df = pd.concat((filters_df, df))
-    return filters_df
+        t_file = f'../data/throughputs_{inst_name}_{mode}.pickle'
+        with open(t_file, 'rb') as handle:
+            data = pickle.load(handle)
 
-filters_df = filter_data_frame()
+        subarrays = list(data.keys())
+        if mode != 'bots':
+            subarrays = subarrays[0:1]
+
+        for subarray in subarrays:
+            filter_throughputs[inst_name][subarray] = {}
+            filters = list(data[subarray].keys())
+            for filter in filters:
+                wl = data[subarray][filter]['wl']
+                response = data[subarray][filter]['response']
+                df = dict(
+                    wl=wl,
+                    response=response,
+                )
+                filter_throughputs[inst_name][subarray][filter] = df
+    return filter_throughputs
+
+filter_throughputs = filter_data_frame()
 
 
 # Placeholder
@@ -130,18 +92,15 @@ all_filters = list(ins_config['strategy_config'][mode]['aperture_sizes'])
 
 
 # Placeholder
-options = {
-    "inferno": "inferno",
-    "viridis": "viridis",
-    "copper": "copper",
-    "prism": "prism (not recommended)",
-}
-
 ra = 315.02582008947
 dec = -5.09445415116
-ra = 10.684
-dec = 41.268
+#ra = 10.684
+#dec = 41.268
 src = f'https://sky.esa.int/esasky/?target={ra}%20{dec}'
+
+# Add main content
+gear_icon = fa.icon_svg("gear")
+
 
 app_ui = ui.page_fluid(
     ui.h2("Gen TSO: General JWST ETC for exoplanet time-series observations"),
@@ -181,6 +140,7 @@ app_ui = ui.page_fluid(
                 },
                 selected=['spec'],
             ),
+            ui.input_action_button("run_pandeia", "Run Pandeia"),
         ),
         col_widths=[6,6],
     ),
@@ -202,13 +162,13 @@ app_ui = ui.page_fluid(
             ui.layout_column_wrap(
                 # Row 1
                 ui.p("T_eff (K):"),
-                ui.input_text("teff", "", placeholder="Teff"),
+                ui.input_text("teff", "", value='1400.0', placeholder="Teff"),
                 # Row 2
                 ui.p("log(g):"),
-                ui.input_text("logg", "", placeholder="log(g)"),
+                ui.input_text("logg", "", value='4.5', placeholder="log(g)"),
                 # Row 3
                 ui.p("Ks mag:"),
-                ui.input_text("ksmag", "", placeholder="Ks mag"),
+                ui.input_text("ksmag", "", value='10.0', placeholder="Ks mag"),
                 width=1/2,
                 fixed_width=False,
                 heights_equal='all',
@@ -238,14 +198,14 @@ app_ui = ui.page_fluid(
             # Grism/filter
             ui.panel_well(
                 ui.input_select(
-                    id="grism",
-                    label="Grism",
-                    choices=options,
+                    id="disperser",
+                    label="Disperser",
+                    choices={},
                 ),
                 ui.input_select(
                     id="filter",
                     label="Filter",
-                    choices=options,
+                    choices={},
                 ),
                 class_="pb-0 mb-0",
             ),
@@ -254,12 +214,12 @@ app_ui = ui.page_fluid(
                 ui.input_select(
                     id="subarray",
                     label="Subarray",
-                    choices=options,
+                    choices=[''],
                 ),
                 ui.input_select(
                     id="readout",
                     label="Readout pattern",
-                    choices=options,
+                    choices=[''],
                 ),
                 class_="pb-0 mb-0",
             ),
@@ -285,33 +245,64 @@ app_ui = ui.page_fluid(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # Results
         ui.layout_columns(
-            ui.card(
-                ui.card_header("Filter throughput"),
-                card_body(
-                    output_widget("plotly_filters", fillable=True),
-                    padding='1px',
+            ui.navset_card_tab(
+                ui.nav_panel(
+                    "Filters",
+                    ui.popover(
+                        ui.span(
+                            gear_icon,
+                            style="position:absolute; top: 5px; right: 7px;",
+                        ),
+                        "Show filter throughputs",
+                        ui.input_radio_buttons(
+                            id="filter_filter",
+                            label=None,
+                            choices=["none", "all"],
+                            inline=True,
+                        ),
+                        placement="right",
+                        #placement="top",
+                        id="filter_popover",
+                    ),
+                    ui.card(
+                        card_body(
+                            output_widget("plotly_filters", fillable=True),
+                            padding='1px',
+                        ),
+                        full_screen=True,
+                        height='10px',
+                        class_="bg-primary",
+                    ),
                 ),
-                full_screen=True,
-                height='275px',
-                class_="bg-primary",
-                #class_="bg-primary px-n3 mx-n3 gap-0",
-                #class_="bg-primary lead",
+                ui.nav_panel(
+                    "Sky view",
+                    ui.card(
+                        card_body(
+                            HTML(
+                                '<iframe '
+                                'height="100%" '
+                                'width="100%" '
+                                'style="overflow" '
+                                f'src="{src}" '
+                                'frameborder="0" allowfullscreen></iframe>',
+                                #id=resolve_id(id),
+                            ),
+                            padding='1px',
+                            id='esasky_card',
+                        ),
+                        full_screen=True,
+                        height='250px',
+                    ),
+                ),
+                id="tab",
             ),
             ui.card(
-                HTML(
-                    '<iframe '
-                    'height="100%" '
-                    'width="100%" '
-                    'style="overflow" '
-                    f'src="{src}" '
-                    'frameborder="0" allowfullscreen></iframe>',
-                    #id=resolve_id(id),
+                ui.card_header(
+                    "Results",
                 ),
-                #ui.output_plot("plot_filters"),
-                full_screen=True,
-                height='350px',
+                ui.output_text_verbatim(id="exp_time")
             ),
-            col_widths=[12,12],
+            col_widths=[12, 12],
         ),
         col_widths=[3, 3, 6],
     ),
@@ -352,31 +343,28 @@ def update_inst_select(input):
     )
 
 def update_detector(input):
-    det_name = input.select_det.get()
-    #print(input.select_det.get())
-    for detector in detectors:
-        if detector.name == det_name:
-            break
-    else:
-        return
-    #print(f'I want this one: {detector}')
+    detector = get_detector(mode=input.select_det.get())
     ui.update_select(
-        'grism',
-        label=detector.grism_title,
-        choices=detector.grisms,
+        'disperser',
+        label=detector.disperser_title,
+        choices=detector.dispersers,
+        selected=detector.disperser_default,
     )
     ui.update_select(
         'filter',
         label=detector.filter_title,
         choices=detector.filters,
+        selected=detector.filter_default,
     )
     ui.update_select(
         'subarray',
         choices=detector.subarrays,
+        selected=detector.subarray_default,
     )
     ui.update_select(
         'readout',
-        choices=detector.readout,
+        choices=detector.readouts,
+        selected=detector.readout_default,
     )
 
 
@@ -400,63 +388,75 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_filters():
-        inst_name = input.inst_tab.get()
+        inst_name = input.inst_tab.get().lower()
+        if inst_name == 'miri':
+            filter_name = 'None'
+        else:
+            filter_name = input.filter.get().lower()
         # Eventually, I want to plot-code this by detector
-        #det_name = input.select_det.get()
-        fig = px.line(
-            filters_df.query(f"instrument=='{inst_name}'"),
-            x="wl", y="qe", color='filter',
-            labels = {'qe': 'QE'},
-            #hover_name="filter",
-            #hover_data={
-            #    'filter': False, # remove species from hover data
-            #    'wl':':.2f', # customize hover for column of y attribute
-            #    'qe':':.3f', # add other column, customized formatting
-            #},
-        )
+        passbands = filter_throughputs[inst_name]
+        if inst_name == 'nirspec':
+            subarray = input.subarray.get().lower()
+        else:
+            subarray = list(filter_throughputs[inst_name].keys())[0]
+        #print(f'\n{inst_name}  {subarray}  {filter_name}\n')
+        if subarray not in filter_throughputs[inst_name]:
+            return go.Figure()
+        passbands = filter_throughputs[inst_name][subarray]
+
+        visible = [None for _ in passbands.keys()]
+        if inst_name == 'nirspec':
+            for i,filter in enumerate(passbands.keys()):
+                hide = ('h' in filter_name) is not ('h' in filter)
+                if hide and 'prism' not in filter:
+                    visible[i] = 'legendonly'
+        fig = go.Figure()
+        colors = px.colors.sequential.Viridis
+        j = 0
+        for filter, throughput in passbands.items():
+            if filter == filter_name:
+                linedict = dict(color='Gold', width=3.0)
+            else:
+                linedict = dict(color=colors[j])
+            fig.add_trace(go.Scatter(
+                x=throughput['wl'],
+                y=throughput['response'],
+                mode='lines',
+                name=filter.upper(),
+                legendgrouptitle_text=inst_name,
+                line=linedict,
+                legendrank=j,
+                visible=visible[j],
+            ))
+            j += 1
+
         fig.update_traces(
             hovertemplate=
                 'wl = %{x:.2f}<br>'+
-                'QE = %{y:.3f}'
+                'throughput = %{y:.3f}'
         )
         fig.update_yaxes(
             title_text=None,
             autorangeoptions=dict(minallowed=0),
         )
-        wl_range = [0.5, 13.5] if inst_name=='MIRI' else [0.5, 6.0]
+        wl_range = [0.5, 13.5] if inst_name=='miri' else [0.5, 6.0]
         fig.update_xaxes(
             title_text='wavelength (um)',
             title_standoff=0,
             range=wl_range,
         )
+        fig.update_layout(showlegend=True)
+        # Show current filter on top:
+        filters = list(passbands.keys())
+        if filter_name not in filters:
+            return fig
+        itop = filters.index(filter_name)
+        fig_idx = np.arange(len(fig.data))
+        fig_idx[-1] = itop
+        fig_idx[itop] = len(fig.data) - 1
+        fig.data = tuple(np.array(fig.data)[fig_idx])
         return fig
 
-
-    @output
-    @render.plot(alt="A histogram")
-    def plot_filters():
-        fig = plt.figure()
-        fig.set_size_inches(8,3)
-        ax = plt.subplot(111)
-        #for i,filter in enumerate(all_filters):
-        #    lw = 2.0 if i==0 else 1.25
-        #    ax.plot(wl[i], qe[i], lw=lw, label=filter)
-        ax.set_xlabel('wavelength (um)')
-        ax.set_ylabel('throughput')
-        ax.tick_params(which='both', direction='in')
-        ax.set_ylim(bottom=0.0)
-        ax.set_title("Palmer Penguin Masses")
-        return fig
-
-    #@render.text
-    #@reactive.event(input.target)
-    #def teff_nea():
-    #    print(input.target())
-    #    if input.target() not in planets:
-    #        return ""
-    #    index = planets.index(input.target())
-    #    print(index)
-    #    return f'{teff[index]:.1f}'
 
     @reactive.Effect
     @reactive.event(input.target)
@@ -524,6 +524,35 @@ def server(input, output, session):
     def _():
         update_detector(input)
 
+    @reactive.effect
+    @reactive.event(input.select_det)
+    def _():
+        detector = get_detector(mode=input.select_det.get())
+        ui.update_radio_buttons(
+            "filter_filter",
+            choices=[detector.instrument, 'all'],
+        )
+
+
+    @render.text
+    def exp_time():
+        det_name = input.select_det.get()
+        for detector in detectors:
+            if detector.name == det_name:
+                break
+        else:
+            return
+        subarray = input.subarray.get().lower()
+        readout = input.readout.get().lower()
+        ngroup = input.groups.get()
+        nint = input.integrations.get()
+        nexp = 1
+        #print(f'\n{subarray}  {readout}  {ngroup}  {nint}\n')
+        exp_time = jwst.exposure_time(
+            detector, nexp=nexp, nint=nint, ngroup=ngroup,
+            readout=readout, subarray=subarray,
+        )
+        return f'Exposure time: {exp_time:.2f} s'
 
     #@render.text
     #@reactive.event(input.button)

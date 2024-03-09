@@ -15,7 +15,6 @@ from pandeia.engine.calc_utils import (
 )
 from pandeia.engine.perform_calculation import perform_calculation
 import pandeia.engine.sed as sed
-#from pandeia.engine.etc3D import setup
 
 from synphot.config import conf, Conf
 
@@ -193,8 +192,8 @@ class Detector:
     label: str
     instrument: str
     obs_type: str
-    grism_title: str
-    grisms: list
+    disperser_title: str
+    dispersers: list
     filter_title: str
     filters: list
     subarrays: list
@@ -207,6 +206,12 @@ class Detector:
 
 def generate_all_instruments():
     telescope = 'jwst'
+    # Spectroscopy
+    # 'mrs_ts': 'MRS Time Series',
+    # Imaging
+    # 'imaging_ts': 'Imaging Time Series',
+    # 'sw_ts': 'SW Time Series',
+    # 'lw_ts': 'LW Time Series',
 
     instrument = 'miri'
     mode = 'lrsslitless'
