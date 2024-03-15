@@ -15,6 +15,8 @@ from pandeia.engine.calc_utils import (
 )
 from pandeia.engine.perform_calculation import perform_calculation
 import pandeia.engine.sed as sed
+from pandeia.engine.normalization import NormalizationFactory
+
 
 from synphot.config import conf, Conf
 
@@ -83,6 +85,84 @@ def exposure_time(
     return exposure_time
 
 
+def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
+    sed = {'sed_type': sed_type}
+
+    if sed_type == 'flat':
+        sed['unit'] = sed_model
+    elif sed_type in ['phoenix', 'k93models']:
+        sed['key'] = sed_model
+    elif sed_type == 'blackbody':
+        sed['temp'] = sed_model
+
+    normalization = {
+        'type': 'photsys',
+        'bandpass': norm_band,
+        'norm_flux': norm_magnitude,
+        'norm_fluxunit': 'vegamag',
+    }
+
+    spectrum = {
+        'sed': sed,
+        'normalization': normalization,
+        'extinction': {
+            'bandpass': 'j',
+            'law': 'mw_rv_31',
+            'unit': 'mag',
+            'value': 0,
+        },
+        'lines': [],
+        'redshift': 0,
+    }
+
+    scene = {
+        'spectrum': spectrum,
+        'position': {'orientation': 0.0, 'x_offset': 0.0, 'y_offset': 0.0},
+        'shape': {'geometry': 'point'},
+    }
+    return scene
+
+
+def extract_sed(scene):
+    """
+    Get the flux (mJ) and wavelength array from a given scene dict.
+
+    Returns
+    -------
+    wave: 1D float array
+    flux: 1D float array
+
+    Examples
+    --------
+    >>> import pandeia_interface as jwst
+
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> norm_band = '2mass,ks'
+    >>> norm_magnitude = 8.637
+    >>> scene1 = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
+    >>> wl1, phoenix = jwst.extract_sed(scene1)
+
+    >>> sed_type = 'blackbody'
+    >>> sed_model = 4250.0
+    >>> scene2 = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
+    >>> wl2, bb = jwst.extract_sed(scene2)
+
+    >>> plt.figure(0)
+    >>> plt.clf()
+    >>> plt.plot(wl1, phoenix, c='b')
+    >>> plt.plot(wl2, bb, c='xkcd:green')
+    >>> plt.xlim(0.5, 12)
+
+    """
+    normalization = NormalizationFactory(
+        config=scene['spectrum']['normalization'], webapp=True,
+    )
+    sed_model = sed.SEDFactory(config=scene['spectrum']['sed'], webapp=True, z=0)
+    wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
+    return wave.value, flux.value
+
+
 class Calculation():
     def __init__(self, instrument, mode):
         self.telescope = 'jwst'
@@ -133,24 +213,7 @@ class Calculation():
 
 
     def set_scene(self, sed_type, sed_model, norm_band, norm_magnitude):
-        #'shape', 'position', 'spectrum'
-        # Start from scratch
-        scene = self.calc['scene'][0]
-        #'sed', 'normalization', 'extinction'
-        scene['spectrum']['sed']['sed_type'] = sed_type
-        if sed_type == 'flat':
-            scene['spectrum']['sed']['unit'] = sed_model
-        elif sed_type in ['phoenix', 'kurucz']:
-            scene['spectrum']['sed']['key'] = sed_model
-        elif sed_type == 'blackbody':
-            pass
-
-        scene['spectrum']['normalization'] = {
-            'type': 'photsys',
-            'bandpass': norm_band, #'2mass,ks',
-            'norm_flux': norm_magnitude,
-            'norm_fluxunit': 'vegamag',
-        }
+        scene = make_scene(sed_type, sed_model, norm_band, norm_magnitude)
         self.calc['scene'] = [scene]
 
     def perform_calculation(
@@ -166,13 +229,14 @@ class Calculation():
             self.calc['configuration']['instrument']['disperser'] = 'grismr'
             self.calc['configuration']['instrument']['filter'] = filter
         elif self.instrument == 'nirspec':
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-            self.calc['configuration']['detector']['subarray'] = subarray
+            #self.calc['configuration']['detector']['readout_pattern'] = readout
+            #self.calc['configuration']['detector']['subarray'] = subarray
             self.calc['configuration']['instrument']['disperser'] = disperser
             self.calc['configuration']['instrument']['filter'] = filter
         elif self.instrument == 'niriss':
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-            self.calc['configuration']['detector']['subarray'] = subarray
+            #self.calc['configuration']['detector']['readout_pattern'] = readout
+            #self.calc['configuration']['detector']['subarray'] = subarray
+            self.calc['configuration']['instrument']['filter'] = filter
             self.calc['strategy']['order'] = 1
             # DataError: No mask configured for SOSS order 2.
         elif self.instrument == 'miri':
