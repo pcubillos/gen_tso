@@ -55,29 +55,17 @@ def filter_data_frame():
     filter_throughputs = {}
     for inst_name,mode in spec_modes.items():
         filter_throughputs[inst_name] = {}
-        if inst_name == 'niriss':
-            filter_throughputs[inst_name]['none'] = {}
-            continue
 
         t_file = f'../data/throughputs_{inst_name}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
             data = pickle.load(handle)
 
         subarrays = list(data.keys())
-        if mode != 'bots':
+        if mode not in ['bots', 'soss']:
             subarrays = subarrays[0:1]
 
         for subarray in subarrays:
-            filter_throughputs[inst_name][subarray] = {}
-            filters = list(data[subarray].keys())
-            for filter in filters:
-                wl = data[subarray][filter]['wl']
-                response = data[subarray][filter]['response']
-                df = dict(
-                    wl=wl,
-                    response=response,
-                )
-                filter_throughputs[inst_name][subarray][filter] = df
+            filter_throughputs[inst_name][subarray] = data[subarray]
     return filter_throughputs
 
 filter_throughputs = filter_data_frame()
@@ -103,7 +91,7 @@ gear_icon = fa.icon_svg("gear")
 
 
 app_ui = ui.page_fluid(
-    ui.h2("Gen TSO: General JWST ETC for exoplanet time-series observations"),
+    ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
     #ui.markdown(
     #    """
     #    This app is based on a [Matplotlib example][0] that displays 2D data
@@ -131,6 +119,7 @@ app_ui = ui.page_fluid(
             ),
         ),
         ui.card(
+            # Placeholder / maybe store bookmarked runs in tabs here?
             ui.input_checkbox_group(
                 id="checkbox_group",
                 label="Observation type:",
@@ -157,7 +146,7 @@ app_ui = ui.page_fluid(
                 selected='WASP-80 b',
                 multiple=False,
             ),
-            ui.p("System properties:"),
+
             # Target props
             ui.layout_column_wrap(
                 # Row 1
@@ -167,7 +156,12 @@ app_ui = ui.page_fluid(
                 ui.p("log(g):"),
                 ui.input_text("logg", "", value='4.5', placeholder="log(g)"),
                 # Row 3
-                ui.p("Ks mag:"),
+                ui.input_select(
+                    id='mag',
+                    label='',
+                    choices=['Ks mag', 'Gaia mag'],
+                    selected='Ks mag',
+                ),
                 ui.input_text("ksmag", "", value='10.0', placeholder="Ks mag"),
                 width=1/2,
                 fixed_width=False,
@@ -175,9 +169,10 @@ app_ui = ui.page_fluid(
                 fill=False,
                 fillable=True,
             ),
+
             ui.input_select(
                 id="star_model",
-                label="Stellar SED model",
+                label=ui.output_ui('stellar_sed_label'),
                 choices=[
                     "phoenix (auto)",
                     "kurucz (auto)",
@@ -188,7 +183,48 @@ app_ui = ui.page_fluid(
                 ],
             ),
             ui.output_ui('choose_sed'),
-            ui.input_action_button("button", "Click me"),
+            # The planet
+            ui.panel_well(
+                ui.layout_column_wrap(
+                    # Row 1
+                    ui.p("Observation:"),
+                    ui.input_select(
+                        id='geometry',
+                        label='',
+                        choices=['Transit', 'Eclipse'],
+                    ),
+                    ui.output_text('transit_dur_label'),
+                    ui.input_text("t_dur", "", value='2.0'),
+                    # Row 2
+                    ui.p("Obs_dur (h):"),
+                    ui.input_text("obs_dur", "", value='5.0'),
+                    # Row 3
+                    width=1/2,
+                    fixed_width=False,
+                    heights_equal='all',
+                    fill=False,
+                    fillable=True,
+                ),
+                ui.input_select(
+                    id="planet_model",
+                    label="Transit depth spectrum",
+                    choices=[],
+                ),
+            ),
+            ui.panel_well(
+                ui.input_radio_buttons(
+                    id="upload_type",
+                    label='Upload spectrum',
+                    choices=["SED", "Transit"],
+                    inline=True,
+                ),
+                ui.input_file(
+                    id="upload_depth",
+                    label="",
+                    button_label="Browse",
+                    multiple=True,
+                ),
+            ),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -294,6 +330,44 @@ app_ui = ui.page_fluid(
                         height='250px',
                     ),
                 ),
+                ui.nav_panel(
+                    "Stellar SED",
+                    ui.card(
+                        card_body(
+                            output_widget("plotly_sed", fillable=True),
+                            padding='1px',
+                        ),
+                        full_screen=True,
+                        height='50px',
+                        class_="bg-primary",
+                    ),
+                ),
+                ui.nav_panel(
+                    ui.output_text('transit_depth_label'),
+                    ui.popover(
+                        ui.span(
+                            gear_icon,
+                            style="position:absolute; top: 5px; right: 7px;",
+                        ),
+                        ui.input_numeric(
+                            id='resolution',
+                            label='Resolution:',
+                            value=250.0,
+                            min=10.0, max=3000.0, step=25.0,
+                        ),
+                        placement="right",
+                        id="depth_popover",
+                    ),
+                    ui.card(
+                        card_body(
+                            output_widget("plotly_depth", fillable=True),
+                            padding='1px',
+                        ),
+                        full_screen=True,
+                        height='50px',
+                        class_="bg-primary",
+                    ),
+                ),
                 id="tab",
             ),
             ui.card(
@@ -309,6 +383,16 @@ app_ui = ui.page_fluid(
 )
 
 
+def parse_depth_spectrum(file_path):
+    #root = '/Users/pato/Dropbox/IWF/proposals/2023_jwst_light_triad/simulations/'
+    #file = 'WASP80b_transmission_spectrum_v2.dat'
+    #file_path = root + file
+    spectrum = np.loadtxt(file_path, unpack=True)
+    # TBD: check valid format
+    wl, depth = spectrum
+    return wl, depth
+
+
 def update_inst_select(input):
     inst_name = input.inst_tab.get()
     print(f"You selected me: {inst_name}")
@@ -322,7 +406,6 @@ def update_inst_select(input):
         #'photo',
         'acquisition',
     ]
-    #print(f"You clicked this button! {x}  {inst_name}")
     choices = {}
     if 'spec' in obs_types:
         choices['Spectroscopy'] = modes
@@ -339,7 +422,6 @@ def update_inst_select(input):
     ui.update_select(
         'select_det',
         choices=choices,
-        #selected=x[len(x) - 1] if len(x) > 0 else None,
     )
 
 def update_detector(input):
@@ -385,6 +467,79 @@ def get_auto_sed(input):
 
 def server(input, output, session):
     my_sed = reactive.Value(None)
+    bookmarked_sed = reactive.Value(False)
+    spectrum_choices = {
+        'transit': [],
+        'eclipse': [],
+        'star_sed': [],
+    }
+    spectra = {}
+
+    @reactive.Effect
+    @reactive.event(input.inst_tab)
+    def _():
+        update_inst_select(input)
+
+
+    @render.ui
+    def stellar_sed_label():
+        if bookmarked_sed.get():
+            sed_icon = fa.icon_svg("star", style='solid', fill='gold')
+        else:
+            sed_icon = fa.icon_svg("star", style='regular')
+
+        return ui.span(
+            ui.tooltip(
+                "Stellar SED model: ",
+                "Click star to bookmark SED",
+                placement="top",
+                id="sed_tooltip",
+            ),
+            ui.popover(
+                sed_icon,
+                'Added to favorites!',
+                id='sed_bookmark',
+            ),
+        ),
+
+
+    @reactive.Effect
+    @reactive.event(input.sed_bookmark)
+    def _():
+        print('You did click the star!')
+        print(input.sed_bookmark.get(), input.sed_bookmark.is_set())
+        #print(dir(input.sed_bookmark))
+        if input.sed_bookmark.get():
+            # toggle value
+            new_val = not bookmarked_sed.get()
+            bookmarked_sed.set(new_val)
+            print(f'This is bookmkarked: {bookmarked_sed.get()}')
+            print('SED bookmarked!')
+            ui.update_popover('sed_bookmark', show=False)
+            print('Helo!')
+            #ui.notification_show("Message!", duration=2)
+
+    #@reactive.Effect
+    #@reactive.event(bookmarked_sed)
+    #def _():
+    #    ui.update_popover('sed_bookmark', sed_icon)
+
+
+
+    @reactive.Effect
+    @reactive.event(input.select_det)
+    def _():
+        update_detector(input)
+
+
+    @reactive.effect
+    @reactive.event(input.select_det)
+    def _():
+        detector = get_detector(mode=input.select_det.get())
+        ui.update_radio_buttons(
+            "filter_filter",
+            choices=[detector.instrument, 'all'],
+        )
 
     @render_plotly
     def plotly_filters():
@@ -393,14 +548,15 @@ def server(input, output, session):
             filter_name = 'None'
         else:
             filter_name = input.filter.get().lower()
-        # Eventually, I want to plot-code this by detector
+        # TBD: Eventually, I want to plot-code this by mode instead of inst
         passbands = filter_throughputs[inst_name]
-        if inst_name == 'nirspec':
+        if inst_name in ['nirspec', 'niriss']:
             subarray = input.subarray.get().lower()
         else:
             subarray = list(filter_throughputs[inst_name].keys())[0]
         #print(f'\n{inst_name}  {subarray}  {filter_name}\n')
         if subarray not in filter_throughputs[inst_name]:
+            print(f'\nGetting out: {subarray} / {filter_throughputs[inst_name].keys()}')
             return go.Figure()
         passbands = filter_throughputs[inst_name][subarray]
 
@@ -414,6 +570,18 @@ def server(input, output, session):
         colors = px.colors.sequential.Viridis
         j = 0
         for filter, throughput in passbands.items():
+            if 'order2' in throughput:
+                linedict = dict(color='Orange', width=3.0)
+                fig.add_trace(go.Scatter(
+                    x=throughput['order2']['wl'],
+                    y=throughput['order2']['response'],
+                    mode='lines',
+                    name='CLEAR Or.2',
+                    legendgrouptitle_text=inst_name,
+                    line=linedict,
+                    legendrank=j,
+                ))
+
             if filter == filter_name:
                 linedict = dict(color='Gold', width=3.0)
             else:
@@ -446,7 +614,7 @@ def server(input, output, session):
             range=wl_range,
         )
         fig.update_layout(showlegend=True)
-        # Show current filter on top:
+        # Show current filter on top (TBD: there must be a better way)
         filters = list(passbands.keys())
         if filter_name not in filters:
             return fig
@@ -455,6 +623,74 @@ def server(input, output, session):
         fig_idx[-1] = itop
         fig_idx[itop] = len(fig.data) - 1
         fig.data = tuple(np.array(fig.data)[fig_idx])
+        return fig
+
+
+    @render_plotly
+    def plotly_sed():
+        # TBD: Same as plotly_depth but with the stellar SEDs
+        fig = go.Figure()
+        return fig
+
+
+    @render_plotly
+    def plotly_depth():
+        obs_geometry = input.geometry.get()
+        models = spectrum_choices[obs_geometry.lower()]
+        nmodels = len(models)
+        current_model = input.planet_model.get()
+        units = '%'
+
+        fig = go.Figure()
+        if nmodels == 0:
+            return fig
+        for j,model in enumerate(models):
+            if model == current_model:
+                linedict = dict(color='Gold', width=3.0)
+                rank = j + nmodels
+                visible = None
+            else:
+                linedict = {}
+                rank = j
+                visible = 'legendonly'
+            fig.add_trace(go.Scatter(
+                x=spectra[model]['wl'],
+                y=spectra[model]['depth']*100.0,
+                mode='lines',
+                name=model,
+                #legendgrouptitle_text=inst_name,
+                line=linedict,
+                legendrank=rank,
+                visible=visible,
+            ))
+
+        fig.update_traces(
+            hovertemplate=
+                'wl = %{x:.2f}<br>'+
+                'depth = %{y:.3f}'
+        )
+        fig.update_yaxes(
+            title_text=f'{obs_geometry} depth ({units})',
+            title_standoff=0,
+        )
+        #wl_range = [0.5, 13.5] if inst_name=='miri' else [0.5, 6.0]
+        wl_range = [0.5, 6.0]
+        fig.update_xaxes(
+            title_text='wavelength (um)',
+            title_standoff=0,
+            range=wl_range,
+        )
+
+        fig.update_layout(legend=dict(
+            orientation="h",
+            entrywidth=0.5,
+            entrywidthmode='fraction',
+            yanchor="bottom",
+            xanchor="right",
+            y=1.02,
+            x=1
+        ))
+        fig.update_layout(showlegend=True)
         return fig
 
 
@@ -467,6 +703,7 @@ def server(input, output, session):
         ui.update_text('teff', value=f'{teff[index]:.1f}')
         ui.update_text('logg', value=f'{log_g[index]:.2f}')
         ui.update_text('ksmag', value=f'{ks_mag[index]:.3f}')
+
 
     @render.ui
     @reactive.event(input.star_model, input.teff, input.logg)
@@ -513,26 +750,53 @@ def server(input, output, session):
         print(f'Choose an SED! ({input.sed()})')
 
 
-    @reactive.Effect
-    @reactive.event(input.inst_tab)
-    def _():
-        update_inst_select(input)
-
-
-    @reactive.Effect
-    @reactive.event(input.select_det)
-    def _():
-        update_detector(input)
-
     @reactive.effect
-    @reactive.event(input.select_det)
+    @reactive.event(input.geometry)
     def _():
-        detector = get_detector(mode=input.select_det.get())
-        ui.update_radio_buttons(
-            "filter_filter",
-            choices=[detector.instrument, 'all'],
+        obs_geometry = input.geometry.get()
+        ui.update_select(
+            id="planet_model",
+            label=f"{obs_geometry} depth spectrum:",
+            choices=spectrum_choices[obs_geometry.lower()],
         )
 
+
+    @reactive.effect
+    @reactive.event(input.upload_depth)
+    def _():
+        new_model = input.upload_depth()
+        if not new_model:
+            print('No new model!')
+            return
+
+        current_model = input.planet_model.get()
+        obs_geometry = input.geometry.get()
+        depth_file = new_model[0]['name']
+        # TBD: remove file extension?
+        spectrum_choices[obs_geometry.lower()].append(depth_file)
+        #print(repr(current_model))
+        #print(depth_file)
+        #print(new_model)
+        wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
+        spectra[depth_file] = {'wl': wl, 'depth': depth}
+
+        ui.update_select(
+            id="planet_model",
+            label=f"{obs_geometry} depth spectrum:",
+            choices=spectrum_choices[obs_geometry.lower()],
+            selected=current_model,
+        )
+
+
+    @render.text
+    def transit_dur_label():
+        obs_geometry = input.geometry.get()
+        return f"{obs_geometry[0]}_dur (h):"
+
+    @render.text
+    def transit_depth_label():
+        obs_geometry = input.geometry.get()
+        return f"{obs_geometry} depth"
 
     @render.text
     def exp_time():
@@ -554,10 +818,6 @@ def server(input, output, session):
         )
         return f'Exposure time: {exp_time:.2f} s'
 
-    #@render.text
-    #@reactive.event(input.button)
-    #def text():
-    #    return f"Last values: {input.selected()}"
 
     @reactive.Effect
     @reactive.event(input.button)
