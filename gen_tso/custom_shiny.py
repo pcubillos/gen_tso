@@ -16,8 +16,31 @@ from shiny.ui._navs import (
     NavSetCard,
     navset_title,
 )
+from shiny.ui._card import card_body
 from shiny._namespaces import resolve_id_or_none
 import shiny.ui as ui
+
+
+def custom_card(*args, body_args={}, **kwargs):
+    """
+    A wrapper over a Shiny card component with an explicit card_body
+    (so that I can apply class_ and other customizations).
+    """
+    header = None
+    args = list(args)
+    for arg in args:
+        # Only headers and footers are CardItems (right?)
+        if isinstance(arg, ui.CardItem):
+            header = arg
+            args.remove(arg)
+            break
+
+    return ui.card(
+        header,
+        card_body(*args, **body_args),
+        **kwargs,
+    )
+
 
 
 def label_tooltip_button(
