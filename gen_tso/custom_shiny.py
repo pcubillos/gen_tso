@@ -1,26 +1,50 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
+__all__ = [
+    'label_tooltip_button',
+    'navset_card_tab_jwst',
+]
+
 from typing import Optional
 from htmltools import (
     Tag,
     TagChild,
 )
-
 from shiny.ui._navs import (
     NavSet,
     NavSetCard,
     navset_title,
 )
 from shiny._namespaces import resolve_id_or_none
+import shiny.ui as ui
 
-from shiny.ui import (
-    card,
-    card_header,
-)
+
+def label_tooltip_button(
+        label, tooltip_text, icon, label_id, button_id, placement='top',
+    ):
+    """
+    A label text which has a tooltip and a clickable icon.
+    """
+    return ui.tooltip(
+        ui.span(
+            label,
+            ui.input_action_link(
+                id=button_id,
+                label='',
+                icon=icon,
+            ),
+        ),
+        tooltip_text,
+        placement=placement,
+        id=label_id,
+    )
 
 
 class NavSetCardJWST(NavSet):
+    """
+    A NavSet look alike, but it doesn't really has multiple tab contents.
+    """
     title: Optional[TagChild]
 
     def __init__(
@@ -47,15 +71,14 @@ class NavSetCardJWST(NavSet):
     def layout(self, nav: Tag, content: Tag) -> Tag:
         nav_items = [*navset_title(self.title), nav]
 
-        return card(
-            card_header(self.header),
+        return ui.card(
+            ui.card_header(self.header),
             *nav_items,
             self.footer,
         )
 
-
 def navset_card_tab_jwst(
-        *args,
+        nav_panel_labels,
         id: Optional[str] = None,
         selected: Optional[str] = None,
         header: TagChild = None,
@@ -77,11 +100,16 @@ def navset_card_tab_jwst(
     footer
         UI to display below the selected content.
     """
+    nav_panels = [
+        ui.nav_panel(label, '')
+        for label in nav_panel_labels
+    ]
     return NavSetCardJWST(
-        *args,
+        *nav_panels,
         ul_class="nav nav-pills",
         id=resolve_id_or_none(id),
         selected=selected,
         header=header,
         footer=footer,
     )
+

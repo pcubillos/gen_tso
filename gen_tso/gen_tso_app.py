@@ -18,24 +18,29 @@ from pandeia.engine.calc_utils import (
     get_instrument_config,
 )
 
-from navset_jwst import navset_card_tab_jwst
 import pandeia_interface as jwst
 import source_catalog as nea
-
+import custom_shiny as cs
 
 planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
 p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
 k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
 
-# GEN TSO preamble
+# preamble
+inst_names = [
+    'MIRI',
+    'NIRCam',
+    'NIRISS',
+    'NIRSpec',
+]
+
 spec_modes = {
     'miri': 'lrsslitless',
     'nircam': 'ssgrism',
     'niriss': 'soss',
     'nirspec': 'bots',
 }
-
 
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
@@ -86,9 +91,6 @@ dec = -5.09445415116
 #dec = 41.268
 src = f'https://sky.esa.int/esasky/?target={ra}%20{dec}'
 
-# Add main content
-gear_icon = fa.icon_svg("gear")
-
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
@@ -104,11 +106,8 @@ app_ui = ui.page_fluid(
 
     # Instrument / detector:
     ui.layout_columns(
-        navset_card_tab_jwst(
-            ui.nav_panel('MIRI', ''),
-            ui.nav_panel('NIRCam', ''),
-            ui.nav_panel('NIRISS', ''),
-            ui.nav_panel('NIRSpec', ''),
+        cs.navset_card_tab_jwst(
+            inst_names,
             id="inst_tab",
             header="Select an instrument and detector",
             footer=ui.input_select(
@@ -174,8 +173,8 @@ app_ui = ui.page_fluid(
                 id="star_model",
                 label=ui.output_ui('stellar_sed_label'),
                 choices=[
-                    "phoenix (auto)",
-                    "kurucz (auto)",
+                    #"phoenix (auto)",
+                    #"kurucz (auto)",
                     "phoenix (select)",
                     "kurucz (select)",
                     "blackbody",
@@ -263,8 +262,14 @@ app_ui = ui.page_fluid(
             ui.panel_well(
                 ui.input_numeric(
                     "groups",
-                    "Groups per integration",
-                    2,
+                    label=cs.label_tooltip_button(
+                        label='Groups per integration ',
+                        tooltip_text='Click icon to estimate saturation level',
+                        icon=fa.icon_svg("circle-play", fill='black'),
+                        label_id='ngroup_label',
+                        button_id='calc_saturation',
+                    ),
+                    value=2,
                     min=2, max=100,
                 ),
                 ui.input_numeric(
@@ -286,7 +291,7 @@ app_ui = ui.page_fluid(
                     "Filters",
                     ui.popover(
                         ui.span(
-                            gear_icon,
+                            fa.icon_svg("gear"),
                             style="position:absolute; top: 5px; right: 7px;",
                         ),
                         "Show filter throughputs",
@@ -346,7 +351,7 @@ app_ui = ui.page_fluid(
                     ui.output_text('transit_depth_label'),
                     ui.popover(
                         ui.span(
-                            gear_icon,
+                            fa.icon_svg("gear"),
                             style="position:absolute; top: 5px; right: 7px;",
                         ),
                         ui.input_numeric(
@@ -486,22 +491,15 @@ def server(input, output, session):
         if bookmarked_sed.get():
             sed_icon = fa.icon_svg("star", style='solid', fill='gold')
         else:
-            sed_icon = fa.icon_svg("star", style='regular')
+            sed_icon = fa.icon_svg("star", style='regular', fill='black')
 
-        return ui.span(
-            ui.tooltip(
-                "Stellar SED model: ",
-                "Click star to bookmark SED",
-                placement="top",
-                id="sed_tooltip",
-            ),
-            ui.popover(
-                sed_icon,
-                'Added to favorites!',
-                id='sed_bookmark',
-            ),
-        ),
-
+        return cs.label_tooltip_button(
+            label='Stellar SED model: ',
+            tooltip_text='Click star to bookmark SED',
+            icon=sed_icon,
+            label_id='sed_label',
+            button_id='sed_bookmark',
+        )
 
     @reactive.Effect
     @reactive.event(input.sed_bookmark)
