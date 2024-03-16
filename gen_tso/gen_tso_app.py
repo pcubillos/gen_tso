@@ -14,20 +14,31 @@ import plotly.express as px
 import plotly.graph_objects as go
 import faicons as fa
 
-from pandeia.engine.calc_utils import (
-    get_instrument_config,
-)
-
 import pandeia_interface as jwst
 import source_catalog as nea
 import custom_shiny as cs
 
+
+# Preamble
 planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
-p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
-k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
+p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
+k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
+phoenix_dict = {model:key for key,model in zip(p_keys, p_models)}
+kurucz_dict = {model:key for key,model in zip(k_keys, k_models)}
+sed_dict = {
+    'phoenix': phoenix_dict,
+    'kurucz': kurucz_dict,
+}
 
-# preamble
+bands_dict = {
+    'J mag': '2mass,j',
+    'H mag': '2mass,h',
+    'Ks mag': '2mass,ks',
+    'Gaia mag': 'gaia,g',
+    'V mag': 'johnson,v',
+}
+
 inst_names = [
     'MIRI',
     'NIRCam',
@@ -77,38 +88,24 @@ filter_throughputs = filter_data_frame()
 
 
 # Placeholder
-telescope = 'jwst'
-instrument = 'nircam'
-ins_config = get_instrument_config(telescope, instrument)
-mode = spec_modes[instrument]
-all_filters = list(ins_config['strategy_config'][mode]['aperture_sizes'])
-
-
-# Placeholder
 ra = 315.02582008947
 dec = -5.09445415116
-#ra = 10.684
-#dec = 41.268
 src = f'https://sky.esa.int/esasky/?target={ra}%20{dec}'
 
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
-    #ui.markdown(
-    #    """
-    #    This app is based on a [Matplotlib example][0] that displays 2D data
-    #    with a user-adjustable colormap. We use a range slider to set the data
-    #    range that is covered by the colormap.
-
-    #    [0]: https://matplotlib.org/3.5.3/gallery/userdemo/colormap_interactive_adjustment.html
-    #    """
-    #),
+    #ui.markdown("""
+    #    This app is based on [shiny][0].
+    #    [0]: https://shiny.posit.co/py/api/core
+    #    """),
 
     # Instrument / detector:
     ui.layout_columns(
         cs.navset_card_tab_jwst(
             inst_names,
             id="inst_tab",
+            selected='NIRCam',
             header="Select an instrument and detector",
             footer=ui.input_select(
                 "select_det",
@@ -128,7 +125,7 @@ app_ui = ui.page_fluid(
                 },
                 selected=['spec'],
             ),
-            ui.input_action_button("run_pandeia", "Run Pandeia"),
+            ui.input_action_button(id="run_pandeia", label="Run Pandeia"),
         ),
         col_widths=[6,6],
     ),
@@ -156,12 +153,17 @@ app_ui = ui.page_fluid(
                 ui.input_text("logg", "", value='4.5', placeholder="log(g)"),
                 # Row 3
                 ui.input_select(
-                    id='mag',
+                    id='magnitude_band',
                     label='',
-                    choices=['Ks mag', 'Gaia mag'],
+                    choices=list(bands_dict.keys()),
                     selected='Ks mag',
                 ),
-                ui.input_text("ksmag", "", value='10.0', placeholder="Ks mag"),
+                ui.input_text(
+                    id="magnitude",
+                    label="",
+                    value='10.0',
+                    placeholder="magnitude",
+                ),
                 width=1/2,
                 fixed_width=False,
                 heights_equal='all',
@@ -471,9 +473,30 @@ def get_auto_sed(input):
     return m_models, chosen_sed
 
 
+def parse_sed(input):
+    sed_type = input.star_model()
+    if sed_type in ['phoenix', 'kurucz']:
+        sed_model = sed_dict[sed_type][input.sed()]
+    elif sed_type == 'blackbody':
+        sed_model = input.teff.get()
+    elif sed_type == 'custom':
+        pass
+
+    norm_band = bands_dict[input.magnitude_band()]
+    norm_magnitude = float(input.magnitude())
+
+    if sed_type == 'kurucz':
+        sed_type = 'k93models'
+    return sed_type, sed_model, norm_band, norm_magnitude
+
+
+
 def server(input, output, session):
     my_sed = reactive.Value(None)
     bookmarked_sed = reactive.Value(False)
+    brightest_pix_rate = reactive.Value(None)
+    full_well = reactive.Value(None)
+
     spectrum_choices = {
         'transit': [],
         'eclipse': [],
@@ -514,22 +537,37 @@ def server(input, output, session):
             print(f'This is bookmkarked: {bookmarked_sed.get()}')
             #ui.notification_show("Message!", duration=2)
 
-    #@reactive.Effect
-    #@reactive.event(bookmarked_sed)
-    #def _():
-    #    ui.update_popover('sed_bookmark', sed_icon)
 
+    @reactive.Effect
+    @reactive.event(input.calc_saturation)
+    def _():
+        inst_name = input.inst_tab.get().lower()
+        mode = input.select_det.get()
+        filter = input.filter.get().lower()
+        subarray = input.subarray.get().lower()
+        readout = input.readout.get().lower()
+        disperser = input.disperser.get().lower()
+        if mode == 'bots':
+            disperser, filter = filter.split('/')
+
+        #print(inst_name, mode, disperser, filter, subarray, readout)
+        pando = jwst.Calculation(inst_name, mode)
+
+        sed_type, sed_model, norm_band, norm_magnitude = parse_sed(input)
+        #print(sed_type, sed_model, norm_band, repr(norm_magnitude))
+        pando.set_scene(sed_type, sed_model, norm_band, norm_magnitude)
+
+        flux_rate, fullwell = pando.get_saturation_values(
+            filter, readout, subarray, disperser,
+        )
+        brightest_pix_rate.set(flux_rate)
+        full_well.set(fullwell)
 
 
     @reactive.Effect
     @reactive.event(input.select_det)
     def _():
         update_detector(input)
-
-
-    @reactive.effect
-    @reactive.event(input.select_det)
-    def _():
         detector = get_detector(mode=input.select_det.get())
         ui.update_radio_buttons(
             "filter_filter",
@@ -697,7 +735,7 @@ def server(input, output, session):
         index = planets.index(input.target())
         ui.update_text('teff', value=f'{teff[index]:.1f}')
         ui.update_text('logg', value=f'{log_g[index]:.2f}')
-        ui.update_text('ksmag', value=f'{ks_mag[index]:.3f}')
+        ui.update_text('magnitude', value=f'{ks_mag[index]:.3f}')
 
 
     @render.ui
@@ -720,7 +758,7 @@ def server(input, output, session):
                 chosen_sed,
                 style='background:#EBEBEB',
             )
-        elif 'select' in input.star_model():
+        elif input.star_model() in ['phoenix', 'kurucz']:
             m_models, chosen_sed = get_auto_sed(input)
             selected = chosen_sed
             return ui.input_select(
@@ -795,51 +833,42 @@ def server(input, output, session):
 
     @render.text
     def exp_time():
-        det_name = input.select_det.get()
-        for detector in detectors:
-            if detector.name == det_name:
-                break
-        else:
-            return
+        mode = input.select_det.get()
+        detector = get_detector(mode=mode)
         subarray = input.subarray.get().lower()
         readout = input.readout.get().lower()
         ngroup = input.groups.get()
         nint = input.integrations.get()
-        nexp = 1
         #print(f'\n{subarray}  {readout}  {ngroup}  {nint}\n')
         exp_time = jwst.exposure_time(
-            detector, nexp=nexp, nint=nint, ngroup=ngroup,
+            detector, nint=nint, ngroup=ngroup,
             readout=readout, subarray=subarray,
         )
-        return f'Exposure time: {exp_time:.2f} s'
+        pixel_rate = brightest_pix_rate.get()
+        if pixel_rate is None:
+            return f'Exposure time: {exp_time:.2f} s'
 
+        sat_time = jwst.saturation_time(detector, ngroup, readout, subarray)
+        sat_fraction = pixel_rate * sat_time / full_well.get()
+        ngroup_80 = int(0.8*ngroup/sat_fraction)
+        ngroup_max = int(ngroup/sat_fraction)
+        return (
+            f'Exposure time: {exp_time:.2f} s\n'
+            f'Max. fraction of saturation: {100.0*sat_fraction:.1f}%\n'
+            f'ngroup below 80% and 100% saturation: {ngroup_80:d} / {ngroup_max:d}'
+        )
 
     @reactive.Effect
-    @reactive.event(input.button)
+    @reactive.event(input.run_pandeia)
     def _():
-        #print(f"You clicked the button! {dir(input.selector)}")
-        #print(f"You clicked the button! {input.inst_tab.get()}")
-        #print(f"You clicked the button! {input.selected()}")
-        print(input.select_det.get())
-        print(f'My favorite SED is: {my_sed.get()}')
         print("You clicked my button!")
-        det_name = input.select_det.get()
-        for detector in detectors:
-            if detector.name == det_name:
-                break
-        else:
-            return
-        subarray = input.subarray.get().lower()
-        readout = input.readout.get().lower()
-        ngroup = input.groups.get()
-        nint = input.integrations.get()
-        nexp = 1
-        print(f'{subarray}  {readout}  {ngroup}  {nint}')
-        exp_time = jwst.exposure_time(
-            detector, nexp=nexp, nint=nint, ngroup=ngroup,
-            readout=readout, subarray=subarray,
-        )
-        print(f'Exposure time: {exp_time:.2f} s')
+        #mode = input.select_det.get()
+        #detector = get_detector(mode=mode)
+        print(f'My favorite SED is: {my_sed.get()}')
+        #subarray = input.subarray.get().lower()
+        #readout = input.readout.get().lower()
+        #ngroup = input.groups.get()
+        #nint = input.integrations.get()
         #print(dir(choose_sed))
 
 app = App(app_ui, server)

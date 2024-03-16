@@ -46,7 +46,7 @@ def fetch_vega():
 
 def exposure_time(
         instrument, calculation=None,
-        nexp=None, nint=None, ngroup=None, readout=None, subarray=None,
+        nexp=1, nint=None, ngroup=None, readout=None, subarray=None,
     ):
     """
     Based on pandeia.engine.exposure.
@@ -277,7 +277,7 @@ class Calculation():
 
     def get_saturation_values(self, filter, readout, subarray, disperser):
         """
-        Calculate the brightest pixel rate (e-/s) and full_well (e-)
+        Calculate the brightest-pixel rate (e-/s) and full_well (e-)
         for the current instrument and scene configuration, which once known,
         are sufficient to calculate the saturation level once the
         saturation  time is known.
