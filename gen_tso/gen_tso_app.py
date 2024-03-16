@@ -175,8 +175,8 @@ app_ui = ui.page_fluid(
                 choices=[
                     #"phoenix (auto)",
                     #"kurucz (auto)",
-                    "phoenix (select)",
-                    "kurucz (select)",
+                    "phoenix",
+                    "kurucz",
                     "blackbody",
                     "custom",
                 ],
@@ -311,7 +311,7 @@ app_ui = ui.page_fluid(
                             padding='1px',
                         ),
                         full_screen=True,
-                        height='10px',
+                        height='250px',
                         class_="bg-primary",
                     ),
                 ),
@@ -332,7 +332,7 @@ app_ui = ui.page_fluid(
                             id='esasky_card',
                         ),
                         full_screen=True,
-                        height='250px',
+                        height='350px',
                     ),
                 ),
                 ui.nav_panel(
@@ -343,7 +343,7 @@ app_ui = ui.page_fluid(
                             padding='1px',
                         ),
                         full_screen=True,
-                        height='50px',
+                        height='300px',
                         class_="bg-primary",
                     ),
                 ),
@@ -369,7 +369,7 @@ app_ui = ui.page_fluid(
                             padding='1px',
                         ),
                         full_screen=True,
-                        height='50px',
+                        height='300px',
                         class_="bg-primary",
                     ),
                 ),
@@ -382,6 +382,7 @@ app_ui = ui.page_fluid(
                 ui.output_text_verbatim(id="exp_time")
             ),
             col_widths=[12, 12],
+            fill=False,
         ),
         col_widths=[3, 3, 6],
     ),
@@ -505,16 +506,12 @@ def server(input, output, session):
     @reactive.event(input.sed_bookmark)
     def _():
         print('You did click the star!')
-        print(input.sed_bookmark.get(), input.sed_bookmark.is_set())
-        #print(dir(input.sed_bookmark))
+        #print(input.sed_bookmark.get(), input.sed_bookmark.is_set())
         if input.sed_bookmark.get():
             # toggle value
             new_val = not bookmarked_sed.get()
             bookmarked_sed.set(new_val)
             print(f'This is bookmkarked: {bookmarked_sed.get()}')
-            print('SED bookmarked!')
-            ui.update_popover('sed_bookmark', show=False)
-            print('Helo!')
             #ui.notification_show("Message!", duration=2)
 
     #@reactive.Effect
