@@ -6,7 +6,6 @@ import pickle
 import numpy as np
 
 from shiny import ui, render, reactive, App
-from shiny.experimental.ui import card_body
 from shinywidgets import output_widget, render_plotly
 from htmltools import HTML
 
@@ -133,57 +132,56 @@ app_ui = ui.page_fluid(
     ui.layout_columns(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The target
-        ui.card(
+        cs.custom_card(
             ui.card_header("Target", class_="bg-primary"),
-            ui.input_selectize(
-                'target',
-                'Known target?',
-                planets,
-                selected='WASP-80 b',
-                multiple=False,
-            ),
-
-            # Target props
-            ui.layout_column_wrap(
-                # Row 1
-                ui.p("T_eff (K):"),
-                ui.input_text("teff", "", value='1400.0', placeholder="Teff"),
-                # Row 2
-                ui.p("log(g):"),
-                ui.input_text("logg", "", value='4.5', placeholder="log(g)"),
-                # Row 3
+            ui.panel_well(
+                ui.input_selectize(
+                    'target',
+                    'Known target?',
+                    planets,
+                    selected='WASP-80 b',
+                    multiple=False,
+                ),
+                # Target props
+                ui.layout_column_wrap(
+                    # Row 1
+                    ui.p("T_eff (K):"),
+                    ui.input_text("teff", "", value='1400.0'),
+                    # Row 2
+                    ui.p("log(g):"),
+                    ui.input_text("logg", "", value='4.5'),
+                    # Row 3
+                    ui.input_select(
+                        id='magnitude_band',
+                        label='',
+                        choices=list(bands_dict.keys()),
+                        selected='Ks mag',
+                    ),
+                    ui.input_text(
+                        id="magnitude",
+                        label="",
+                        value='10.0',
+                        placeholder="magnitude",
+                    ),
+                    width=1/2,
+                    fixed_width=False,
+                    heights_equal='all',
+                    fill=False,
+                    fillable=True,
+                ),
                 ui.input_select(
-                    id='magnitude_band',
-                    label='',
-                    choices=list(bands_dict.keys()),
-                    selected='Ks mag',
+                    id="star_model",
+                    label=ui.output_ui('stellar_sed_label'),
+                    choices=[
+                        "phoenix",
+                        "kurucz",
+                        "blackbody",
+                        "custom",
+                    ],
                 ),
-                ui.input_text(
-                    id="magnitude",
-                    label="",
-                    value='10.0',
-                    placeholder="magnitude",
-                ),
-                width=1/2,
-                fixed_width=False,
-                heights_equal='all',
-                fill=False,
-                fillable=True,
+                ui.output_ui('choose_sed'),
+                class_="px-2 pt-2 pb-0 m-0",
             ),
-
-            ui.input_select(
-                id="star_model",
-                label=ui.output_ui('stellar_sed_label'),
-                choices=[
-                    #"phoenix (auto)",
-                    #"kurucz (auto)",
-                    "phoenix",
-                    "kurucz",
-                    "blackbody",
-                    "custom",
-                ],
-            ),
-            ui.output_ui('choose_sed'),
             # The planet
             ui.panel_well(
                 ui.layout_column_wrap(
@@ -211,6 +209,7 @@ app_ui = ui.page_fluid(
                     label="Transit depth spectrum",
                     choices=[],
                 ),
+                class_="px-2 pt-2 pb-0 m-0",
             ),
             ui.panel_well(
                 ui.input_radio_buttons(
@@ -225,12 +224,14 @@ app_ui = ui.page_fluid(
                     button_label="Browse",
                     multiple=True,
                 ),
+                class_="px-2 py-0 m-0",
             ),
+            body_args=dict(class_="p-2 m-0"),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The detector setup
-        ui.card(
+        cs.custom_card(
             ui.card_header("Detector setup", class_="bg-primary"),
             # Grism/filter
             ui.panel_well(
@@ -244,7 +245,7 @@ app_ui = ui.page_fluid(
                     label="Filter",
                     choices={},
                 ),
-                class_="pb-0 mb-0",
+                class_="px-2 pt-2 pb-0 m-0",
             ),
             # subarray / readout
             ui.panel_well(
@@ -258,7 +259,7 @@ app_ui = ui.page_fluid(
                     label="Readout pattern",
                     choices=[''],
                 ),
-                class_="pb-0 mb-0",
+                class_="px-2 pt-2 pb-0 m-0",
             ),
             # groups / integs
             ui.panel_well(
@@ -281,8 +282,9 @@ app_ui = ui.page_fluid(
                     min=1, max=100,
                 ),
                 ui.input_switch("switch", "Match obs. time", False),
-                class_="pb-0 mb-0",
+                class_="px-2 pt-2 pb-0 m-0",
             ),
+            body_args=dict(class_="p-2 m-0"),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -307,46 +309,37 @@ app_ui = ui.page_fluid(
                         #placement="top",
                         id="filter_popover",
                     ),
-                    ui.card(
-                        card_body(
-                            output_widget("plotly_filters", fillable=True),
-                            padding='1px',
-                        ),
+                    cs.custom_card(
+                        output_widget("plotly_filters", fillable=True),
+                        body_args=dict(class_='m-0 p-0'),
                         full_screen=True,
                         height='250px',
-                        class_="bg-primary",
                     ),
                 ),
                 ui.nav_panel(
                     "Sky view",
-                    ui.card(
-                        card_body(
-                            HTML(
-                                '<iframe '
-                                'height="100%" '
-                                'width="100%" '
-                                'style="overflow" '
-                                f'src="{src}" '
-                                'frameborder="0" allowfullscreen></iframe>',
-                                #id=resolve_id(id),
-                            ),
-                            padding='1px',
-                            id='esasky_card',
+                    cs.custom_card(
+                        HTML(
+                            '<iframe '
+                            'height="100%" '
+                            'width="100%" '
+                            'style="overflow" '
+                            f'src="{src}" '
+                            'frameborder="0" allowfullscreen></iframe>',
+                            #id=resolve_id(id),
                         ),
+                        body_args=dict(class_='m-0 p-0', id='esasky_card'),
                         full_screen=True,
                         height='350px',
                     ),
                 ),
                 ui.nav_panel(
                     "Stellar SED",
-                    ui.card(
-                        card_body(
-                            output_widget("plotly_sed", fillable=True),
-                            padding='1px',
-                        ),
+                    cs.custom_card(
+                        output_widget("plotly_sed", fillable=True),
+                        body_args=dict(padding='0px'),
                         full_screen=True,
                         height='300px',
-                        class_="bg-primary",
                     ),
                 ),
                 ui.nav_panel(
@@ -365,14 +358,11 @@ app_ui = ui.page_fluid(
                         placement="right",
                         id="depth_popover",
                     ),
-                    ui.card(
-                        card_body(
-                            output_widget("plotly_depth", fillable=True),
-                            padding='1px',
-                        ),
+                    cs.custom_card(
+                        output_widget("plotly_depth", fillable=True),
+                        body_args=dict(padding='0px'),
                         full_screen=True,
                         height='300px',
-                        class_="bg-primary",
                     ),
                 ),
                 id="tab",
@@ -771,8 +761,9 @@ def server(input, output, session):
             if input.teff.get() != '':
                 teff = float(input.teff.get())
                 return ui.p(
-                    f'Blackbody(Teff={teff:.0f}K)',
-                    style='background:#EBEBEB',
+                    f' Blackbody (Teff={teff:.0f} K)',
+                    style='background:#DDDDDD',
+                    class_='mb-2 ps-2',
                 )
 
 
