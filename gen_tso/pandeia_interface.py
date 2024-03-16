@@ -85,6 +85,35 @@ def exposure_time(
     return exposure_time
 
 
+def saturation_time(instrument, ngroup=None, readout=None, subarray=None):
+    """
+    Compute JWST's saturation time for the given instrument configuration.
+    Based on pandeia.engine.exposure.
+    """
+    if isinstance(instrument, str):
+        telescope = 'jwst'
+        ins_config = get_instrument_config(telescope, instrument)
+    else:
+        ins_config = instrument.ins_config
+
+    # When switching instrument, subarray and readout updates are not atomic
+    if subarray not in ins_config['subarray_config']['default']:
+        return 0.0
+    if readout not in ins_config['readout_pattern_config']:
+        return 0.0
+
+    tframe = ins_config['subarray_config']['default'][subarray]['tframe']
+    nframe = ins_config['readout_pattern_config'][readout]['nframe']
+    ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
+    ndrop1 = 0
+
+    saturation_time = tframe * (
+        ndrop1 + (ngroup - 1) * (nframe + ndrop2) + nframe
+    )
+    return saturation_time
+
+
+
 def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
     sed = {'sed_type': sed_type}
 
@@ -229,13 +258,9 @@ class Calculation():
             self.calc['configuration']['instrument']['disperser'] = 'grismr'
             self.calc['configuration']['instrument']['filter'] = filter
         elif self.instrument == 'nirspec':
-            #self.calc['configuration']['detector']['readout_pattern'] = readout
-            #self.calc['configuration']['detector']['subarray'] = subarray
             self.calc['configuration']['instrument']['disperser'] = disperser
             self.calc['configuration']['instrument']['filter'] = filter
         elif self.instrument == 'niriss':
-            #self.calc['configuration']['detector']['readout_pattern'] = readout
-            #self.calc['configuration']['detector']['subarray'] = subarray
             self.calc['configuration']['instrument']['filter'] = filter
             self.calc['strategy']['order'] = 1
             # DataError: No mask configured for SOSS order 2.
@@ -247,6 +272,47 @@ class Calculation():
         self.calc['configuration']['detector']['ngroup'] = ngroup
 
         self.report = perform_calculation(self.calc)
+        return self.report
+
+
+    def get_saturation_values(self, filter, readout, subarray, disperser):
+        """
+        Calculate the brightest pixel rate (e-/s) and full_well (e-)
+        for the current instrument and scene configuration, which once known,
+        are sufficient to calculate the saturation level once the
+        saturation  time is known.
+
+        Examples
+        --------
+        >>> import pandeia_interface as jwst
+
+        >>> pando = jwst.Calculation(inst_name, mode)
+        >>> pando.set_scene(
+        >>>     sed_type='phoenix', sed_model='k2v',
+        >>>     norm_band='2mass,ks', norm_magnitude=7.459,
+        >>> )
+        >>> brightest_pixel_rate, full_well = pando.get_saturation_values(
+        >>>     disperser='grismr', filter='f444w',
+        >>>     readout='rapid', subarray='subgrism64',
+        >>> )
+        """
+        ngroup = 2
+        saturation_run = self.perform_calculation(
+            nint=1, ngroup=ngroup,
+            readout=readout, subarray=subarray,
+            disperser=disperser,
+            filter=filter,
+        )
+        pando_results = saturation_run['scalar']
+        brightest_pixel_rate = pando_results['brightest_pixel']
+        #sat_fraction = pando_results['fraction_saturation'] / ngroup
+
+        full_well = (
+            brightest_pixel_rate
+            * pando_results['saturation_time']
+            / pando_results['fraction_saturation']
+        )
+        return brightest_pixel_rate, full_well
 
 
 # This is the front-end
@@ -478,8 +544,9 @@ def load_sed_list(source):
     teff = np.array([model['teff'] for model in info.values()])
     log_g = np.array([model['log_g'] for model in info.values()])
     names = np.array([model['display_string'] for model in info.values()])
+    keys = np.array(list(info.keys()))
     tsort = np.argsort(teff)[::-1]
-    return names[tsort], teff[tsort], log_g[tsort]
+    return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
 
 
 def find_closest_sed(m_teff, m_logg, teff, logg):
