@@ -5,7 +5,7 @@ import pickle
 
 import numpy as np
 
-from shiny import ui, render, reactive, App
+from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 from htmltools import HTML
 
@@ -239,11 +239,13 @@ app_ui = ui.page_fluid(
                     id="disperser",
                     label="Disperser",
                     choices={},
+                    selected='',
                 ),
                 ui.input_select(
                     id="filter",
                     label="Filter",
                     choices={},
+                    selected='',
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
@@ -253,18 +255,20 @@ app_ui = ui.page_fluid(
                     id="subarray",
                     label="Subarray",
                     choices=[''],
+                    selected='',
                 ),
                 ui.input_select(
                     id="readout",
                     label="Readout pattern",
                     choices=[''],
+                    selected='',
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             # groups / integs
             ui.panel_well(
                 ui.input_numeric(
-                    "groups",
+                    id="groups",
                     label=cs.label_tooltip_button(
                         label='Groups per integration ',
                         tooltip_text='Click icon to estimate saturation level',
@@ -276,9 +280,9 @@ app_ui = ui.page_fluid(
                     min=2, max=100,
                 ),
                 ui.input_numeric(
-                    "integrations",
-                    "Integrations",
-                    1,
+                    id="integrations",
+                    label="Integrations",
+                    value=1,
                     min=1, max=100,
                 ),
                 ui.input_switch("switch", "Match obs. time", False),
@@ -382,9 +386,6 @@ app_ui = ui.page_fluid(
 
 
 def parse_depth_spectrum(file_path):
-    #root = '/Users/pato/Dropbox/IWF/proposals/2023_jwst_light_triad/simulations/'
-    #file = 'WASP80b_transmission_spectrum_v2.dat'
-    #file_path = root + file
     spectrum = np.loadtxt(file_path, unpack=True)
     # TBD: check valid format
     wl, depth = spectrum
@@ -399,23 +400,16 @@ def update_inst_select(input):
         for det in detectors
         if det.instrument == inst_name
     }
-    obs_types = [
-        'spec',
-        #'photo',
-        'acquisition',
-    ]
     choices = {}
-    if 'spec' in obs_types:
-        choices['Spectroscopy'] = modes
-    if 'photo' in obs_types:
-        choices['Photometry'] = {
-            val: val
-            for val in 'X Y'.split()
-        }
-    if 'acquisition' in obs_types or True:
-        choices['Target acquisition'] = {
-            'nircam_target_acq': 'Target Acquisition'
-        }
+    # TBD: parse by imaging / spectroscopy
+    choices['Spectroscopy'] = modes
+    #choices['Photometry'] = {
+    #    val: val
+    #    for val in 'X Y'.split()
+    #}
+    choices['Target acquisition'] = {
+        f'{inst_name}_target_acq': 'Target Acquisition'
+    }
 
     ui.update_select(
         'select_det',
@@ -566,21 +560,20 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_filters():
-        inst_name = input.inst_tab.get().lower()
-        if inst_name == 'miri':
-            filter_name = 'None'
-        else:
-            filter_name = input.filter.get().lower()
         # TBD: Eventually, I want to plot-code this by mode instead of inst
+        inst_name = req(input.inst_tab.get()).lower()
         passbands = filter_throughputs[inst_name]
         if inst_name in ['nirspec', 'niriss']:
-            subarray = input.subarray.get().lower()
+            subarray = req(input.subarray.get()).lower()
         else:
             subarray = list(filter_throughputs[inst_name].keys())[0]
         #print(f'\n{inst_name}  {subarray}  {filter_name}\n')
-        if subarray not in filter_throughputs[inst_name]:
-            print(f'\nGetting out: {subarray} / {filter_throughputs[inst_name].keys()}')
+        if inst_name is None or subarray not in filter_throughputs[inst_name]:
             return go.Figure()
+        if inst_name == 'miri':
+            filter_name = 'None'
+        else:
+            filter_name = req(input.filter.get()).lower()
         passbands = filter_throughputs[inst_name][subarray]
 
         visible = [None for _ in passbands.keys()]
@@ -733,7 +726,6 @@ def server(input, output, session):
     def choose_sed():
         #print(input.star_model())
         if 'auto' in input.star_model():
-            # find model
             try:
                 teff = float(input.teff())
             except ValueError:
@@ -742,13 +734,7 @@ def server(input, output, session):
                 logg = float(input.logg())
             except ValueError:
                 raise ValueError("Can't select an SED, I need a valid log(g)")
-            m_models, chosen_sed = get_auto_sed(input)
-            my_sed.set(chosen_sed)
-            return ui.p(
-                chosen_sed,
-                style='background:#EBEBEB',
-            )
-        elif input.star_model() in ['phoenix', 'kurucz']:
+        if input.star_model() in ['phoenix', 'kurucz']:
             m_models, chosen_sed = get_auto_sed(input)
             selected = chosen_sed
             return ui.input_select(
@@ -824,6 +810,7 @@ def server(input, output, session):
 
     @render.text
     def exp_time():
+        inst_name = input.inst_tab.get().lower()
         mode = input.select_det.get()
         detector = get_detector(mode=mode)
         subarray = input.subarray.get().lower()
@@ -832,7 +819,7 @@ def server(input, output, session):
         nint = input.integrations.get()
         #print(f'\n{subarray}  {readout}  {ngroup}  {nint}\n')
         exp_time = jwst.exposure_time(
-            detector, nint=nint, ngroup=ngroup,
+            inst_name, nint=nint, ngroup=ngroup,
             readout=readout, subarray=subarray,
         )
         pixel_rate = brightest_pix_rate.get()
