@@ -14,12 +14,30 @@ import plotly.graph_objects as go
 import faicons as fa
 
 import pandeia_interface as jwst
-import source_catalog as nea
+import source_catalog as cat
 import custom_shiny as cs
 
 
-# Preamble
-planets, hosts, teff, log_g, ks_mag, tr_dur = nea.load_nea_table()
+# Confirmed planets
+planets, hosts, teff, log_g, ks_mag, tr_dur = cat.load_nea_targets_table()
+# JWST targets
+jwst_hosts, jwst_aliases, missing = cat.load_trexolits_table()
+# TESS candidates
+pass
+
+transit_planets = []
+non_transiting = []
+jwst_targets = []
+for i,target in enumerate(planets):
+    if tr_dur[i] is None:
+        non_transiting.append(target)
+    else:
+        transit_planets.append(target)
+    if hosts[i] in jwst_hosts:
+        jwst_targets.append(target)
+        # TBD: some jwst_hosts are not (yet) confirmed planets
+
+
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
 k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
@@ -85,6 +103,9 @@ def filter_data_frame():
 
 filter_throughputs = filter_data_frame()
 
+nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
+trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
+
 
 # Placeholder
 ra = 315.02582008947
@@ -135,10 +156,31 @@ app_ui = ui.page_fluid(
         cs.custom_card(
             ui.card_header("Target", class_="bg-primary"),
             ui.panel_well(
+                ui.popover(
+                    ui.span(
+                        fa.icon_svg("gear"),
+                        style="position:absolute; top: 5px; right: 7px;",
+                    ),
+                    ui.input_checkbox_group(
+                        id="target_filter",
+                        label='',
+                        choices={
+                            "transit": "transiting",
+                            "jwst": "JWST targets",
+                            "tess": "TESS candidates",
+                            "non_transit": "non-transiting",
+                        },
+                        selected=['jwst', 'transit'],
+                    ),
+                    title='Filter targets',
+                    placement="right",
+                    id="targets_popover",
+                ),
+                ui.output_ui('target_label'),
                 ui.input_selectize(
-                    'target',
-                    'Known target?',
-                    planets,
+                    id='target',
+                    label='',
+                    choices=planets,
                     selected='WASP-80 b',
                     multiple=False,
                 ),
@@ -392,30 +434,6 @@ def parse_depth_spectrum(file_path):
     return wl, depth
 
 
-def update_inst_select(input):
-    inst_name = input.inst_tab.get()
-    print(f"You selected me: {inst_name}")
-    modes = {
-        det.name: det.label
-        for det in detectors
-        if det.instrument == inst_name
-    }
-    choices = {}
-    # TBD: parse by imaging / spectroscopy
-    choices['Spectroscopy'] = modes
-    #choices['Photometry'] = {
-    #    val: val
-    #    for val in 'X Y'.split()
-    #}
-    choices['Target acquisition'] = {
-        f'{inst_name}_target_acq': 'Target Acquisition'
-    }
-
-    ui.update_select(
-        'select_det',
-        choices=choices,
-    )
-
 def update_detector(input):
     detector = get_detector(mode=input.select_det.get())
     ui.update_select(
@@ -491,7 +509,27 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.inst_tab)
     def _():
-        update_inst_select(input)
+        inst_name = input.inst_tab.get()
+        print(f"You selected me: {inst_name}")
+        modes = {
+            det.name: det.label
+            for det in detectors
+            if det.instrument == inst_name
+        }
+        choices = {}
+        # TBD: parse by imaging / spectroscopy
+        choices['Spectroscopy'] = modes
+        #choices['Photometry'] = {
+        #    val: val
+        #    for val in 'X Y'.split()
+        #}
+        choices['Target acquisition'] = {
+            f'{inst_name}_target_acq': 'Target Acquisition'
+        }
+        ui.update_select(
+            'select_det',
+            choices=choices,
+        )
 
 
     @render.ui
@@ -711,6 +749,62 @@ def server(input, output, session):
 
 
     @reactive.Effect
+    @reactive.event(input.target_filter)
+    def _():
+        targets = []
+        if 'jwst' in input.target_filter.get():
+            new_targets = [p for p in jwst_targets if p not in targets]
+            targets += new_targets
+        if 'transit' in input.target_filter.get():
+            new_targets = [p for p in transit_planets if p not in targets]
+            targets += new_targets
+        if 'non_transit' in input.target_filter.get():
+            new_targets = [p for p in non_transiting if p not in targets]
+            targets += new_targets
+
+        # Preserve current target if possible:
+        current_target = input.target.get()
+        #print(f'Current target is {repr(current_target)}')
+        if current_target not in targets:
+            current_target = None
+
+        ui.update_selectize('target', choices=targets, selected=current_target)
+
+
+    @render.ui
+    @reactive.event(input.target)
+    def target_label():
+        if input.target.get() in jwst_targets:
+            trexolists_tooltip = ui.tooltip(
+                ui.tags.a(
+                    fa.icon_svg("circle-info", fill='goldenrod'),
+                    href=f'{trexolits_url}',
+                    target="_blank",
+                ),
+                "This target's host is on TrExoLiSTS",
+                placement='top',
+            )
+        else:
+            trexolists_tooltip = ui.tooltip(
+                fa.icon_svg("circle-info", fill='gray'),
+                'not a JWST target (yet)',
+                placement='top',
+            )
+        return ui.span(
+            'Known target? ',
+            ui.tooltip(
+                ui.tags.a(
+                    fa.icon_svg("circle-info", fill='black'),
+                    href=f'{nasa_url}/{input.target.get()}',
+                    target="_blank",
+                ),
+                'See this target on the NASA Exoplanet Archive',
+                placement='top',
+            ),
+            trexolists_tooltip,
+        )
+
+    @reactive.Effect
     @reactive.event(input.target)
     def _():
         if input.target() not in planets:
@@ -718,22 +812,20 @@ def server(input, output, session):
         index = planets.index(input.target())
         ui.update_text('teff', value=f'{teff[index]:.1f}')
         ui.update_text('logg', value=f'{log_g[index]:.2f}')
+        ui.update_select('magnitude_band', selected='Ks mag')
         ui.update_text('magnitude', value=f'{ks_mag[index]:.3f}')
+        tr_duration = tr_dur[index]
+        if tr_dur[index] is None:
+            tr_duration = ''
+        else:
+            tr_duration = f'{tr_duration:.3f}'
+        ui.update_text('t_dur', value=tr_duration)
 
 
     @render.ui
     @reactive.event(input.star_model, input.teff, input.logg)
     def choose_sed():
         #print(input.star_model())
-        if 'auto' in input.star_model():
-            try:
-                teff = float(input.teff())
-            except ValueError:
-                raise ValueError("Can't select an SED, I need a valid Teff")
-            try:
-                logg = float(input.logg())
-            except ValueError:
-                raise ValueError("Can't select an SED, I need a valid log(g)")
         if input.star_model() in ['phoenix', 'kurucz']:
             m_models, chosen_sed = get_auto_sed(input)
             selected = chosen_sed
@@ -751,6 +843,9 @@ def server(input, output, session):
                     style='background:#DDDDDD',
                     class_='mb-2 ps-2',
                 )
+        elif input.star_model() == 'custom':
+            # TBD: ui.input_select('uploaded_seds', '', choices=custom_seds)
+            pass
 
 
     @reactive.Effect
