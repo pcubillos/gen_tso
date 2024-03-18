@@ -7,49 +7,72 @@ __all__ = [
     'normalize_name',
 ]
 
-import multiprocessing as mp
 import pickle
-import re
-import urllib
-import warnings
 
 from astropy.io import ascii
 import numpy as np
-from astroquery.simbad import Simbad as simbad
 import requests
 
 
+# CGS constants:
+rsun = 69570000000.0
+rearth = 637810000.0
+au = 14959787070000.0
+G = 6.6743e-08
+msun = 1.9885e+33
+day = 86400.0
+
+
 def load_nea_targets_table():
-    with open('../data/nea_data.pickle', 'rb') as handle:
-        nea = pickle.load(handle)
+    """
+    Unpack star and planet properties from plain text file.
+    """
+    with open('../data/nea_data.txt', 'r') as f:
+        lines = f.readlines()
 
-    planets = [planet['pl_name'] for planet in nea]
-    hosts = [planet['hostname'] for planet in nea]
-    teff  = [planet['st_teff'] for planet in nea]
-    log_g = [planet['st_logg'] for planet in nea]
-    ks_mag = [planet['sy_kmag'] for planet in nea]
-    tr_dur = [planet['pl_trandur'] for planet in nea]
+    planets = []
+    hosts = []
+    ra = []
+    dec = []
+    ks_mag = []
+    teff = []
+    log_g = []
+    tr_dur = []
+    rprs = []
+    teq = []
 
-    return planets, hosts, teff, log_g, ks_mag, tr_dur
+    for line in lines:
+        if line.startswith('>'):
+            name_len = line.find(':')
+            host = line[1:name_len]
+            st_ra, st_dec, st_mag, st_teff, st_logg = line[name_len+1:].split()
+        elif line.startswith(' '):
+            name_len = line.find(':')
+            planet = line[1:name_len].strip()
+            pl_tr_dur, pl_rprs, pl_teq = line[name_len+1:].split()
+
+            planets.append(planet)
+            hosts.append(host)
+            ra.append(float(st_ra))
+            dec.append(float(st_dec))
+            ks_mag.append(to_float(st_mag))
+            teff.append(to_float(st_teff))
+            log_g.append(to_float(st_logg))
+            tr_dur.append(to_float(pl_tr_dur))
+            rprs.append(to_float(pl_rprs))
+            teq.append(to_float(pl_teq))
+
+    return planets, hosts, ra, dec, ks_mag, teff, log_g, tr_dur, rprs, teq
 
 
-def load_nea_tess_table():
-    with open('../data/nea_tess_candidates.pickle', 'rb') as handle:
-        tess = pickle.load(handle)
-    return tess
-
-
-def load_trexolits_table():
+def load_trexolits_table(all_aliases=False):
     """
     Get the list of targets in trexolists (as named at the NEA).
     A dictionary of name aliases contains alternative names found.
-
     >>> targets, aliases, missing = load_trexolits_table()
     """
     nea_data = load_nea_targets_table()
     hosts = nea_data[1]
-    with open('../data/nea_all_aliases.pickle', 'rb') as handle:
-        aliases = pickle.load(handle)
 
     trexolist_data = ascii.read(
         '../data/trexolists.csv',
@@ -63,10 +86,18 @@ def load_trexolits_table():
         norm_targets.append(name)
     norm_targets = np.unique(norm_targets)
 
-    trix = norm_targets[np.in1d(norm_targets, hosts, invert=True)]
+    # jwst targets that are in nea list:
     jwst_targets = list(norm_targets[np.in1d(norm_targets, hosts)])
+
+    # Missing targets, might be because of name aliases
+    if all_aliases:
+        with open('../data/nea_all_aliases.pickle', 'rb') as handle:
+            aliases = pickle.load(handle)
+    else:
+        aliases = load_aliases(as_hosts=True)
     alias = {}
     missing = []
+    trix = norm_targets[np.in1d(norm_targets, hosts, invert=True)]
     for target in trix:
         if target in aliases:
             alias[target] = aliases[target]
@@ -120,15 +151,54 @@ def normalize_name(target):
     return name
 
 
+def load_aliases(as_hosts=False):
+    """
+    Load file with known aliases of NEA targets.
+    """
+    with open('../data/nea_aliases.txt', 'r') as f:
+        lines = f.readlines()
+
+    def is_letter(name):
+        return name[-1].islower() and name[-2] == ' '
+
+    def parse(name):
+        if not as_hosts:
+            return name
+        if is_letter(name):
+            return name[:-2]
+        end = name.rindex('.')
+        return name[:end]
+
+    aliases = {}
+    for line in lines:
+        loc = line.index(':')
+        name = parse(line[:loc])
+        for alias in line[loc+1:].strip().split(','):
+            aliases[parse(alias)] = name
+    return aliases
+
+
+def to_float(value):
+    """
+    Cast string to None or float type.
+    """
+    if value == 'None':
+        return None
+    return float(value)
+
+
 def fetch_nea_targets_database():
     """
     Fetch (web request) the entire NASA Exoplanet Archive database
 
-    absolutely need:
+    I absolutely need:
     - st_teff (stellar_model, tsm, esm)
     - st_logg (stellar_model)
     - sy_kmag (stellar_model, tsm, esm)
-    - st_rad (tsm, esm)   or [pl_ratror]
+    - pl_trandur (n_integrations, obs_dur)
+
+    I may want to have
+    - st_rad (tsm, esm) or [pl_ratror]
     - pl_rade (tsm, esm)
     - pl_masse (tsm)
     - pl_orbsmax (tsm, esm)  or [pl_ratdor] or [pl_orbper and st_mass]
@@ -159,7 +229,7 @@ def fetch_nea_targets_database():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+hostname,pl_name,default_flag,sy_kmag,sy_pnum,disc_facility,"
-        "st_teff,st_logg,st_met,st_rad,st_mass,st_age,"
+        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,"
         "pl_trandur,pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_ratdor,pl_ratror+"
         "from+ps+"
         "&format=json"
@@ -170,7 +240,6 @@ def fetch_nea_targets_database():
     resp = r.json()
     host_entries = [entry['hostname'] for entry in resp]
     hosts, counts = np.unique(host_entries, return_counts=True)
-    nstars = len(hosts)
 
     planet_entries = np.array([entry['pl_name'] for entry in resp])
     planet_names, idx, counts = np.unique(
@@ -179,202 +248,125 @@ def fetch_nea_targets_database():
         return_counts=True,
     )
     nplanets = len(planet_names)
-    print(nstars, nplanets)
 
-    # Make list of unique entries (don't worry yet for the howto)
+    # Make list of unique entries
     planets = [resp[i].copy() for i in idx]
     for i in range(nplanets):
         planet = planets[i]
         name = planet['pl_name']
         idx_duplicates = np.where(planet_entries==name)[0]
+        # default_flag takes priority
         def_flags = [resp[j]['default_flag'] for j in idx_duplicates]
-        if np.any(def_flags):
-            j = idx_duplicates[def_flags.index(1)]
-            planets[i] = resp[j].copy()
-        for j in idx_duplicates:
+        j = idx_duplicates[def_flags.index(1)]
+        planets[i] = complete_entry(resp[j].copy())
+        dups = [resp[k] for k in idx_duplicates if k!=j]
+        rank = rank_planets(dups)
+        # Fill the gaps if any
+        for j in rank:
+            entry = complete_entry(dups[j])
             for field in planet.keys():
-                if planets[i][field] is None and resp[j][field] is not None:
-                    #print(name, field, resp[j][field])
-                    planets[i][field] = resp[j][field]
-
-    transiting = [planet['pl_trandur'] is not None for planet in planets]
-    ntransit = np.sum(transiting)
-    print(nstars, nplanets, ntransit)
+                if planets[i][field] is None and entry[field] is not None:
+                    planets[i][field] = entry[field]
+        planets[i] = complete_entry(planets[i])
 
     with open('data/nea_data.pickle', 'wb') as handle:
         pickle.dump(planets, handle, protocol=pickle.HIGHEST_PROTOCOL)
     # TBD: and make a copy with current date
 
+    def as_str(val, fmt):
+        if val is None:
+            return None
+        return f'{val:{fmt}}'
 
-def fetch_simbad_aliases(target, verbose=True):
+    # Save as plain text:
+    with open('nea_data.txt', 'w') as f:
+        host = ''
+        for entry in planets:
+            ra = entry['ra']
+            dec = entry['dec']
+            ks_mag = entry['sy_kmag']
+            planet = entry['pl_name']
+            tr_dur = entry['pl_trandur']
+            teff = as_str(entry['st_teff'], '.1f')
+            logg = as_str(entry['st_logg'], '.3f')
+            rprs = as_str(entry['pl_ratror'], '.3f')
+            teq = t_eq(entry['st_teff'], entry['st_rad'], entry['pl_orbsmax'])
+            teq = as_str(teq, '.1f')
+
+            if entry['hostname'] != host:
+                host = entry['hostname']
+                f.write(f">{host}: {ra} {dec} {ks_mag} {teff} {logg}\n")
+            f.write(f" {planet}: {tr_dur} {rprs} {teq}\n")
+
+
+def t_eq(tstar, rstar, sma, f=0.25, A=0.0):
+    if tstar is None or rstar is None or sma is None:
+        return None
+    return tstar * np.sqrt(rstar*rsun/(sma*au)) *(f*(1-A))**0.25
+
+
+def rank_planets(entries):
     """
-    Fetch target aliases as known by Simbad.
-    Also get the target Ks magnitude.
+    Rank entries with the most data
     """
-    simbad.reset_votable_fields()
-    simbad.remove_votable_fields('coordinates')
-    simbad.add_votable_fields("otype", "otypes", "ids")
-    simbad.add_votable_fields("flux(K)")
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        simbad_info = simbad.query_object(target)
-    if simbad_info is None:
-        if verbose:
-            print(f'Simbad target {repr(target)} not found')
-        return [], None
-
-    object_type = simbad_info['OTYPE'].value.data[0]
-    if 'Planet' in object_type:
-        if target[-1].isalpha():
-            host = target[:-1]
-        elif '.' in target:
-            end = target.rindex('.')
-            host = target[:end]
-        else:
-            target_id = simbad_info['MAIN_ID'].value.data[0]
-            print(f'Wait, what?:  {repr(target)}  {repr(target_id)}')
-            return [], None
-        # go after star
-        simbad_info = simbad.query_object(host)
-        if simbad_info is None:
-            if verbose:
-                print(f'Simbad host {repr(host)} not found')
-            return [], None
-
-    host_info = simbad_info['IDS'].value.data[0]
-    host_alias = host_info.split('|')
-    kmag = simbad_info['FLUX_K'].value.data[0]
-
-    return host_alias, kmag
-
-
-def fetch_nea_aliases(target):
-    """
-    Fetch target aliases as known by https://exoplanetarchive.ipac.caltech.edu/
-    This one is quite slow, it would be great if one could do a batch search.
-    """
-    query = urllib.parse.quote(target)
-    r = requests.get(
-        'https://exoplanetarchive.ipac.caltech.edu/cgi-bin/Lookup/'
-        f'nph-aliaslookup.py?objname={query}'
-    )
-    resp = r.json()
-
-    aliases = {}
-    star_set = resp['system']['objects']['stellar_set']['stars']
-    for star in star_set.keys():
-        if 'is_host' not in star_set[star]:
-            continue
-        for alias in star_set[star]['alias_set']['aliases']:
-            aliases[alias] = star
-        # Do not fetch Simbad aliases here because too many requests
-        # break the code
-
-    planet_set = resp['system']['objects']['planet_set']['planets']
-    for planet in planet_set.keys():
-        for alias in planet_set[planet]['alias_set']['aliases']:
-            aliases[alias] = planet
-    return aliases
-
-
-def fetch_all_aliases():
-    """
-    Yes, all of them, one by one. This will take a while to run.
-    """
-    nea_data = load_nea_targets_table()
-    tess = load_nea_tess_table()
-    hosts = np.unique(nea_data[1])
-    nhosts = len(hosts)
-
-    aliases = {}
-    chunksize = 24
-    nchunks = nhosts // chunksize
-    k = 0
-    for k in range(k, nchunks+1):
-        first = k*chunksize
-        last = np.clip((k+1) * chunksize, 0, nhosts)
-        with mp.get_context('fork').Pool(8) as pool:
-            new_aliases = pool.map(fetch_nea_aliases, hosts[first:last])
-
-        for new_alias in new_aliases:
-            aliases.update(new_alias)
-        print(f'{last} / {nhosts}')
-
-    with open('data/nea_all_aliases.pickle', 'wb') as handle:
-        pickle.dump(aliases, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    # Add TESS candidates
-    candidates = []
-    for candidate in tess:
-        keeper = (
-            candidate['tfop'] in ['PC', 'KP', 'APC']
-            #or (candidate['tfop']=='' and candidate['sy_kmag'] is not None)
+    points = [
+        (
+            (entry['st_teff'] is None) +
+            (entry['st_logg'] is None) +
+            (entry['st_met'] is None) +
+            (entry['pl_trandur'] is None) +
+            (entry['pl_rade'] is None) +
+            (entry['pl_orbsmax'] is None and entry['pl_ratdor'] is None) +
+            (entry['st_rad'] is None and entry['pl_ratror'] is None)
         )
-        if keeper:
-            candidates.append(candidate)
-    tess_hosts = [target['hostname'] for target in candidates]
-    toi_hosts = [
-        host for host in tess_hosts
-        if host not in aliases
+        for entry in entries
     ]
-    nhosts = len(toi_hosts)
-    chunksize = 24
-    nchunks = nhosts // chunksize
-    k = 0
-    for k in range(k, nchunks+1):
-        first = k*chunksize
-        last = np.clip((k+1) * chunksize, 0, nhosts)
-        with mp.get_context('fork').Pool(8) as pool:
-            new_aliases = pool.map(fetch_nea_aliases, toi_hosts[first:last])
+    rank = np.argsort(np.array(points))
+    return rank
 
-        for new_alias in new_aliases:
-            aliases.update(new_alias)
-        print(f'{last} / {nhosts}')
 
-    with open('data/nea_all_aliases.pickle', 'wb') as handle:
-        pickle.dump(aliases, handle, protocol=pickle.HIGHEST_PROTOCOL)
+def complete_entry(entry):
+    entry['pl_rade'], entry['st_rad'], entry['pl_ratror'] = solve_rp_rs(
+        entry['pl_rade'], entry['st_rad'], entry['pl_ratror'],
+    )
+    entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'] = solve_a_rs(
+        entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'],
+    )
+    entry['pl_orbper'], entry['pl_orbsmax'] = solve_period_sma(
+        entry['pl_orbper'], entry['pl_orbsmax'], entry['st_mass']
+    )
+    return entry
 
-    #with open('data/nea_all_aliases.pickle', 'rb') as handle:
-    #    aliases = pickle.load(handle)
 
-    # Now contrast against Simbad aliases
-    hosts = np.unique(list(nea_data[1]) + toi_hosts)
-    nea_names = np.unique(list(aliases.values()))
-    for target in hosts:
-        s_aliases, kmag = fetch_simbad_aliases(target)
-        new_aliases = []
-        for alias in s_aliases:
-            alias = re.sub(r'\s+', ' ', alias)
-            is_new = (
-                alias.startswith('G ') or
-                alias.startswith('GJ ') or
-                alias.startswith('CD-') or
-                alias.startswith('Wolf ')
-            )
-            if is_new and alias not in aliases:
-                new_aliases.append(alias)
-        if len(new_aliases) == 0:
-            continue
-        print(f'Target {repr(target)} has new aliases:  {new_aliases}')
-        # Add the star aliases
-        for alias in new_aliases:
-            aliases[alias] = target
-            print(f'    {repr(alias)}: {repr(target)}')
+def solve_period_sma(period, sma, mstar):
+    if mstar is None or mstar == 0:
+        return period, sma
+    if period is None and sma is not None:
+        period = (
+            2.0*np.pi * np.sqrt((sma*au)**3.0/G/(mstar*msun)) / day
+        )
+    elif sma is None and period is not None:
+        sma = (
+            ((period*day/(2.0*np.pi))**2.0*G*mstar*msun)**(1/3)/au
+        )
+    return period, sma
 
-            # Add the planet aliases
-            for name in nea_names:
-                is_child = (
-                    name not in hosts and 
-                    name.startswith(target) and
-                    len(name) > len(target) and
-                    name[len(target)] in ['.', ' ']
-                )
-                if is_child:
-                    letter = name[len(target):]
-                    aliases[alias+letter] = name
-                    print(f'    {repr(alias+letter)}: {repr(name)}')
 
-    with open('data/nea_all_aliases.pickle', 'wb') as handle:
-        pickle.dump(aliases, handle, protocol=pickle.HIGHEST_PROTOCOL)
+def solve_rp_rs(rp, rs, rprs):
+    if rp is None and rs is not None and rprs is not None:
+        rp = rprs * (rs*rsun) / rearth
+    if rs is None and rp is not None and rprs is not None:
+        rs = rp*rearth / rprs / rsun
+    if rprs is None and rp is not None and rs is not None:
+        rprs = rp*rearth / (rs*rsun)
+    return rp, rs, rprs
+
+def solve_a_rs(a, rs, ars):
+    if a is None and rs is not None and ars is not None:
+        a = ars * (rs*rsun) / au
+    if rs is None and a is not None and ars is not None:
+        rs = a*au / ars / rsun
+    if ars is None and a is not None and rs is not None:
+        ars = a*au / (rs*rsun)
+    return a, rs, ars
 
