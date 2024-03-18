@@ -19,11 +19,21 @@ import custom_shiny as cs
 
 
 # Confirmed planets
-planets, hosts, teff, log_g, ks_mag, tr_dur = cat.load_nea_targets_table()
+nea_data = cat.load_nea_targets_table()
+planets = nea_data[0]
+hosts = nea_data[1]
+ra = nea_data[2]
+dec  = nea_data[3]
+ks_mag = nea_data[4]
+teff = nea_data[5]
+log_g = nea_data[6]
+tr_dur = nea_data[7]
+rprs = nea_data[8]
+teq = nea_data[9]
+
 # JWST targets
 jwst_hosts, jwst_aliases, missing = cat.load_trexolits_table()
-# TESS candidates
-pass
+# TESS candidates TBD
 
 transit_planets = []
 non_transiting = []
@@ -319,13 +329,13 @@ app_ui = ui.page_fluid(
                         button_id='calc_saturation',
                     ),
                     value=2,
-                    min=2, max=100,
+                    min=2, max=10000,
                 ),
                 ui.input_numeric(
                     id="integrations",
                     label="Integrations",
                     value=1,
-                    min=1, max=100,
+                    min=1, max=10000,
                 ),
                 ui.input_switch("switch", "Match obs. time", False),
                 class_="px-2 pt-2 pb-0 m-0",
@@ -918,15 +928,17 @@ def server(input, output, session):
             readout=readout, subarray=subarray,
         )
         pixel_rate = brightest_pix_rate.get()
+        exposure_hours = exp_time / 3600.0
+        exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
         if pixel_rate is None:
-            return f'Exposure time: {exp_time:.2f} s'
+            return exp_text
 
         sat_time = jwst.saturation_time(detector, ngroup, readout, subarray)
         sat_fraction = pixel_rate * sat_time / full_well.get()
         ngroup_80 = int(0.8*ngroup/sat_fraction)
         ngroup_max = int(ngroup/sat_fraction)
         return (
-            f'Exposure time: {exp_time:.2f} s\n'
+            f'{exp_text}\n'
             f'Max. fraction of saturation: {100.0*sat_fraction:.1f}%\n'
             f'ngroup below 80% and 100% saturation: {ngroup_80:d} / {ngroup_max:d}'
         )
