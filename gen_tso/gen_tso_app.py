@@ -143,15 +143,15 @@ app_ui = ui.page_fluid(
     #    [0]: https://shiny.posit.co/py/api/core
     #    """),
 
-    # Instrument / detector:
+    # Instrument and detector modes:
     ui.layout_columns(
         cs.navset_card_tab_jwst(
             inst_names,
-            id="inst_tab",
+            id="select_instrument",
             selected='NIRCam',
             header="Select an instrument and detector",
             footer=ui.input_select(
-                "select_det",
+                "select_mode",
                 "",
                 choices = {},
                 width='400px'
@@ -235,7 +235,7 @@ app_ui = ui.page_fluid(
                     fillable=True,
                 ),
                 ui.input_select(
-                    id="star_model",
+                    id="sed_type",
                     label=ui.output_ui('stellar_sed_label'),
                     choices=[
                         "phoenix",
@@ -444,37 +444,13 @@ def parse_depth_spectrum(file_path):
     return wl, depth
 
 
-def update_detector(input):
-    detector = get_detector(mode=input.select_det.get())
-    ui.update_select(
-        'disperser',
-        label=detector.disperser_title,
-        choices=detector.dispersers,
-        selected=detector.disperser_default,
-    )
-    ui.update_select(
-        'filter',
-        label=detector.filter_title,
-        choices=detector.filters,
-        selected=detector.filter_default,
-    )
-    ui.update_select(
-        'subarray',
-        choices=detector.subarrays,
-        selected=detector.subarray_default,
-    )
-    ui.update_select(
-        'readout',
-        choices=detector.readouts,
-        selected=detector.readout_default,
-    )
-
-
 def get_auto_sed(input):
-    if 'kurucz' in input.star_model():
+    sed_type = input.sed_type()
+    if sed_type == 'kurucz':
         m_models, m_teff, m_logg = k_models, k_teff, k_logg
-    elif 'phoenix' in input.star_model():
+    elif sed_type == 'phoenix':
         m_models, m_teff, m_logg = p_models, p_teff, p_logg
+
     try:
         teff = float(input.teff())
         logg = float(input.logg())
@@ -486,11 +462,11 @@ def get_auto_sed(input):
 
 
 def parse_sed(input):
-    sed_type = input.star_model()
+    sed_type = input.sed_type()
     if sed_type in ['phoenix', 'kurucz']:
         sed_model = sed_dict[sed_type][input.sed()]
     elif sed_type == 'blackbody':
-        sed_model = input.teff.get()
+        sed_model = float(input.teff.get())
     elif sed_type == 'custom':
         pass
 
@@ -517,33 +493,167 @@ def server(input, output, session):
     }
     spectra = {}
 
+    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    # Instrument and detector modes
     @reactive.Effect
-    @reactive.event(input.inst_tab)
+    @reactive.event(input.select_instrument)
     def _():
-        inst_name = input.inst_tab.get()
+        inst_name = input.select_instrument.get()
         print(f"You selected me: {inst_name}")
-        modes = {
+        spec_modes = {
             det.name: det.label
             for det in detectors
             if det.instrument == inst_name
         }
         choices = {}
-        # TBD: parse by imaging / spectroscopy
-        choices['Spectroscopy'] = modes
-        #choices['Photometry'] = {
-        #    val: val
-        #    for val in 'X Y'.split()
-        #}
+        choices['Spectroscopy'] = spec_modes
+        #choices['Photometry'] = photo_modes  TBD
         choices['Target acquisition'] = {
             f'{inst_name}_target_acq': 'Target Acquisition'
         }
         ui.update_select(
-            'select_det',
+            'select_mode',
             choices=choices,
         )
 
 
+    @reactive.Effect
+    @reactive.event(input.select_mode)
+    def _():
+        detector = get_detector(mode=input.select_mode.get())
+        ui.update_select(
+            'disperser',
+            label=detector.disperser_title,
+            choices=detector.dispersers,
+            selected=detector.disperser_default,
+        )
+        ui.update_select(
+            'filter',
+            label=detector.filter_title,
+            choices=detector.filters,
+            selected=detector.filter_default,
+        )
+        ui.update_select(
+            'subarray',
+            choices=detector.subarrays,
+            selected=detector.subarray_default,
+        )
+        ui.update_select(
+            'readout',
+            choices=detector.readouts,
+            selected=detector.readout_default,
+        )
+        detector = get_detector(mode=input.select_mode.get())
+        ui.update_radio_buttons(
+            "filter_filter",
+            choices=[detector.instrument, 'all'],
+        )
+
+    @reactive.Effect
+    @reactive.event(input.run_pandeia)
+    def _():
+        print("You clicked my button!")
+        print(f'My favorite SED is: {my_sed.get()}')
+
+    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    # Target
+    @reactive.Effect
+    @reactive.event(input.target_filter)
+    def _():
+        targets = []
+        if 'jwst' in input.target_filter.get():
+            targets += [p for p in jwst_targets if p not in targets]
+            targets += [p for p in jwst_aliases if p not in targets]
+        if 'transit' in input.target_filter.get():
+            targets += [p for p in transit_planets if p not in targets]
+            targets += [p for p in transit_aliases if p not in targets]
+        if 'non_transit' in input.target_filter.get():
+            targets += [p for p in non_transiting if p not in targets]
+            targets += [p for p in non_transiting_aliases if p not in targets]
+
+        # Preserve current target if possible:
+        current_target = input.target.get()
+        if current_target not in targets:
+            current_target = None
+        ui.update_selectize('target', choices=targets, selected=current_target)
+
+
     @render.ui
+    @reactive.event(input.target)
+    def target_label():
+        target_name = input.target.get()
+        if target_name not in aka:
+            aka_tooltip = None
+        else:
+            aliases_text = ', '.join(aka[target_name])
+            aka_tooltip = ui.tooltip(
+                fa.icon_svg("circle-info", fill='cornflowerblue'),
+                f"Also known as: {aliases_text}",
+                placement='top',
+            )
+
+        if target_name in jwst_targets:
+            trexolists_tooltip = ui.tooltip(
+                ui.tags.a(
+                    fa.icon_svg("circle-info", fill='goldenrod'),
+                    href=f'{trexolits_url}',
+                    target="_blank",
+                ),
+                "This target's host is on TrExoLiSTS",
+                placement='top',
+            )
+        else:
+            trexolists_tooltip = ui.tooltip(
+                fa.icon_svg("circle-info", fill='gray'),
+                'not a JWST target (yet)',
+                placement='top',
+            )
+        return ui.span(
+            'Known target? ',
+            ui.tooltip(
+                ui.tags.a(
+                    fa.icon_svg("circle-info", fill='black'),
+                    href=f'{nasa_url}/{input.target.get()}',
+                    target="_blank",
+                ),
+                'See this target on the NASA Exoplanet Archive',
+                placement='top',
+            ),
+            trexolists_tooltip,
+            aka_tooltip,
+        )
+
+    @reactive.Effect
+    @reactive.event(input.target)
+    def _():
+        target_name = input.target.get()
+        if target_name in aliases:
+            ui.update_selectize('target', selected=aliases[target_name])
+            return
+
+        if target_name not in planets:
+            return
+
+        index = planets.index(target_name)
+        ui.update_text('teff', value=f'{teff[index]:.1f}')
+        ui.update_text('logg', value=f'{log_g[index]:.2f}')
+        ui.update_select('magnitude_band', selected='Ks mag')
+        ui.update_text('magnitude', value=f'{ks_mag[index]:.3f}')
+        t_dur = tr_dur[index]
+        tr_duration = '' if t_dur is None else f'{t_dur:.3f}'
+        ui.update_text('t_dur', value=tr_duration)
+
+        index = planets.index(target_name)
+        ra_planet = ra[index]
+        dec_planet = dec[index]
+        sky_view_src.set(
+            f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
+            '&fov=0.2&sci=true'
+        )
+
+
+    @render.ui
+    @reactive.event(bookmarked_sed)
     def stellar_sed_label():
         if bookmarked_sed.get():
             sed_icon = fa.icon_svg("star", style='solid', fill='gold')
@@ -570,12 +680,91 @@ def server(input, output, session):
             print(f'This is bookmkarked: {bookmarked_sed.get()}')
             #ui.notification_show("Message!", duration=2)
 
+    @render.ui
+    @reactive.event(input.sed_type, input.teff, input.logg)
+    def choose_sed():
+        sed_type = input.sed_type.get()
+        if sed_type in ['phoenix', 'kurucz']:
+            m_models, chosen_sed = get_auto_sed(input)
+            selected = chosen_sed
+            return ui.input_select(
+                id="sed",
+                label="",
+                choices=list(m_models),
+                selected=selected,
+            )
+        elif sed_type == 'blackbody':
+            if input.teff.get() != '':
+                teff = float(input.teff.get())
+                return ui.p(
+                    f' Blackbody (Teff={teff:.0f} K)',
+                    style='background:#DDDDDD',
+                    class_='mb-2 ps-2',
+                )
+        elif sed_type == 'custom':
+            # TBD: ui.input_select('uploaded_seds', '', choices=custom_seds)
+            pass
 
+    @reactive.Effect
+    @reactive.event(input.sed)
+    def _():
+        my_sed.set(input.sed())
+        print(f'Choose an SED! ({input.sed()})')
+
+
+    @reactive.effect
+    @reactive.event(input.geometry)
+    def _():
+        obs_geometry = input.geometry.get()
+        ui.update_select(
+            id="planet_model",
+            label=f"{obs_geometry} depth spectrum:",
+            choices=spectrum_choices[obs_geometry.lower()],
+        )
+
+    @render.text
+    @reactive.event(input.geometry)
+    def transit_dur_label():
+        obs_geometry = input.geometry.get()
+        return f"{obs_geometry[0]}_dur (h):"
+
+    @render.text
+    @reactive.event(input.geometry)
+    def transit_depth_label():
+        obs_geometry = input.geometry.get()
+        return f"{obs_geometry} depth"
+
+    @reactive.effect
+    @reactive.event(input.upload_depth)
+    def _():
+        new_model = input.upload_depth()
+        if not new_model:
+            print('No new model!')
+            return
+
+        current_model = input.planet_model.get()
+        obs_geometry = input.geometry.get()
+        depth_file = new_model[0]['name']
+        # TBD: remove file extension?
+        spectrum_choices[obs_geometry.lower()].append(depth_file)
+        wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
+        spectra[depth_file] = {'wl': wl, 'depth': depth}
+
+        ui.update_select(
+            id="planet_model",
+            label=f"{obs_geometry} depth spectrum:",
+            choices=spectrum_choices[obs_geometry.lower()],
+            selected=current_model,
+        )
+
+
+    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    # Detector setup
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def _():
-        inst_name = input.inst_tab.get().lower()
-        mode = input.select_det.get()
+        inst_name = input.select_instrument.get().lower()
+        mode = input.select_mode.get()
         filter = input.filter.get().lower()
         subarray = input.subarray.get().lower()
         readout = input.readout.get().lower()
@@ -597,20 +786,13 @@ def server(input, output, session):
         full_well.set(fullwell)
 
 
-    @reactive.Effect
-    @reactive.event(input.select_det)
-    def _():
-        update_detector(input)
-        detector = get_detector(mode=input.select_det.get())
-        ui.update_radio_buttons(
-            "filter_filter",
-            choices=[detector.instrument, 'all'],
-        )
 
+    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    # Viewer
     @render_plotly
     def plotly_filters():
         # TBD: Eventually, I want to plot-code this by mode instead of inst
-        inst_name = req(input.inst_tab.get()).lower()
+        inst_name = req(input.select_instrument.get()).lower()
         passbands = filter_throughputs[inst_name]
         if inst_name in ['nirspec', 'niriss']:
             subarray = req(input.subarray.get()).lower()
@@ -691,25 +873,6 @@ def server(input, output, session):
         return fig
 
 
-    @reactive.Effect
-    @reactive.event(input.target)
-    def _():
-        target_name = input.target.get()
-        if target_name in aliases:
-            ui.update_selectize('target', selected=aliases[target_name])
-            return
-
-        if target_name not in planets:
-            return
-
-        index = planets.index(target_name)
-        ra_planet = ra[index]
-        dec_planet = dec[index]
-        sky_view_src.set(
-            f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
-            '&fov=0.2&sci=true'
-        )
-
     @render.ui
     @reactive.event(sky_view_src)
     def esasky_card():
@@ -728,7 +891,6 @@ def server(input, output, session):
             full_screen=True,
             height='350px',
         )
-
 
     @render_plotly
     def plotly_sed():
@@ -798,177 +960,12 @@ def server(input, output, session):
         return fig
 
 
-    @reactive.Effect
-    @reactive.event(input.target_filter)
-    def _():
-        targets = []
-        if 'jwst' in input.target_filter.get():
-            targets += [p for p in jwst_targets if p not in targets]
-            targets += [p for p in jwst_aliases if p not in targets]
-        if 'transit' in input.target_filter.get():
-            targets += [p for p in transit_planets if p not in targets]
-            targets += [p for p in transit_aliases if p not in targets]
-        if 'non_transit' in input.target_filter.get():
-            targets += [p for p in non_transiting if p not in targets]
-            targets += [p for p in non_transiting_aliases if p not in targets]
-
-        # Preserve current target if possible:
-        current_target = input.target.get()
-        #print(f'Current target is {repr(current_target)}')
-        if current_target not in targets:
-            current_target = None
-
-        ui.update_selectize('target', choices=targets, selected=current_target)
-
-
-    @render.ui
-    @reactive.event(input.target)
-    def target_label():
-        target_name = input.target.get()
-        if target_name not in aka:
-            aka_tooltip = None
-        else:
-            aliases_text = ', '.join(aka[target_name])
-            aka_tooltip = ui.tooltip(
-                fa.icon_svg("circle-info", fill='cornflowerblue'),
-                f"Also known as: {aliases_text}",
-                placement='top',
-            )
-
-        if target_name in jwst_targets:
-            trexolists_tooltip = ui.tooltip(
-                ui.tags.a(
-                    fa.icon_svg("circle-info", fill='goldenrod'),
-                    href=f'{trexolits_url}',
-                    target="_blank",
-                ),
-                "This target's host is on TrExoLiSTS",
-                placement='top',
-            )
-        else:
-            trexolists_tooltip = ui.tooltip(
-                fa.icon_svg("circle-info", fill='gray'),
-                'not a JWST target (yet)',
-                placement='top',
-            )
-        return ui.span(
-            'Known target? ',
-            ui.tooltip(
-                ui.tags.a(
-                    fa.icon_svg("circle-info", fill='black'),
-                    href=f'{nasa_url}/{input.target.get()}',
-                    target="_blank",
-                ),
-                'See this target on the NASA Exoplanet Archive',
-                placement='top',
-            ),
-            trexolists_tooltip,
-            aka_tooltip,
-        )
-
-    @reactive.Effect
-    @reactive.event(input.target)
-    def _():
-        if input.target() not in planets:
-            return
-        index = planets.index(input.target())
-        ui.update_text('teff', value=f'{teff[index]:.1f}')
-        ui.update_text('logg', value=f'{log_g[index]:.2f}')
-        ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{ks_mag[index]:.3f}')
-        tr_duration = tr_dur[index]
-        if tr_dur[index] is None:
-            tr_duration = ''
-        else:
-            tr_duration = f'{tr_duration:.3f}'
-        ui.update_text('t_dur', value=tr_duration)
-
-
-    @render.ui
-    @reactive.event(input.star_model, input.teff, input.logg)
-    def choose_sed():
-        #print(input.star_model())
-        if input.star_model() in ['phoenix', 'kurucz']:
-            m_models, chosen_sed = get_auto_sed(input)
-            selected = chosen_sed
-            return ui.input_select(
-                id="sed",
-                label="",
-                choices=list(m_models),
-                selected=selected,
-            )
-        elif input.star_model() == 'blackbody':
-            if input.teff.get() != '':
-                teff = float(input.teff.get())
-                return ui.p(
-                    f' Blackbody (Teff={teff:.0f} K)',
-                    style='background:#DDDDDD',
-                    class_='mb-2 ps-2',
-                )
-        elif input.star_model() == 'custom':
-            # TBD: ui.input_select('uploaded_seds', '', choices=custom_seds)
-            pass
-
-
-    @reactive.Effect
-    @reactive.event(input.sed)
-    def _():
-        my_sed.set(input.sed())
-        print(f'Choose an SED! ({input.sed()})')
-
-
-    @reactive.effect
-    @reactive.event(input.geometry)
-    def _():
-        obs_geometry = input.geometry.get()
-        ui.update_select(
-            id="planet_model",
-            label=f"{obs_geometry} depth spectrum:",
-            choices=spectrum_choices[obs_geometry.lower()],
-        )
-
-
-    @reactive.effect
-    @reactive.event(input.upload_depth)
-    def _():
-        new_model = input.upload_depth()
-        if not new_model:
-            print('No new model!')
-            return
-
-        current_model = input.planet_model.get()
-        obs_geometry = input.geometry.get()
-        depth_file = new_model[0]['name']
-        # TBD: remove file extension?
-        spectrum_choices[obs_geometry.lower()].append(depth_file)
-        #print(repr(current_model))
-        #print(depth_file)
-        #print(new_model)
-        wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
-        spectra[depth_file] = {'wl': wl, 'depth': depth}
-
-        ui.update_select(
-            id="planet_model",
-            label=f"{obs_geometry} depth spectrum:",
-            choices=spectrum_choices[obs_geometry.lower()],
-            selected=current_model,
-        )
-
-
-    @render.text
-    def transit_dur_label():
-        obs_geometry = input.geometry.get()
-        return f"{obs_geometry[0]}_dur (h):"
-
-    @render.text
-    def transit_depth_label():
-        obs_geometry = input.geometry.get()
-        return f"{obs_geometry} depth"
-
+    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    # Results
     @render.text
     def exp_time():
-        inst_name = input.inst_tab.get().lower()
-        mode = input.select_det.get()
+        inst_name = input.select_instrument.get().lower()
+        mode = input.select_mode.get()
         detector = get_detector(mode=mode)
         subarray = input.subarray.get().lower()
         readout = input.readout.get().lower()
@@ -995,17 +992,5 @@ def server(input, output, session):
             f'ngroup below 80% and 100% saturation: {ngroup_80:d} / {ngroup_max:d}'
         )
 
-    @reactive.Effect
-    @reactive.event(input.run_pandeia)
-    def _():
-        print("You clicked my button!")
-        #mode = input.select_det.get()
-        #detector = get_detector(mode=mode)
-        print(f'My favorite SED is: {my_sed.get()}')
-        #subarray = input.subarray.get().lower()
-        #readout = input.readout.get().lower()
-        #ngroup = input.groups.get()
-        #nint = input.integrations.get()
-        #print(dir(choose_sed))
 
 app = App(app_ui, server)
