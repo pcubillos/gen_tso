@@ -33,6 +33,7 @@ teq = nea_data[9]
 
 # JWST targets
 jwst_hosts, jwst_aliases, missing = cat.load_trexolits_table()
+
 # TESS candidates TBD
 
 aliases = cat.load_aliases()
@@ -46,13 +47,22 @@ for alias, name in aliases.items():
 transit_planets = []
 non_transiting = []
 jwst_targets = []
+transit_aliases = []
+non_transiting_aliases = []
+jwst_aliases = []
 for i,target in enumerate(planets):
     if tr_dur[i] is None:
         non_transiting.append(target)
+        if target in aka:
+            non_transiting_aliases += aka[target]
     else:
         transit_planets.append(target)
+        if target in aka:
+            transit_aliases += aka[target]
     if hosts[i] in jwst_hosts:
         jwst_targets.append(target)
+        if target in aka:
+            jwst_aliases += aka[target]
         # TBD: some jwst_hosts are not (yet) confirmed planets
 
 
@@ -684,9 +694,15 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.target)
     def _():
-        if input.target() not in planets:
+        target_name = input.target.get()
+        if target_name in aliases:
+            ui.update_selectize('target', selected=aliases[target_name])
             return
-        index = planets.index(input.target())
+
+        if target_name not in planets:
+            return
+
+        index = planets.index(target_name)
         ra_planet = ra[index]
         dec_planet = dec[index]
         sky_view_src.set(
@@ -787,14 +803,14 @@ def server(input, output, session):
     def _():
         targets = []
         if 'jwst' in input.target_filter.get():
-            new_targets = [p for p in jwst_targets if p not in targets]
-            targets += new_targets
+            targets += [p for p in jwst_targets if p not in targets]
+            targets += [p for p in jwst_aliases if p not in targets]
         if 'transit' in input.target_filter.get():
-            new_targets = [p for p in transit_planets if p not in targets]
-            targets += new_targets
+            targets += [p for p in transit_planets if p not in targets]
+            targets += [p for p in transit_aliases if p not in targets]
         if 'non_transit' in input.target_filter.get():
-            new_targets = [p for p in non_transiting if p not in targets]
-            targets += new_targets
+            targets += [p for p in non_transiting if p not in targets]
+            targets += [p for p in non_transiting_aliases if p not in targets]
 
         # Preserve current target if possible:
         current_target = input.target.get()
