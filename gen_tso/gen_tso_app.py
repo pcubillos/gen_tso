@@ -117,11 +117,6 @@ nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
 
-# Placeholder
-ra = 315.02582008947
-dec = -5.09445415116
-src = f'https://sky.esa.int/esasky/?target={ra}%20{dec}'
-
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
@@ -374,20 +369,21 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Sky view",
-                    cs.custom_card(
-                        HTML(
-                            '<iframe '
-                            'height="100%" '
-                            'width="100%" '
-                            'style="overflow" '
-                            f'src="{src}" '
-                            'frameborder="0" allowfullscreen></iframe>',
-                            #id=resolve_id(id),
-                        ),
-                        body_args=dict(class_='m-0 p-0', id='esasky_card'),
-                        full_screen=True,
-                        height='350px',
-                    ),
+                    ui.output_ui('esasky_card'),
+                    #cs.custom_card(
+                    #    HTML(
+                    #        '<iframe '
+                    #        'height="100%" '
+                    #        'width="100%" '
+                    #        'style="overflow" '
+                    #        f'src="{src}" '
+                    #        'frameborder="0" allowfullscreen></iframe>',
+                    #        #id=resolve_id(id),
+                    #    ),
+                    #    body_args=dict(class_='m-0 p-0', id='esasky_card'),
+                    #    full_screen=True,
+                    #    height='350px',
+                    #),
                 ),
                 ui.nav_panel(
                     "Stellar SED",
@@ -505,6 +501,7 @@ def parse_sed(input):
 
 def server(input, output, session):
     my_sed = reactive.Value(None)
+    sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
     brightest_pix_rate = reactive.Value(None)
     full_well = reactive.Value(None)
@@ -688,6 +685,39 @@ def server(input, output, session):
         fig_idx[itop] = len(fig.data) - 1
         fig.data = tuple(np.array(fig.data)[fig_idx])
         return fig
+
+
+    @reactive.Effect
+    @reactive.event(input.target)
+    def _():
+        if input.target() not in planets:
+            return
+        index = planets.index(input.target())
+        ra_planet = ra[index]
+        dec_planet = dec[index]
+        sky_view_src.set(
+            f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
+            '&fov=0.2&sci=true'
+        )
+
+    @render.ui
+    @reactive.event(sky_view_src)
+    def esasky_card():
+        src = sky_view_src.get()
+        return cs.custom_card(
+            HTML(
+                '<iframe '
+                'height="100%" '
+                'width="100%" '
+                'style="overflow" '
+                f'src="{src}" '
+                'frameborder="0" allowfullscreen></iframe>',
+                #id=resolve_id(id),
+            ),
+            body_args=dict(class_='m-0 p-0', id='esasky'),
+            full_screen=True,
+            height='350px',
+        )
 
 
     @render_plotly
