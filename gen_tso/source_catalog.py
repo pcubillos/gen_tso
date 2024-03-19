@@ -26,6 +26,11 @@ day = 86400.0
 def load_nea_targets_table():
     """
     Unpack star and planet properties from plain text file.
+
+    Examples
+    --------
+    >>> import source_catalog as cat
+    >>> nea_data = cat.load_nea_targets_table()
     """
     with open('../data/nea_data.txt', 'r') as f:
         lines = f.readlines()
@@ -69,7 +74,11 @@ def load_trexolits_table(all_aliases=False):
     """
     Get the list of targets in trexolists (as named at the NEA).
     A dictionary of name aliases contains alternative names found.
-    >>> targets, aliases, missing = load_trexolits_table()
+
+    Examples
+    --------
+    >>> import source_catalog as cat
+    >>> targets, aliases, missing = cat.load_trexolits_table()
     """
     nea_data = load_nea_targets_table()
     hosts = nea_data[1]

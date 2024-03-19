@@ -35,6 +35,14 @@ teq = nea_data[9]
 jwst_hosts, jwst_aliases, missing = cat.load_trexolits_table()
 # TESS candidates TBD
 
+aliases = cat.load_aliases()
+aka = {}
+for alias, name in aliases.items():
+    if name not in aka:
+        aka[name] = [alias]
+    else:
+        aka[name] = aka[name] + [alias]
+
 transit_planets = []
 non_transiting = []
 jwst_targets = []
@@ -370,20 +378,6 @@ app_ui = ui.page_fluid(
                 ui.nav_panel(
                     "Sky view",
                     ui.output_ui('esasky_card'),
-                    #cs.custom_card(
-                    #    HTML(
-                    #        '<iframe '
-                    #        'height="100%" '
-                    #        'width="100%" '
-                    #        'style="overflow" '
-                    #        f'src="{src}" '
-                    #        'frameborder="0" allowfullscreen></iframe>',
-                    #        #id=resolve_id(id),
-                    #    ),
-                    #    body_args=dict(class_='m-0 p-0', id='esasky_card'),
-                    #    full_screen=True,
-                    #    height='350px',
-                    #),
                 ),
                 ui.nav_panel(
                     "Stellar SED",
@@ -814,7 +808,18 @@ def server(input, output, session):
     @render.ui
     @reactive.event(input.target)
     def target_label():
-        if input.target.get() in jwst_targets:
+        target_name = input.target.get()
+        if target_name not in aka:
+            aka_tooltip = None
+        else:
+            aliases_text = ', '.join(aka[target_name])
+            aka_tooltip = ui.tooltip(
+                fa.icon_svg("circle-info", fill='cornflowerblue'),
+                f"Also known as: {aliases_text}",
+                placement='top',
+            )
+
+        if target_name in jwst_targets:
             trexolists_tooltip = ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("circle-info", fill='goldenrod'),
@@ -842,6 +847,7 @@ def server(input, output, session):
                 placement='top',
             ),
             trexolists_tooltip,
+            aka_tooltip,
         )
 
     @reactive.Effect
