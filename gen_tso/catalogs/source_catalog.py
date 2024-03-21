@@ -4,6 +4,7 @@
 __all__ = [
     'load_nea_targets_table',
     'load_trexolits_table',
+    'load_aliases',
     'normalize_name',
 ]
 
@@ -12,6 +13,8 @@ import pickle
 from astropy.io import ascii
 import numpy as np
 import requests
+
+from ..utils import ROOT
 
 
 # CGS constants:
@@ -32,7 +35,7 @@ def load_nea_targets_table():
     >>> import source_catalog as cat
     >>> nea_data = cat.load_nea_targets_table()
     """
-    with open('../data/nea_data.txt', 'r') as f:
+    with open(f'{ROOT}data/nea_data.txt', 'r') as f:
         lines = f.readlines()
 
     planets = []
@@ -84,7 +87,7 @@ def load_trexolits_table(all_aliases=False):
     hosts = nea_data[1]
 
     trexolist_data = ascii.read(
-        '../data/trexolists.csv',
+        f'{ROOT}data/trexolists.csv',
         format='csv', guess=False, fast_reader=False, comment='#',
     )
     targets = np.unique(trexolist_data['Target'].data)
@@ -100,7 +103,7 @@ def load_trexolits_table(all_aliases=False):
 
     # Missing targets, might be because of name aliases
     if all_aliases:
-        with open('../data/nea_all_aliases.pickle', 'rb') as handle:
+        with open(f'{ROOT}data/nea_all_aliases.pickle', 'rb') as handle:
             aliases = pickle.load(handle)
     else:
         aliases = load_aliases(as_hosts=True)
@@ -164,7 +167,7 @@ def load_aliases(as_hosts=False):
     """
     Load file with known aliases of NEA targets.
     """
-    with open('../data/nea_aliases.txt', 'r') as f:
+    with open(f'{ROOT}data/nea_aliases.txt', 'r') as f:
         lines = f.readlines()
 
     def is_letter(name):
@@ -278,7 +281,7 @@ def fetch_nea_targets_database():
                     planets[i][field] = entry[field]
         planets[i] = complete_entry(planets[i])
 
-    with open('data/nea_data.pickle', 'wb') as handle:
+    with open(f'{ROOT}data/nea_data.pickle', 'wb') as handle:
         pickle.dump(planets, handle, protocol=pickle.HIGHEST_PROTOCOL)
     # TBD: and make a copy with current date
 
@@ -288,7 +291,7 @@ def fetch_nea_targets_database():
         return f'{val:{fmt}}'
 
     # Save as plain text:
-    with open('nea_data.txt', 'w') as f:
+    with open(f'{ROOT}data/nea_data.txt', 'w') as f:
         host = ''
         for entry in planets:
             ra = entry['ra']

@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'custom_card',
     'label_tooltip_button',
     'navset_card_tab_jwst',
 ]

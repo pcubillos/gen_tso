@@ -11,6 +11,7 @@ __all__ = [
     'set_depth_scene',
     'simulate_tso',
     'PandeiaCalculation',
+    'generate_all_instruments',
 ]
 
 import copy
@@ -21,18 +22,17 @@ import random
 
 import numpy as np
 import requests
-import pyratbay.spectrum as ps
 import scipy.interpolate as si
-
+import pandeia.engine.sed as sed
 from pandeia.engine.calc_utils import (
     build_default_calc,
     get_instrument_config,
 )
 from pandeia.engine.perform_calculation import perform_calculation
-import pandeia.engine.sed as sed
 from pandeia.engine.normalization import NormalizationFactory
-
 from synphot.config import conf, Conf
+
+from ..utils import constant_resolution_spectrum
 
 
 def check_pandeia_version():
@@ -153,7 +153,7 @@ def load_sed_list(source):
 
     Examples
     --------
-    >>> import pandeia_interface as jwst
+    >>> import gen_tso.pandeia as jwst
     >>> # PHOENIX models
     >>> keys, names, teff, log_g = jwst.load_sed_list('phoenix')
     >>> # Kurucz models
@@ -197,7 +197,7 @@ def find_closest_sed(models_teff, models_logg, teff, logg):
 
     Examples
     --------
-    >>> import pandeia_interface as jwst
+    >>> import gen_tso.pandeia as jwst
     >>> # PHOENIX models
     >>> keys, names, p_teff, p_logg = jwst.load_sed_list('phoenix')
     >>> idx = jwst.find_closest_sed(p_teff, p_logg, teff=4143.0, logg=4.66)
@@ -232,7 +232,7 @@ def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
 
     Examples
     --------
-    >>> import pandeia_interface as jwst
+    >>> import gen_tso.pandeia as jwst
 
     >>> sed_type = 'phoenix'
     >>> sed_model = 'k5v'
@@ -315,7 +315,7 @@ def extract_sed(scene):
 
     Examples
     --------
-    >>> import pandeia_interface as jwst
+    >>> import gen_tso.pandeia as jwst
     >>> import matplotlib.pyplot as plt
 
     >>> sed_type = 'phoenix'
@@ -376,7 +376,7 @@ def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
 
     Examples
     --------
-    >>> import pandeia_interface as jwst
+    >>> import gen_tso.pandeia as jwst
 
     >>> # A pandeia stellar point-source scene:
     >>> scene = jwst.make_scene(
@@ -531,7 +531,7 @@ def simulate_tso(
     wl_min = np.amin(wl)
     wl_max = np.amax(wl)
     if resolution is not None:
-        bin_edges = ps.constant_resolution_spectrum(wl_min, wl_max, resolution)
+        bin_edges = constant_resolution_spectrum(wl_min, wl_max, resolution)
         bin_edges = np.append(bin_edges, wl_max)
     elif bins is not None:
         bin_edges = np.copy(bins)
@@ -1198,7 +1198,4 @@ def generate_all_instruments():
     ]
 
     return detectors
-
-
-
 
