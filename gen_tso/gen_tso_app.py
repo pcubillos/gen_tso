@@ -8,6 +8,7 @@ from htmltools import HTML
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import pyratbay.spectrum as ps
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -280,19 +281,14 @@ app_ui = ui.page_fluid(
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             ui.panel_well(
+                ui.input_action_button('upload_spectrum', 'Upload spectrum'),
                 ui.input_radio_buttons(
                     id="upload_type",
-                    label='Upload spectrum',
-                    choices=["SED", "Transit"],
+                    label='',
+                    choices=['Transit', 'Eclipse', 'SED'],
                     inline=True,
                 ),
-                ui.input_file(
-                    id="upload_depth",
-                    label="",
-                    button_label="Browse",
-                    multiple=True,
-                ),
-                class_="px-2 py-0 m-0",
+                class_="px-2 pb-0 m-0",
             ),
             body_args=dict(class_="p-2 m-0"),
         ),
@@ -409,7 +405,7 @@ app_ui = ui.page_fluid(
                             style="position:absolute; top: 5px; right: 7px;",
                         ),
                         ui.input_numeric(
-                            id='resolution',
+                            id='depth_resolution',
                             label='Resolution:',
                             value=250.0,
                             min=10.0, max=3000.0, step=25.0,
@@ -491,7 +487,7 @@ def server(input, output, session):
     spectrum_choices = {
         'transit': [],
         'eclipse': [],
-        'star_sed': [],
+        'sed': [],
     }
     spectra = {}
 
@@ -742,28 +738,79 @@ def server(input, output, session):
         return f"{obs_geometry} depth"
 
     @reactive.effect
-    @reactive.event(input.upload_depth)
+    @reactive.event(input.upload_file)
     def _():
-        new_model = input.upload_depth()
+        new_model = input.upload_file()
         if not new_model:
             print('No new model!')
             return
 
         current_model = input.planet_model.get()
-        obs_geometry = input.geometry.get()
+        upload_type = input.upload_type.get().lower()
         depth_file = new_model[0]['name']
         # TBD: remove file extension?
-        spectrum_choices[obs_geometry.lower()].append(depth_file)
+        spectrum_choices[upload_type].append(depth_file)
         wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
         spectra[depth_file] = {'wl': wl, 'depth': depth}
 
         ui.update_select(
             id="planet_model",
-            label=f"{obs_geometry} depth spectrum:",
-            choices=spectrum_choices[obs_geometry.lower()],
+            #label=f"{obs_geometry} depth spectrum:",
+            choices=spectrum_choices[upload_type],
             selected=current_model,
         )
 
+    @reactive.effect
+    @reactive.event(input.upload_spectrum)
+    def _():
+        sed_choices = [
+            # TBD: can I get super-scripts?
+            "erg s-1 cm-2 Hz-1 (frequency space)",
+            "erg s-1 cm-2 cm (wavenumber space)",
+            "erg s-1 cm-2 cm-1 (wavelength space)",
+            "mJy",
+        ]
+        depth_choices = [
+            "none",
+            "percent",
+            "ppm",
+        ]
+        if input.upload_type.get() == 'Transit':
+            choices = depth_choices
+            label1 = 'transit depth'
+            label2 = 'Depth units:'
+        elif input.upload_type.get() == 'Eclipse':
+            choices = depth_choices
+            label1 = 'eclipse depth'
+            label2 = 'Depth units:'
+        elif input.upload_type.get() == 'SED':
+            choices = sed_choices
+            label1 = 'stellar SED'
+            label2 = 'Flux units:'
+
+        m = ui.modal(
+            ui.input_file(
+                id="upload_file",
+                label=ui.markdown(
+                    "Input files must be plan-text files with two columns, "
+                    "the first one being the wavelength (microns) and "
+                    f"the second one the {label1}. "
+                    "*Make sure units are correct!*"
+                ),
+                button_label="Browse",
+                multiple=True,
+                width='100%',
+            ),
+            ui.input_radio_buttons(
+                id="flux_units",
+                label=label2,
+                choices=choices,
+                width='100%',
+            ),
+            title="Upload Spectrum",
+            easy_close=True,
+        )
+        ui.modal_show(m)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
@@ -909,13 +956,25 @@ def server(input, output, session):
         obs_geometry = input.geometry.get()
         models = spectrum_choices[obs_geometry.lower()]
         nmodels = len(models)
+        if nmodels == 0:
+            return go.Figure()
+
         current_model = input.planet_model.get()
         units = '%'
+        resolution = input.depth_resolution.get()
+
 
         fig = go.Figure()
-        if nmodels == 0:
-            return fig
         for j,model in enumerate(models):
+            wl = spectra[model]['wl']
+            depth = spectra[model]['depth']
+            if resolution > 0:
+                wl_min = np.amin(wl)
+                wl_max = np.amax(wl)
+                bin_wl = ps.constant_resolution_spectrum(wl_min, wl_max, resolution)
+                depth = ps.bin_spectrum(bin_wl, wl, depth)
+                wl = bin_wl
+
             if model == current_model:
                 linedict = dict(color='Gold', width=3.0)
                 rank = j + nmodels
@@ -925,8 +984,8 @@ def server(input, output, session):
                 rank = j
                 visible = 'legendonly'
             fig.add_trace(go.Scatter(
-                x=spectra[model]['wl'],
-                y=spectra[model]['depth']*100.0,
+                x=wl,
+                y=depth*100.0,
                 mode='lines',
                 name=model,
                 #legendgrouptitle_text=inst_name,
