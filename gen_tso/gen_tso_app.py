@@ -3,19 +3,18 @@
 
 import pickle
 
-import numpy as np
-
-from shiny import ui, render, reactive, req, App
-from shinywidgets import output_widget, render_plotly
+import faicons as fa
 from htmltools import HTML
-
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import faicons as fa
+from shiny import ui, render, reactive, req, App
+from shinywidgets import output_widget, render_plotly
 
-import pandeia_interface as jwst
-import source_catalog as cat
-import custom_shiny as cs
+from gen_tso import catalogs as cat
+from gen_tso import pandeia as jwst
+from gen_tso import shiny as cs
+from gen_tso.utils import ROOT
 
 
 # Confirmed planets
@@ -23,7 +22,7 @@ nea_data = cat.load_nea_targets_table()
 planets = nea_data[0]
 hosts = nea_data[1]
 ra = nea_data[2]
-dec  = nea_data[3]
+dec = nea_data[3]
 ks_mag = nea_data[4]
 teff = nea_data[5]
 log_g = nea_data[6]
@@ -117,7 +116,7 @@ def filter_data_frame():
     for inst_name,mode in spec_modes.items():
         filter_throughputs[inst_name] = {}
 
-        t_file = f'../data/throughputs_{inst_name}_{mode}.pickle'
+        t_file = f'{ROOT}data/throughputs_{inst_name}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
             data = pickle.load(handle)
 
@@ -134,10 +133,11 @@ filter_throughputs = filter_data_frame()
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
-
+css_file = f'{ROOT}data/style.css'
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
+    ui.include_css(css_file),
     #ui.markdown("""
     #    This app is based on [shiny][0].
     #    [0]: https://shiny.posit.co/py/api/core
@@ -168,7 +168,10 @@ app_ui = ui.page_fluid(
                 },
                 selected=['spec'],
             ),
-            ui.input_action_button(id="run_pandeia", label="Run Pandeia"),
+            ui.input_action_button(
+                id="run_pandeia",
+                label="Run Pandeia",
+            ),
         ),
         col_widths=[6,6],
     ),
@@ -480,7 +483,6 @@ def parse_sed(input):
 
 
 def server(input, output, session):
-    my_sed = reactive.Value(None)
     sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
     brightest_pix_rate = reactive.Value(None)
@@ -553,7 +555,19 @@ def server(input, output, session):
     @reactive.event(input.run_pandeia)
     def _():
         print("You clicked my button!")
-        print(f'My favorite SED is: {my_sed.get()}')
+        inst_name = input.select_instrument.get().lower()
+        mode = input.select_mode.get()
+        subarray = input.subarray.get().lower()
+        readout = input.readout.get().lower()
+        filter = input.filter.get().lower()
+        disperser = input.disperser.get().lower()
+        if mode == 'bots':
+            disperser, filter = filter.split('/')
+
+        sed_type, sed_model, norm_band, norm_magnitude = parse_sed(input)
+
+        print(inst_name, mode, disperser, filter, subarray, readout)
+        print(sed_type, sed_model, norm_band, repr(norm_magnitude))
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
@@ -705,13 +719,6 @@ def server(input, output, session):
             # TBD: ui.input_select('uploaded_seds', '', choices=custom_seds)
             pass
 
-    @reactive.Effect
-    @reactive.event(input.sed)
-    def _():
-        my_sed.set(input.sed())
-        print(f'Choose an SED! ({input.sed()})')
-
-
     @reactive.effect
     @reactive.event(input.geometry)
     def _():
@@ -772,11 +779,9 @@ def server(input, output, session):
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
-        #print(inst_name, mode, disperser, filter, subarray, readout)
-        pando = jwst.Calculation(inst_name, mode)
+        pando = jwst.PandeiaCalculation(inst_name, mode)
 
         sed_type, sed_model, norm_band, norm_magnitude = parse_sed(input)
-        #print(sed_type, sed_model, norm_band, repr(norm_magnitude))
         pando.set_scene(sed_type, sed_model, norm_band, norm_magnitude)
 
         flux_rate, fullwell = pando.get_saturation_values(
@@ -992,5 +997,5 @@ def server(input, output, session):
             f'ngroup below 80% and 100% saturation: {ngroup_80:d} / {ngroup_max:d}'
         )
 
-
 app = App(app_ui, server)
+
