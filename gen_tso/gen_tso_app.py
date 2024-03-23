@@ -9,6 +9,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import pyratbay.spectrum as ps
+import pyratbay.tools as pt
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -410,6 +411,17 @@ app_ui = ui.page_fluid(
                             value=250.0,
                             min=10.0, max=3000.0, step=25.0,
                         ),
+                        ui.input_select(
+                            "plot_depth_units",
+                            "Depth units:",
+                            choices = ['none', 'percent', 'ppm'],
+                            selected='percent',
+                        ),
+                        ui.input_select(
+                            "plot_depth_xscale",
+                            "Wavelength axis:",
+                            choices = ['linear', 'log'],
+                        ),
                         placement="right",
                         id="depth_popover",
                     ),
@@ -795,7 +807,7 @@ def server(input, output, session):
                     "Input files must be plan-text files with two columns, "
                     "the first one being the wavelength (microns) and "
                     f"the second one the {label1}. "
-                    "*Make sure units are correct!*"
+                    "**Make sure the input units are correct!**"
                 ),
                 button_label="Browse",
                 multiple=True,
@@ -960,9 +972,9 @@ def server(input, output, session):
             return go.Figure()
 
         current_model = input.planet_model.get()
-        units = '%'
+        units = input.plot_depth_units.get()
+        wl_scale = input.plot_depth_xscale.get()
         resolution = input.depth_resolution.get()
-
 
         fig = go.Figure()
         for j,model in enumerate(models):
@@ -972,23 +984,22 @@ def server(input, output, session):
                 wl_min = np.amin(wl)
                 wl_max = np.amax(wl)
                 bin_wl = ps.constant_resolution_spectrum(wl_min, wl_max, resolution)
-                depth = ps.bin_spectrum(bin_wl, wl, depth)
+                depth = ps.bin_spectrum(bin_wl, wl, depth) / pt.u(units)
                 wl = bin_wl
 
             if model == current_model:
-                linedict = dict(color='Gold', width=3.0)
+                linedict = dict(color='Gold', width=2.0)
                 rank = j + nmodels
                 visible = None
             else:
-                linedict = {}
+                linedict = dict(width=1.25)
                 rank = j
                 visible = 'legendonly'
             fig.add_trace(go.Scatter(
                 x=wl,
-                y=depth*100.0,
+                y=depth,
                 mode='lines',
                 name=model,
-                #legendgrouptitle_text=inst_name,
                 line=linedict,
                 legendrank=rank,
                 visible=visible,
@@ -1000,15 +1011,19 @@ def server(input, output, session):
                 'depth = %{y:.3f}'
         )
         fig.update_yaxes(
-            title_text=f'{obs_geometry} depth ({units})',
+            title_text=f'{obs_geometry} depth ({units})'.replace('percent','%'),
             title_standoff=0,
         )
         #wl_range = [0.5, 13.5] if inst_name=='miri' else [0.5, 6.0]
-        wl_range = [0.5, 6.0]
+        wl_range = [0.5, 12.0]
+        if wl_scale == 'log':
+            wl_range = [np.log10(wave) for wave in wl_range]
+        print(wl_range)
         fig.update_xaxes(
             title_text='wavelength (um)',
             title_standoff=0,
             range=wl_range,
+            type=wl_scale,
         )
 
         fig.update_layout(legend=dict(
