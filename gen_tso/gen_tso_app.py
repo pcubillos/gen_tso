@@ -8,13 +8,12 @@ from htmltools import HTML
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import pyratbay.spectrum as ps
-import pyratbay.tools as pt
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
 from gen_tso import catalogs as cat
 from gen_tso import pandeia as jwst
+from gen_tso import plotly as tplots
 from gen_tso import shiny as cs
 from gen_tso.utils import ROOT
 
@@ -966,8 +965,8 @@ def server(input, output, session):
     @render_plotly
     def plotly_depth():
         obs_geometry = input.geometry.get()
-        models = spectrum_choices[obs_geometry.lower()]
-        nmodels = len(models)
+        model_names = spectrum_choices[obs_geometry.lower()]
+        nmodels = len(model_names)
         if nmodels == 0:
             return go.Figure()
 
@@ -976,66 +975,12 @@ def server(input, output, session):
         wl_scale = input.plot_depth_xscale.get()
         resolution = input.depth_resolution.get()
 
-        fig = go.Figure()
-        for j,model in enumerate(models):
-            wl = spectra[model]['wl']
-            depth = spectra[model]['depth']
-            if resolution > 0:
-                wl_min = np.amin(wl)
-                wl_max = np.amax(wl)
-                bin_wl = ps.constant_resolution_spectrum(wl_min, wl_max, resolution)
-                depth = ps.bin_spectrum(bin_wl, wl, depth) / pt.u(units)
-                wl = bin_wl
-
-            if model == current_model:
-                linedict = dict(color='Gold', width=2.0)
-                rank = j + nmodels
-                visible = None
-            else:
-                linedict = dict(width=1.25)
-                rank = j
-                visible = 'legendonly'
-            fig.add_trace(go.Scatter(
-                x=wl,
-                y=depth,
-                mode='lines',
-                name=model,
-                line=linedict,
-                legendrank=rank,
-                visible=visible,
-            ))
-
-        fig.update_traces(
-            hovertemplate=
-                'wl = %{x:.2f}<br>'+
-                'depth = %{y:.3f}'
+        depth_models = [spectra[model] for model in model_names]
+        fig = tplots.plotly_depth_spectra(
+            depth_models, model_names, current_model,
+            units=units, wl_scale=wl_scale, resolution=resolution,
+            obs_geometry=obs_geometry,
         )
-        fig.update_yaxes(
-            title_text=f'{obs_geometry} depth ({units})'.replace('percent','%'),
-            title_standoff=0,
-        )
-        #wl_range = [0.5, 13.5] if inst_name=='miri' else [0.5, 6.0]
-        wl_range = [0.5, 12.0]
-        if wl_scale == 'log':
-            wl_range = [np.log10(wave) for wave in wl_range]
-        print(wl_range)
-        fig.update_xaxes(
-            title_text='wavelength (um)',
-            title_standoff=0,
-            range=wl_range,
-            type=wl_scale,
-        )
-
-        fig.update_layout(legend=dict(
-            orientation="h",
-            entrywidth=0.5,
-            entrywidthmode='fraction',
-            yanchor="bottom",
-            xanchor="right",
-            y=1.02,
-            x=1
-        ))
-        fig.update_layout(showlegend=True)
         return fig
 
 
