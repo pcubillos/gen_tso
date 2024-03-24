@@ -392,6 +392,31 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Stellar SED",
+                    ui.popover(
+                        ui.span(
+                            fa.icon_svg("gear"),
+                            style="position:absolute; top: 5px; right: 7px;",
+                        ),
+                        ui.input_numeric(
+                            id='plot_sed_resolution',
+                            label='Resolution:',
+                            value=0.0,
+                            min=10.0, max=3000.0, step=25.0,
+                        ),
+                        ui.input_select(
+                            "plot_sed_units",
+                            "Flux units:",
+                            choices = ['mJy'],
+                            selected='mJy',
+                        ),
+                        ui.input_select(
+                            "plot_sed_xscale",
+                            "Wavelength axis:",
+                            choices = ['linear', 'log'],
+                        ),
+                        placement="right",
+                        id="sed_popover",
+                    ),
                     cs.custom_card(
                         output_widget("plotly_sed", fillable=True),
                         body_args=dict(padding='0px'),
@@ -749,7 +774,7 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_file = parse_sed(input)
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
-            wl, flux = jwst.extract_sed(scene)
+            wl, flux = jwst.extract_sed(scene, wl_range=[0.3,21.0])
             spectrum_choices['sed'].append(sed_file)
             spectra[sed_file] = {'wl': wl, 'flux': flux}
         else:
@@ -987,10 +1012,25 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_sed():
-        # TBD: gather bookmarked SEDs (already stored as [wl,flux])
-        # TBD: get current SEDs
-        # TBD: Same as plotly_depth but with plotly_sed_spectra()
-        fig = go.Figure()
+        # Gather bookmarked SEDs
+        book = input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
+        model_names = spectrum_choices['sed']
+        if len(model_names) == 0:
+            fig = go.Figure()
+            fig.update_layout(title='Bookmark some SEDs to show them here')
+            return fig
+        sed_models = [spectra[model] for model in model_names]
+
+        # Get current SED:
+        sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
+
+        units = input.plot_sed_units.get()
+        wl_scale = input.plot_sed_xscale.get()
+        resolution = input.plot_sed_resolution.get()
+        fig = tplots.plotly_sed_spectra(
+            sed_models, model_names, #current_model,
+            units=units, wl_scale=wl_scale, resolution=resolution,
+        )
         return fig
 
 
