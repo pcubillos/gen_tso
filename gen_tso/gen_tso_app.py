@@ -254,9 +254,50 @@ app_ui = ui.page_fluid(
             ),
             # The planet
             ui.panel_well(
+                ui.popover(
+                    ui.span(
+                        fa.icon_svg("gear"),
+                        style="position:absolute; top: 5px; right: 7px;",
+                    ),
+                    # Tdwell = 1.0 + 0.75 + T14 + 2*max(1, T14/2)
+                    ui.markdown(
+                        '*T*<sub>dur</sub> = *T*<sub>start</sub> + '
+                        '*T*<sub>set</sub> + *T*<sub>base</sub> + '
+                        '*T*<sub>tran</sub> + *T*<sub>base</sub>',
+                    ),
+                    ui.markdown(
+                        'Start time window (*T*<sub>start</sub>): 1h',
+                    ),
+                    ui.input_numeric(
+                        id="settling_time",
+                        label=ui.markdown(
+                            'Settling time (*T*<sub>set</sub>, h):',
+                        ),
+                        value = 0.75,
+                        step = 0.25,
+                    ),
+                    ui.input_numeric(
+                        id="baseline_time",
+                        label=ui.markdown(
+                            'Baseline time (*T*<sub>base</sub>, t_dur):',
+                        ),
+                        value = 0.5,
+                        step = 0.25,
+                    ),
+                    ui.input_numeric(
+                        id="min_baseline_time",
+                        label='Minimum baseline time (h):',
+                        value = 1.0,
+                        step = 0.25,
+                    ),
+                    title='Observation duration',
+                    placement="right",
+                    id="obs_popover",
+                ),
+                "Observation",
                 ui.layout_column_wrap(
                     # Row 1
-                    ui.p("Observation:"),
+                    ui.p("Type:"),
                     ui.input_select(
                         id='geometry',
                         label='',
@@ -802,6 +843,23 @@ def server(input, output, session):
     def transit_depth_label():
         obs_geometry = input.geometry.get()
         return f"{obs_geometry} depth"
+
+    @reactive.Effect
+    @reactive.event(
+        input.t_dur, input.settling_time, input.baseline_time,
+        input.min_baseline_time,
+    )
+    def _():
+        """Set observation time based on transit dur and popover settings"""
+        transit_dur = float(req(input.t_dur).get())
+        # TBD: Tdwell = 0.75 + T14 + 2*max(1, T14/2) + 1.0
+        settling = req(input.settling_time).get()
+        baseline = req(input.baseline_time).get()
+        min_baseline = req(input.min_baseline_time).get()
+        baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
+        t_total = 1.0 + settling + transit_dur + 2.0*baseline
+        ui.update_text('obs_dur', value=f'{t_total:.2f}')
+
 
     @reactive.effect
     @reactive.event(input.upload_file)
