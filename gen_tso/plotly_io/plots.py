@@ -8,13 +8,183 @@ __all__ = [
 ]
 
 import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
 import pyratbay.spectrum as ps
 import pyratbay.tools as pt
 
 
-def plotly_filters():
-    pass
+def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
+    """
+    Make a plotly figure of the passband filters.
+    """
+    nirspec_filters = [
+        'g140h/f070lp',
+        'g140m/f070lp',
+        'g140h/f100lp',
+        'g140m/f100lp',
+        'g235h/f170lp',
+        'g235m/f170lp',
+        'g395h/f290lp',
+        'g395m/f290lp',
+        'prism/clear',
+    ]
+
+    if inst_name is None:
+        return go.Figure()
+
+    instruments = [inst_name]
+    if show_all:
+        instruments += [
+            inst for inst in passbands.keys()
+            if inst not in instruments
+        ]
+
+    # Parse filters to plot
+    all_filters = {}
+    nfilters = 0
+    for inst in instruments:
+        all_filters[inst] = {}
+
+        if inst in ['nircam', 'miri']:
+            subarray = list(passbands[inst].keys())[0]
+        elif inst != inst_name:
+            if inst == 'niriss':
+                subarray = 'substrip256'
+            elif inst == 'nirspec':
+                subarray = 'sub2048'
+        elif subarray not in passbands[inst_name]:
+            return go.Figure()
+
+        if inst == inst_name:
+            filters = list(passbands[inst][subarray].keys())
+            if inst == 'nirspec':
+                filters = [f for f in nirspec_filters if f in filters]
+        else:
+            if inst == 'nircam':
+                filters = ['f322w2', 'f444w']
+            elif inst == 'nirspec':
+                filters = ['g140h/f100lp', 'g235h/f170lp', 'g395h/f290lp', 'prism/clear']
+            elif inst == 'niriss':
+                filters = ['clear']
+            elif inst == 'miri':
+                filters = ['None']
+
+        for filter in filters:
+            band = passbands[inst][subarray][filter]
+            all_filters[inst][filter] = band
+            if 'order2' in band:
+                all_filters[inst]['order2'] = band['order2']
+            nfilters += len(all_filters[inst][filter])
+
+
+    visible = [None for _ in range(nfilters)]
+    if inst_name == 'nirspec':
+        for i,filter in enumerate(all_filters[inst_name].keys()):
+            hide = ('h' in filter_name) is not ('h' in filter)
+            if hide and 'prism' not in filter:
+                visible[i] = 'legendonly'
+    elif inst_name == 'nircam':
+        for i,filter in enumerate(all_filters[inst_name].keys()):
+            if filter != filter_name and filter not in ['f322w2', 'f444w']:
+                visible[i] = 'legendonly'
+
+    if inst_name == 'nirspec':
+        primary_colors = px.colors.sample_colorscale(
+            'Viridis', np.linspace(0, 0.8, 9),
+        )
+    else:
+        primary_colors = px.colors.sample_colorscale(
+            'Viridis', [0.1, 0.3, 0.5, 0.7],
+        )
+    secondary_colors = [
+        px.colors.sequential.gray[3],
+        px.colors.sequential.gray[5],
+        px.colors.sequential.gray[7],
+        px.colors.sequential.gray[8],
+        px.colors.sequential.gray[9],
+    ]
+    secondary_nirspec = [
+        px.colors.sequential.Magma[3],
+        px.colors.sequential.Magma[5],
+        px.colors.sequential.Magma[6],
+        px.colors.sequential.Magma[7],
+    ]
+    sel_cols = iter(primary_colors)
+    other_cols = iter(secondary_colors)
+    nirspec_cols = iter(secondary_nirspec)
+
+
+    fig = go.Figure()
+    j = 0
+    filter_index = -1
+    for inst in instruments:
+        for filter, throughput in all_filters[inst].items():
+            if filter == filter_name:
+                color = 'Gold'
+                width = 3.5
+                filter_index = j
+            elif filter == 'order2' and filter_name == 'clear':
+                color = 'Orange'
+                width = 3.5
+            elif inst == inst_name:
+                color = next(sel_cols)
+                width = 2.0
+            else:
+                color = next(nirspec_cols) if inst=='nirspec' else next(other_cols)
+                width = 1.25
+            linedict = dict(color=color, width=width)
+            fig.add_trace(go.Scatter(
+                x=throughput['wl'],
+                y=throughput['response'],
+                mode='lines',
+                name=filter.upper(),
+                legendgroup=inst,
+                legendgrouptitle_text=inst,
+                line=linedict,
+                legendrank=j+nfilters*int(inst != inst_name),
+                visible=visible[j],
+            ))
+            j += 1
+    fig.update_traces(
+        hovertemplate=
+            'wl = %{x:.2f}<br>'+
+            'throughput = %{y:.3f}'
+    )
+    fig.update_yaxes(
+        title_text=None,
+        autorangeoptions=dict(minallowed=0),
+    )
+
+    if show_all and inst_name != 'miri':
+        wl_scale = 'log'
+        wl_range = [np.log10(0.5), np.log10(13.5)]
+    elif inst_name == 'miri':
+        wl_scale = 'linear'
+        wl_range = [0.5, 13.5]
+    else:
+        wl_scale = 'linear'
+        wl_range = [0.5, 6.0]
+
+    fig.update_xaxes(
+        title_text='wavelength (um)',
+        title_standoff=0,
+        range=wl_range,
+        type=wl_scale,
+    )
+    fig.update_layout(
+        showlegend=True,
+        legend=dict(groupclick="toggleitem"),
+    )
+
+    # Show current filter on top (TBD: there must be a better way)
+    if filter_index < 0:
+        return fig
+    fig_idx = np.arange(len(fig.data))
+    fig_idx[-1] = filter_index
+    fig_idx[filter_index] = len(fig.data) - 1
+    fig.data = tuple(np.array(fig.data)[fig_idx])
+    return fig
 
 
 def plotly_sed_spectra(

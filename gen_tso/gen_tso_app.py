@@ -6,7 +6,6 @@ import pickle
 import faicons as fa
 from htmltools import HTML
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
@@ -852,11 +851,11 @@ def server(input, output, session):
     def _():
         """Set observation time based on transit dur and popover settings"""
         transit_dur = float(req(input.t_dur).get())
-        # TBD: Tdwell = 0.75 + T14 + 2*max(1, T14/2) + 1.0
         settling = req(input.settling_time).get()
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
+        # Tdwell = T_start + T_settle + T14 + 2*max(1, T14/2)
         t_total = 1.0 + settling + transit_dur + 2.0*baseline
         ui.update_text('obs_dur', value=f'{t_total:.2f}')
 
@@ -994,85 +993,16 @@ def server(input, output, session):
     # Viewer
     @render_plotly
     def plotly_filters():
-        # TBD: Eventually, I want to plot-code this by mode instead of inst
-        inst_name = req(input.select_instrument.get()).lower()
-        passbands = filter_throughputs[inst_name]
-        if inst_name in ['nirspec', 'niriss']:
-            subarray = req(input.subarray.get()).lower()
-        else:
-            subarray = list(filter_throughputs[inst_name].keys())[0]
-        #print(f'\n{inst_name}  {subarray}  {filter_name}\n')
-        if inst_name is None or subarray not in filter_throughputs[inst_name]:
-            return go.Figure()
+        show_all = req(input.filter_filter).get() == 'all'
+        inst_name = req(input.select_instrument).get().lower()
+        subarray = req(input.subarray.get()).lower()
+        filter_name = input.filter.get().lower()
         if inst_name == 'miri':
             filter_name = 'None'
-        else:
-            filter_name = req(input.filter.get()).lower()
-        passbands = filter_throughputs[inst_name][subarray]
 
-        visible = [None for _ in passbands.keys()]
-        if inst_name == 'nirspec':
-            for i,filter in enumerate(passbands.keys()):
-                hide = ('h' in filter_name) is not ('h' in filter)
-                if hide and 'prism' not in filter:
-                    visible[i] = 'legendonly'
-        fig = go.Figure()
-        colors = px.colors.sequential.Viridis
-        j = 0
-        for filter, throughput in passbands.items():
-            if 'order2' in throughput:
-                linedict = dict(color='Orange', width=3.0)
-                fig.add_trace(go.Scatter(
-                    x=throughput['order2']['wl'],
-                    y=throughput['order2']['response'],
-                    mode='lines',
-                    name='CLEAR Or.2',
-                    legendgrouptitle_text=inst_name,
-                    line=linedict,
-                    legendrank=j,
-                ))
-
-            if filter == filter_name:
-                linedict = dict(color='Gold', width=3.0)
-            else:
-                linedict = dict(color=colors[j])
-            fig.add_trace(go.Scatter(
-                x=throughput['wl'],
-                y=throughput['response'],
-                mode='lines',
-                name=filter.upper(),
-                legendgrouptitle_text=inst_name,
-                line=linedict,
-                legendrank=j,
-                visible=visible[j],
-            ))
-            j += 1
-
-        fig.update_traces(
-            hovertemplate=
-                'wl = %{x:.2f}<br>'+
-                'throughput = %{y:.3f}'
+        fig = tplots.plotly_filters(
+            filter_throughputs, inst_name, subarray, filter_name, show_all,
         )
-        fig.update_yaxes(
-            title_text=None,
-            autorangeoptions=dict(minallowed=0),
-        )
-        wl_range = [0.5, 13.5] if inst_name=='miri' else [0.5, 6.0]
-        fig.update_xaxes(
-            title_text='wavelength (um)',
-            title_standoff=0,
-            range=wl_range,
-        )
-        fig.update_layout(showlegend=True)
-        # Show current filter on top (TBD: there must be a better way)
-        filters = list(passbands.keys())
-        if filter_name not in filters:
-            return fig
-        itop = filters.index(filter_name)
-        fig_idx = np.arange(len(fig.data))
-        fig_idx[-1] = itop
-        fig_idx[itop] = len(fig.data) - 1
-        fig.data = tuple(np.array(fig.data)[fig_idx])
         return fig
 
 
@@ -1152,7 +1082,6 @@ def server(input, output, session):
         readout = input.readout.get().lower()
         ngroup = input.groups.get()
         nint = input.integrations.get()
-        #print(f'\n{subarray}  {readout}  {ngroup}  {nint}\n')
         exp_time = jwst.exposure_time(
             inst_name, nint=nint, ngroup=ngroup,
             readout=readout, subarray=subarray,
