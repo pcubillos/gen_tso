@@ -297,7 +297,7 @@ def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
     return scene
 
 
-def extract_sed(scene):
+def extract_sed(scene, wl_range=None):
     """
     Extract the flux spectrum array from a given scene dict.
 
@@ -315,7 +315,7 @@ def extract_sed(scene):
 
     Examples
     --------
-    >>> import gen_tso.pandeia as jwst
+    >>> import gen_tso.pandeia_io as jwst
     >>> import matplotlib.pyplot as plt
 
     >>> sed_type = 'phoenix'
@@ -325,23 +325,34 @@ def extract_sed(scene):
     >>> scene1 = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
     >>> wl1, phoenix = jwst.extract_sed(scene1)
 
+    >>> sed_type = 'k93models'
+    >>> sed_model = 'k7v'
+    >>> scene2 = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
+    >>> wl2, kurucz = jwst.extract_sed(scene2)
+
     >>> sed_type = 'blackbody'
     >>> sed_model = 4250.0
-    >>> scene2 = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
-    >>> wl2, bb = jwst.extract_sed(scene2)
+    >>> scene3 = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
+    >>> wl3, bb = jwst.extract_sed(scene3)
 
     >>> plt.figure(0)
     >>> plt.clf()
     >>> plt.plot(wl1, phoenix, c='b')
-    >>> plt.plot(wl2, bb, c='xkcd:green')
+    >>> plt.plot(wl2, kurucz, c='darkorange')
+    >>> plt.plot(wl3, bb, c='xkcd:green')
     >>> plt.xlim(0.5, 12)
     """
     normalization = NormalizationFactory(
-        config=scene['spectrum']['normalization'], webapp=True,
+        config=scene['spectrum']['normalization'],
+        webapp=True,
     )
     sed_model = sed.SEDFactory(config=scene['spectrum']['sed'], webapp=True, z=0)
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
-    return wave.value, flux.value
+    if wl_range is None:
+        wl_mask = np.ones(len(wave.value), bool)
+    else:
+        wl_mask = (wave.value >= wl_range[0]) & (wave.value <= wl_range[1])
+    return wave.value[wl_mask], flux.value[wl_mask]
 
 
 def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
