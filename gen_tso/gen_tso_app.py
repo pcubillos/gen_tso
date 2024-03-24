@@ -235,6 +235,7 @@ app_ui = ui.page_fluid(
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
+                    gap='7px',
                     fill=False,
                     fillable=True,
                 ),
@@ -245,7 +246,7 @@ app_ui = ui.page_fluid(
                         "phoenix",
                         "kurucz",
                         "blackbody",
-                        "custom",
+                        "input",
                     ],
                 ),
                 ui.output_ui('choose_sed'),
@@ -270,6 +271,7 @@ app_ui = ui.page_fluid(
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
+                    gap='7px',
                     fill=False,
                     fillable=True,
                 ),
@@ -472,20 +474,34 @@ def get_auto_sed(input):
 
 
 def parse_sed(input):
+    """Extract SED parameters"""
+    # Safety to prevent hanging when initalizing the app:
+    if not input.sed.is_set():
+        return None, None, None, None, None
+
     sed_type = input.sed_type()
     if sed_type in ['phoenix', 'kurucz']:
         sed_model = sed_dict[sed_type][input.sed()]
+        model_label = f'{sed_type}_{sed_model}'
     elif sed_type == 'blackbody':
         sed_model = float(input.teff.get())
-    elif sed_type == 'custom':
-        pass
+        model_label = f'{sed_type}_{sed_model:.0f}K'
+    elif sed_type == 'input':
+        model_label = sed_model
 
     norm_band = bands_dict[input.magnitude_band()]
     norm_magnitude = float(input.magnitude())
 
     if sed_type == 'kurucz':
         sed_type = 'k93models'
-    return sed_type, sed_model, norm_band, norm_magnitude
+
+    # Make a label
+    for name,band in bands_dict.items():
+        if band == norm_band:
+            band_label = f'{norm_magnitude}_{name.split()[0]}'
+    sed_label = f'{model_label}_{band_label}'
+
+    return sed_type, sed_model, norm_band, norm_magnitude, sed_label
 
 
 
@@ -571,10 +587,12 @@ def server(input, output, session):
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
-        sed_type, sed_model, norm_band, norm_magnitude = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_magnitude, label = parse_sed(input)
 
         print(inst_name, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_magnitude))
+
+        print(spectrum_choices)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
@@ -647,6 +665,7 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.target)
     def _():
+        """Set known-target properties"""
         target_name = input.target.get()
         if target_name in aliases:
             ui.update_selectize('target', selected=aliases[target_name])
@@ -672,11 +691,43 @@ def server(input, output, session):
             '&fov=0.2&sci=true'
         )
 
+    @render.ui
+    @reactive.event(input.sed_type, input.teff, input.logg)
+    def choose_sed():
+        sed_type = input.sed_type.get()
+        if sed_type in ['phoenix', 'kurucz']:
+            m_models, chosen_sed = get_auto_sed(input)
+            choices = list(m_models)
+            selected = chosen_sed
+        elif sed_type == 'blackbody':
+            if input.teff.get() == '':
+                teff = 0.0
+            else:
+                teff = float(input.teff.get())
+            selected = f' Blackbody (Teff={teff:.0f} K)'
+            choices = [selected]
+        elif sed_type == 'input':
+            choices=spectrum_choices['sed']
+            selected = None
+
+        return ui.input_select(
+            id="sed",
+            label="",
+            choices=choices,
+            selected=selected,
+        )
 
     @render.ui
-    @reactive.event(bookmarked_sed)
+    @reactive.event(
+        bookmarked_sed, input.sed,
+        input.teff, input.magnitude_band, input.magnitude,
+    )
     def stellar_sed_label():
-        if bookmarked_sed.get():
+        """Check current SED is bookmarked"""
+        sed_type, sed_model, norm_band, norm_mag, label = parse_sed(input)
+        is_bookmarked = label in spectrum_choices['sed']
+        bookmarked_sed.set(is_bookmarked)
+        if is_bookmarked:
             sed_icon = fa.icon_svg("star", style='solid', fill='gold')
         else:
             sed_icon = fa.icon_svg("star", style='regular', fill='black')
@@ -692,39 +743,18 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.sed_bookmark)
     def _():
-        print('You did click the star!')
-        #print(input.sed_bookmark.get(), input.sed_bookmark.is_set())
-        if input.sed_bookmark.get():
-            # toggle value
-            new_val = not bookmarked_sed.get()
-            bookmarked_sed.set(new_val)
-            print(f'This is bookmkarked: {bookmarked_sed.get()}')
-            #ui.notification_show("Message!", duration=2)
-
-    @render.ui
-    @reactive.event(input.sed_type, input.teff, input.logg)
-    def choose_sed():
-        sed_type = input.sed_type.get()
-        if sed_type in ['phoenix', 'kurucz']:
-            m_models, chosen_sed = get_auto_sed(input)
-            selected = chosen_sed
-            return ui.input_select(
-                id="sed",
-                label="",
-                choices=list(m_models),
-                selected=selected,
-            )
-        elif sed_type == 'blackbody':
-            if input.teff.get() != '':
-                teff = float(input.teff.get())
-                return ui.p(
-                    f' Blackbody (Teff={teff:.0f} K)',
-                    style='background:#DDDDDD',
-                    class_='mb-2 ps-2',
-                )
-        elif sed_type == 'custom':
-            # TBD: ui.input_select('uploaded_seds', '', choices=custom_seds)
-            pass
+        """Toggle bookmarked SED"""
+        is_bookmarked = not bookmarked_sed.get()
+        bookmarked_sed.set(is_bookmarked)
+        sed_type, sed_model, norm_band, norm_mag, sed_file = parse_sed(input)
+        if is_bookmarked:
+            scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
+            wl, flux = jwst.extract_sed(scene)
+            spectrum_choices['sed'].append(sed_file)
+            spectra[sed_file] = {'wl': wl, 'flux': flux}
+        else:
+            spectrum_choices['sed'].remove(sed_file)
+            spectra.pop(sed_file)
 
     @reactive.effect
     @reactive.event(input.geometry)
@@ -839,7 +869,7 @@ def server(input, output, session):
 
         pando = jwst.PandeiaCalculation(inst_name, mode)
 
-        sed_type, sed_model, norm_band, norm_magnitude = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_magnitude, label = parse_sed(input)
         pando.set_scene(sed_type, sed_model, norm_band, norm_magnitude)
 
         flux_rate, fullwell = pando.get_saturation_values(
@@ -957,7 +987,9 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_sed():
-        # TBD: Same as plotly_depth but with the stellar SEDs
+        # TBD: gather bookmarked SEDs (already stored as [wl,flux])
+        # TBD: get current SEDs
+        # TBD: Same as plotly_depth but with plotly_sed_spectra()
         fig = go.Figure()
         return fig
 
