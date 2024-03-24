@@ -634,9 +634,13 @@ def server(input, output, session):
             selected=detector.readout_default,
         )
         detector = get_detector(mode=input.select_mode.get())
+        selected = input.filter_filter.get()
+        if selected != 'all':
+            selected = None
         ui.update_radio_buttons(
             "filter_filter",
             choices=[detector.instrument, 'all'],
+            selected=selected,
         )
 
     @reactive.Effect
