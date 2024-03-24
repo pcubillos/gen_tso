@@ -351,7 +351,7 @@ app_ui = ui.page_fluid(
                     value=1,
                     min=1, max=10000,
                 ),
-                ui.input_switch("switch", "Match obs. time", False),
+                ui.input_switch("integs_switch", "Match obs. duration", False),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             body_args=dict(class_="p-2 m-0"),
@@ -903,6 +903,33 @@ def server(input, output, session):
         brightest_pix_rate.set(flux_rate)
         full_well.set(fullwell)
 
+
+    @reactive.Effect
+    @reactive.event(
+        input.integs_switch, input.obs_dur,
+        input.select_instrument, input.groups, input.readout, input.subarray,
+    )
+    def _():
+        """Switch to make the number of integrations match observation duration"""
+        match_dur = input.integs_switch.get()
+        if not match_dur:
+            ui.update_numeric('integrations', value=1)
+            return
+
+        obs_dur = float(req(input.obs_dur).get())
+        inst_name = input.select_instrument.get().lower()
+        nint = 1
+        ngroup = input.groups.get()
+        readout = input.readout.get().lower()
+        subarray = input.subarray.get().lower()
+        single_exp_time = jwst.exposure_time(
+            inst_name, nint=nint, ngroup=ngroup,
+            readout=readout, subarray=subarray,
+        )
+        if single_exp_time == 0.0:
+            return
+        integs = int(np.round(obs_dur*3600.0/single_exp_time))
+        ui.update_numeric('integrations', value=integs)
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
