@@ -5,6 +5,7 @@ __all__ = [
     'plotly_filters',
     'plotly_sed_spectra',
     'plotly_depth_spectra',
+    'plotly_tso_spectra',
 ]
 
 import numpy as np
@@ -300,6 +301,74 @@ def plotly_depth_spectra(
     )
 
     if wl_scale == 'log':
+        wl_range = [np.log10(wave) for wave in wl_range]
+    fig.update_xaxes(
+        title_text='wavelength (um)',
+        title_standoff=0,
+        range=wl_range,
+        type=wl_scale,
+    )
+
+    fig.update_layout(legend=dict(
+        orientation="h",
+        entrywidth=1.0,
+        entrywidthmode='fraction',
+        yanchor="bottom",
+        xanchor="right",
+        y=1.02,
+        x=1
+    ))
+    fig.update_layout(showlegend=True)
+    return fig
+
+
+def plotly_tso_spectra(
+        wl, spec, bin_wl, bin_spec, bin_err, label,
+        bin_widths=None,
+        units='percent', wl_range=None, wl_scale='linear', resolution=250.0,
+        obs_geometry='Transit',
+    ):
+    """
+    Make a plotly figure of transit/eclipse depth TSO spectra.
+    """
+    fig = go.Figure()
+    obs_col = px.colors.sample_colorscale('Viridis', 0.2)[0]
+    model_col = px.colors.sample_colorscale('Viridis', 0.75)[0]
+
+    fig.add_trace(go.Scatter(
+            x=wl,
+            y=spec/pt.u(units),
+            mode='lines',
+            name='model',
+            line=dict(color=model_col, width=1.5),
+        ))
+    fig.add_trace(go.Scatter(
+            x=bin_wl,
+            y=bin_spec/pt.u(units),
+            error_y=dict(type='data', array=bin_err/pt.u(units), visible=True),
+            mode='markers',
+            name=label,
+            marker=dict(color=obs_col, size=5),
+        ))
+
+    fig.update_traces(
+        hovertemplate=
+            'wl = %{x:.2f}<br>'+
+            'depth = %{y:.3f}'
+    )
+    ymax = np.amax(spec)/pt.u(units)
+    ymin = np.amin(spec)/pt.u(units)
+    dy = 0.1 * (ymax-ymin)
+    y_range = [ymin-dy, ymax+dy]
+    title = f'{obs_geometry} depth ({units})'
+    title = title.replace('percent','%').replace(' (none)', '')
+    fig.update_yaxes(
+        title_text=title,
+        title_standoff=0,
+        range=y_range,
+    )
+
+    if wl_scale == 'log' and wl_range is not None:
         wl_range = [np.log10(wave) for wave in wl_range]
     fig.update_xaxes(
         title_text='wavelength (um)',
