@@ -12,6 +12,7 @@ __all__ = [
     'simulate_tso',
     'PandeiaCalculation',
     'generate_all_instruments',
+    'detector_label',
 ]
 
 import copy
@@ -1209,4 +1210,22 @@ def generate_all_instruments():
     ]
 
     return detectors
+
+
+def detector_label(mode, disperser, filter, subarray, readout):
+    """
+    Generate a pretty and (as succinct as possible) label for the
+    detector configuration.
+    """
+    if  mode == 'lrsslitless':
+        return 'MIRI LRS'
+    if mode == 'soss':
+        return f'NIRISS {mode.upper()} {subarray}'
+    if mode == 'ssgrism':
+        subarray = subarray.replace('grism', '')
+        return f'NIRCam {filter.upper()} {subarray} {readout}'
+    elif mode == 'bots':
+        if filter == 'f070lp':
+            disperser = f'{disperser}/{filter}'
+        return f'NIRSpec {disperser.upper()} {subarray} {readout}'
 
