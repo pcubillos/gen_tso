@@ -17,6 +17,7 @@ from gen_tso import shiny as cs
 from gen_tso.utils import ROOT
 
 
+
 # Confirmed planets
 nea_data = cat.load_nea_targets_table()
 planets = nea_data[0]
@@ -110,7 +111,7 @@ def get_detector(mode=None, instrument=None):
 
 def filter_data_frame():
     """
-    To be moved into pandeia_interface.py
+    To be moved to pandeia_interface.py
     """
     filter_throughputs = {}
     for inst_name,mode in spec_modes.items():
@@ -131,9 +132,10 @@ def filter_data_frame():
 filter_throughputs = filter_data_frame()
 
 tso_runs = {}
-tso_runs['Current'] = {'current': 'current'}
-tso_runs['Transit'] = {}
-tso_runs['Eclipse'] = {}
+tso_labels = {}
+tso_labels['Current'] = {'current': 'current'}
+tso_labels['Transit'] = {}
+tso_labels['Eclipse'] = {}
 
 cache_saturation = {}
 spectrum_choices = {
@@ -174,13 +176,13 @@ app_ui = ui.page_fluid(
         ui.card(
             # current setup and TSO runs
             ui.input_select(
-                id="tso_runs",
+                id="display_tso_run",
                 label=ui.tooltip(
-                    "Display runs:",
-                    f"TSO runs will show here after 'Run Pandeia' calls",
+                    "Display TSO run:",
+                    "TSO runs will show here after a 'Run Pandeia' call",
                     placement='right',
                 ),
-                choices=tso_runs,
+                choices=tso_labels,
                 selected=['current'],
                 width='450px',
             ),
@@ -516,6 +518,42 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "TSO",
+                    ui.popover(
+                        ui.span(
+                            fa.icon_svg("gear"),
+                            style="position:absolute; top: 5px; right: 7px;",
+                        ),
+                        ui.input_numeric(
+                            id='n_obs',
+                            label='Number of observations:',
+                            value=1.0,
+                            min=1.0, max=3000.0, step=1.0,
+                        ),
+                        ui.input_numeric(
+                            id='tso_resolution',
+                            label='Observation resolution:',
+                            value=250.0,
+                            min=25.0, max=3000.0, step=25.0,
+                        ),
+                        ui.input_select(
+                            "plot_tso_units",
+                            "Depth units:",
+                            choices = ['none', 'percent', 'ppm'],
+                            selected='percent',
+                        ),
+                        ui.input_select(
+                            "plot_tso_xscale",
+                            "Wavelength axis:",
+                            choices = ['linear', 'log'],
+                        ),
+                        ui.input_select(
+                            "plot_tso_xrange",
+                            "Wavelength range:",
+                            choices = ['auto', 'JWST (0.6--12.0 um)'],
+                        ),
+                        placement="right",
+                        id="tso_popover",
+                    ),
                     cs.custom_card(
                         output_widget("plotly_tso", fillable=True),
                         body_args=dict(padding='0px'),
@@ -670,17 +708,22 @@ def server(input, output, session):
         filter = input.filter.get().lower()
         disperser = input.disperser.get().lower()
         ngroup = input.groups.get()
+        nint = input.integrations.get()
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
+        obs_type = input.geometry.get()
         transit_dur = float(input.t_dur.get())
         obs_dur = float(input.obs_dur.get())
-        obs_type = input.geometry.get()
+        exp_time = jwst.exposure_time(
+            inst_name, nint=nint, ngroup=ngroup,
+            readout=readout, subarray=subarray,
+        )
+        # TBD: if exp_time << obs_dur, raise warning
 
         depth_model_name = input.planet_model.get()
-        print(repr(depth_model_name))
         if depth_model_name is None:
             ui.notification_show(
                 f"Missing {obs_type.lower()} depth model!",
@@ -693,28 +736,56 @@ def server(input, output, session):
 
         pando = jwst.PandeiaCalculation(inst_name, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-        #tso = pando.tso_calculation(
-        #    obs_type.lower(), transit_dur, obs_dur, depth_model,
-        #    ngroup, filter, readout, subarray, disperser,
-        #)
+        tso = pando.tso_calculation(
+            obs_type.lower(), transit_dur, exp_time, depth_model,
+            ngroup, filter, readout, subarray, disperser,
+        )
 
         ui.notification_show(
-            f"TSO model simulated!",
+            "TSO model simulated!",
             type="message",
             duration=2,
         )
         detector_label = jwst.detector_label(
             mode, disperser, filter, subarray, readout,
         )
-        label = f'{detector_label} / {sed_label} / {depth_model_name}'
-        tso_runs[obs_type][label] = label
-        ui.update_select('tso_runs', choices=tso_runs)
+        group_ints = f'({ngroup} G, {nint} I)'
+        pretty_label = (
+            f'{detector_label} {group_ints} / {sed_label} / {depth_model_name}'
+        )
+        tso_label = f'{obs_type} {pretty_label}'
+        tso_labels[obs_type][tso_label] = pretty_label
+        ui.update_select('display_tso_run', choices=tso_labels)
 
-        #bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
-        #   tso, n_obs=1, resolution=300.0, noiseless=False,
-        #)
+        tso_runs[tso_label] = dict(
+            # The detector
+            inst=inst_name,
+            mode=mode,
+            # The SED
+            sed_type=sed_type,
+            sed_model=sed_model,
+            norm_band=norm_band,
+            norm_mag=norm_mag,
+            # The planet
+            obs_type=obs_type,
+            t_dur=transit_dur,
+            obs_dur=obs_dur,
+            depth_model_name=depth_model_name,
+            depth_model=depth_model,
+            # The instrumental setting
+            disperser=disperser,
+            filter=filter,
+            subarray=subarray,
+            readout=readout,
+            ngroup=ngroup,
+            # The outputs
+            tso=tso,
+            #pandeia_results=pandeia_results,
+        )
+
         print(inst_name, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
+        print('~~ TSO done! ~~')
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -1046,6 +1117,8 @@ def server(input, output, session):
         ngroup = input.groups.get()
         readout = input.readout.get().lower()
         subarray = input.subarray.get().lower()
+        if ngroup is None:
+            return
         single_exp_time = jwst.exposure_time(
             inst_name, nint=nint, ngroup=ngroup,
             readout=readout, subarray=subarray,
@@ -1095,7 +1168,7 @@ def server(input, output, session):
     @render_plotly
     def plotly_sed():
         # Gather bookmarked SEDs
-        book = input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
+        input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
         model_names = spectrum_choices['sed']
         if len(model_names) == 0:
             fig = go.Figure()
@@ -1139,8 +1212,34 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_tso():
-        return go.Figure()
+        tso_label = input.display_tso_run.get()
+        n_obs = input.n_obs.get()
+        resolution = input.tso_resolution.get()
+        units = input.plot_tso_units.get()
+        wl_scale = input.plot_tso_xscale.get()
+        x_range = input.plot_tso_xrange.get()
+        if x_range == 'auto':
+            wl_range = None
+        else:
+            wl_range = [0.6, 13.0]
 
+        if tso_label in tso_runs:
+            tso_run = tso_runs[tso_label]
+            planet = tso_run['depth_model_name']
+            tso = tso_run['tso']
+            bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
+               tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+            )
+            fig = tplots.plotly_tso_spectra(
+                tso['wl'], tso['depth_spectrum'],
+                bin_wl, bin_spec, bin_err,
+                label=planet, bin_widths=None,
+                units=units, wl_range=wl_range, wl_scale=wl_scale,
+                obs_geometry='Transit',
+            )
+        else:
+            fig = go.Figure()
+        return fig
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
@@ -1153,6 +1252,8 @@ def server(input, output, session):
         readout = input.readout.get().lower()
         ngroup = input.groups.get()
         nint = input.integrations.get()
+        if ngroup is None:
+            return ''
         exp_time = jwst.exposure_time(
             inst_name, nint=nint, ngroup=ngroup,
             readout=readout, subarray=subarray,
