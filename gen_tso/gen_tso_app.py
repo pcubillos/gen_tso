@@ -130,10 +130,24 @@ def filter_data_frame():
 
 filter_throughputs = filter_data_frame()
 
+tso_runs = {}
+tso_runs['Current'] = {'current': 'current'}
+tso_runs['Transit'] = {}
+tso_runs['Eclipse'] = {}
+
+cache_saturation = {}
+spectrum_choices = {
+    'transit': [],
+    'eclipse': [],
+    'sed': [],
+}
+spectra = {}
+
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
 css_file = f'{ROOT}data/style.css'
+
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
@@ -154,19 +168,21 @@ app_ui = ui.page_fluid(
                 "select_mode",
                 "",
                 choices = {},
-                width='400px'
+                width='425px',
             ),
         ),
         ui.card(
-            # Placeholder / maybe store bookmarked runs in tabs here?
-            ui.input_checkbox_group(
-                id="checkbox_group",
-                label="Observation type:",
-                choices={
-                    "spec": "spectroscopy",
-                    "photo": "photometry",
-                },
-                selected=['spec'],
+            # current setup and TSO runs
+            ui.input_select(
+                id="tso_runs",
+                label=ui.tooltip(
+                    "Display runs:",
+                    f"TSO runs will show here after 'Run Pandeia' calls",
+                    placement='right',
+                ),
+                choices=tso_runs,
+                selected=['current'],
+                width='450px',
             ),
             ui.input_action_button(
                 id="run_pandeia",
@@ -498,6 +514,15 @@ app_ui = ui.page_fluid(
                         height='300px',
                     ),
                 ),
+                ui.nav_panel(
+                    "TSO",
+                    cs.custom_card(
+                        output_widget("plotly_tso", fillable=True),
+                        body_args=dict(padding='0px'),
+                        full_screen=True,
+                        height='400px',
+                    ),
+                ),
                 id="tab",
             ),
             ui.card(
@@ -573,15 +598,7 @@ def parse_sed(input):
 def server(input, output, session):
     sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
-    brightest_pix_rate = reactive.Value(None)
-    full_well = reactive.Value(None)
-
-    spectrum_choices = {
-        'transit': [],
-        'eclipse': [],
-        'sed': [],
-    }
-    spectra = {}
+    saturation_label = reactive.Value(None)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -646,22 +663,59 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.run_pandeia)
     def _():
-        print("You clicked my button!")
         inst_name = input.select_instrument.get().lower()
         mode = input.select_mode.get()
         subarray = input.subarray.get().lower()
         readout = input.readout.get().lower()
         filter = input.filter.get().lower()
         disperser = input.disperser.get().lower()
+        ngroup = input.groups.get()
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
-        sed_type, sed_model, norm_band, norm_magnitude, label = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
+        transit_dur = float(input.t_dur.get())
+        obs_dur = float(input.obs_dur.get())
+        obs_type = input.geometry.get()
+
+        depth_model_name = input.planet_model.get()
+        print(repr(depth_model_name))
+        if depth_model_name is None:
+            ui.notification_show(
+                f"Missing {obs_type.lower()} depth model!",
+                type="error",
+                duration=5,
+            )
+            return
+
+        depth_model = list(spectra[depth_model_name].values())
+
+        pando = jwst.PandeiaCalculation(inst_name, mode)
+        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+        #tso = pando.tso_calculation(
+        #    obs_type.lower(), transit_dur, obs_dur, depth_model,
+        #    ngroup, filter, readout, subarray, disperser,
+        #)
+
+        ui.notification_show(
+            f"TSO model simulated!",
+            type="message",
+            duration=2,
+        )
+        detector_label = jwst.detector_label(
+            mode, disperser, filter, subarray, readout,
+        )
+        label = f'{detector_label} / {sed_label} / {depth_model_name}'
+        tso_runs[obs_type][label] = label
+        ui.update_select('tso_runs', choices=tso_runs)
+
+        #bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
+        #   tso, n_obs=1, resolution=300.0, noiseless=False,
+        #)
         print(inst_name, mode, disperser, filter, subarray, readout)
-        print(sed_type, sed_model, norm_band, repr(norm_magnitude))
+        print(sed_type, sed_model, norm_band, repr(norm_mag))
 
-        print(spectrum_choices)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
@@ -955,15 +1009,24 @@ def server(input, output, session):
 
         pando = jwst.PandeiaCalculation(inst_name, mode)
 
-        sed_type, sed_model, norm_band, norm_magnitude, label = parse_sed(input)
-        pando.set_scene(sed_type, sed_model, norm_band, norm_magnitude)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 
-        flux_rate, fullwell = pando.get_saturation_values(
+        flux_rate, full_well = pando.get_saturation_values(
             filter, readout, subarray, disperser,
         )
-        brightest_pix_rate.set(flux_rate)
-        full_well.set(fullwell)
 
+        if mode == 'bots':
+            filter = f'{disperser}/{filter}'
+            sat_label = f'{filter}_{subarray}_{sed_label}'
+        else:
+            sat_label = f'{filter}_{sed_label}'
+        cache_saturation[sat_label] = dict(
+            brightest_pixel_rate = flux_rate,
+            full_well = full_well,
+        )
+        # This reactive variable enforces a re-rendering of exp_time
+        saturation_label.set(sat_label)
 
     @reactive.Effect
     @reactive.event(
@@ -1074,6 +1137,10 @@ def server(input, output, session):
         )
         return fig
 
+    @render_plotly
+    def plotly_tso():
+        return go.Figure()
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
@@ -1090,14 +1157,23 @@ def server(input, output, session):
             inst_name, nint=nint, ngroup=ngroup,
             readout=readout, subarray=subarray,
         )
-        pixel_rate = brightest_pix_rate.get()
         exposure_hours = exp_time / 3600.0
         exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
-        if pixel_rate is None:
+
+        filter = str(input.filter.get()).lower()
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        saturation_label.get()  # enforce calc_saturation renders exp_time
+        if mode == 'bots':
+            sat_label = f'{filter}_{subarray}_{sed_label}'
+        else:
+            sat_label = f'{filter}_{sed_label}'
+        if sat_label not in cache_saturation:
             return exp_text
 
+        pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
+        full_well = cache_saturation[sat_label]['full_well']
         sat_time = jwst.saturation_time(detector, ngroup, readout, subarray)
-        sat_fraction = pixel_rate * sat_time / full_well.get()
+        sat_fraction = pixel_rate * sat_time / full_well
         ngroup_80 = int(0.8*ngroup/sat_fraction)
         ngroup_max = int(ngroup/sat_fraction)
         return (

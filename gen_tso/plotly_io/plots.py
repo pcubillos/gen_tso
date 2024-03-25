@@ -158,16 +158,6 @@ def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
 
     wl_scale = 'log'
     wl_range = [np.log10(0.6), np.log10(13.5)]
-    #if show_all:
-    #    wl_scale = 'log'
-    #    wl_range = [np.log10(0.6), np.log10(13.5)]
-    #elif inst_name == 'miri':
-    #    wl_scale = 'linear'
-    #    wl_range = [0.6, 13.5]
-    #else:
-    #    wl_scale = 'linear'
-    #    wl_range = [0.5, 6.0]
-
     fig.update_xaxes(
         title_text='wavelength (um)',
         title_standoff=0,
