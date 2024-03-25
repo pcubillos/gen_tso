@@ -11,8 +11,13 @@ __all__ = [
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import pyratbay.spectrum as ps
-import pyratbay.tools as pt
+#import pyratbay.spectrum as ps
+#import pyratbay.tools as pt
+from ..utils import (
+    bin_spectrum,
+    constant_resolution_spectrum,
+    u,
+)
 
 
 def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
@@ -195,8 +200,8 @@ def plotly_sed_spectra(
         if resolution > 0:
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
-            bin_wl = ps.constant_resolution_spectrum(wl_min, wl_max, resolution)
-            bin_flux = ps.bin_spectrum(bin_wl, wl, flux, ignore_gaps=True)
+            bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
+            bin_flux = bin_spectrum(bin_wl, wl, flux, ignore_gaps=True)
             mask = np.isfinite(bin_flux)
             wl = bin_wl[mask]
             flux = bin_flux[mask]
@@ -268,8 +273,8 @@ def plotly_depth_spectra(
         if resolution > 0:
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
-            bin_wl = ps.constant_resolution_spectrum(wl_min, wl_max, resolution)
-            depth = ps.bin_spectrum(bin_wl, wl, depth) / pt.u(units)
+            bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
+            depth = bin_spectrum(bin_wl, wl, depth) / u(units)
             wl = bin_wl
 
         if labels[j] == highlight_model:
@@ -337,15 +342,15 @@ def plotly_tso_spectra(
 
     fig.add_trace(go.Scatter(
             x=wl,
-            y=spec/pt.u(units),
+            y=spec/u(units),
             mode='lines',
             name='model',
             line=dict(color=model_col, width=1.5),
         ))
     fig.add_trace(go.Scatter(
             x=bin_wl,
-            y=bin_spec/pt.u(units),
-            error_y=dict(type='data', array=bin_err/pt.u(units), visible=True),
+            y=bin_spec/u(units),
+            error_y=dict(type='data', array=bin_err/u(units), visible=True),
             mode='markers',
             name=label,
             marker=dict(color=obs_col, size=5),
@@ -356,8 +361,8 @@ def plotly_tso_spectra(
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
-    ymax = np.amax(spec)/pt.u(units)
-    ymin = np.amin(spec)/pt.u(units)
+    ymax = np.amax(spec)/u(units)
+    ymin = np.amin(spec)/u(units)
     dy = 0.1 * (ymax-ymin)
     y_range = [ymin-dy, ymax+dy]
     title = f'{obs_geometry} depth ({units})'

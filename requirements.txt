@@ -1,6 +1,10 @@
-shiny
-pandeia.engine
+shiny>=0.8.1
+pandeia.engine>=3.0.0
+scipy
+numpy>=1.15.1
+requests>=2.19.1
 astroquery
 plotly
 shinywidgets
 faicons
+
