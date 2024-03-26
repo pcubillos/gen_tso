@@ -1,0 +1,48 @@
+---
+title: Get started
+---
+
+## Walk through
+
+You can install `Gen TSO` from [PyPI](https://pypi.org/project/gen_tso/) with the following command:
+
+```bash
+pip install gen_tso
+```
+
+### Instrument and mode selection
+
+To use `pandeia` you would need to download some files as per their [documentation](https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation).
+
+### Target selection
+
+First you need to download the pandeia reference data (version 3.0) from
+this folder: [https://stsci.app.box.com/v/pandeia-refdata-v3p0-jwst](https://stsci.app.box.com/v/pandeia-refdata-v3p0-jwst)
+
+### Detector setup
+
+Unpack the file and set the `$pandeia_refdata` environment variable pointing
+to the top folder of the data (the directory containing the VERSION_PSF file).
+
+### Stellar atlases:
+
+Then, you need to download these three reference stellar and calibration files, for example with these commands:
+
+```bash
+wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_kurucz-1993-atlas_multi_v2_synphot4.tar
+wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_pheonix-models_multi_v3_synphot5.tar
+wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_everything_multi_v15_sed.tar
+```
+
+Unpack these files and set the environment variable: `$PYSYN_CDBS` pointing to
+the trds directory.
+
+### Vega reference SED:
+
+Lastly, you need to download the Vega reference spectrum:
+
+```bash
+wget https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
+```
+
+and place the file in your `$PYSYN_CDBS` trds/calspec/ folder.
