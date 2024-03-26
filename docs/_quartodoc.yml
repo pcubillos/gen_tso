@@ -1,0 +1,14 @@
+interlinks:
+  fast: true
+
+quartodoc:
+  dir: reference
+  package: gen_tso
+  out_index: index.qmd
+  sections:
+  - title: API Reference
+    options:
+      dynamic: true
+    contents:
+    - name: pandeia.make_scene
+

@@ -31,9 +31,6 @@ jobs:
       - name: Check out
         uses: actions/checkout@v3
 
-      - name: Set up poetry
-        uses: snok/install-poetry@v1
-
       - name: Install dependencies
         run: poetry install --with docs
 
@@ -42,14 +39,14 @@ jobs:
 
 
       - name: Compile docstrings with quartodoc
-        run : |
-          poetry run quartodoc build --verbose --config docs/_quarto.yml
+        shell: bash
+        run: |
+          pushd docs; make doc; popd
 
       - name: Render
         uses: quarto-dev/quarto-actions/render@v2
         with:
           path: 'docs'
-
 
       - name: Setup Pages
         uses: actions/configure-pages@v2
