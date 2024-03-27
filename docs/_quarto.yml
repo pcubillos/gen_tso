@@ -1,0 +1,51 @@
+project:
+  type: website
+  output-dir: _site
+
+execute:
+  freeze: auto
+
+# tell quarto to read the generated sidebar
+#metadata-files:
+#  - _sidebar.yml
+
+format:
+  html:
+    theme: cosmo
+      #dark: cosmo
+    #css: bootstrap.css
+    toc: true
+    toc-location: left
+
+website:
+  title: "Gen TSO"
+  description: "A graphical ETC interface for time-series observations"
+  repo-url: https://github.com/pcubillos/gen_tso
+  page-navigation: true
+  # Add links to the top
+  navbar:
+    pinned: true
+    left:
+    - file: install.qmd
+      text: Install
+    - file: get_started.qmd
+      text: Get started
+    - text: Reference
+      href: reference
+
+    right:
+      - icon: github
+        href: https://github.com/pcubillos/gen_tso
+
+
+quartodoc:
+  dir: reference
+  package: gen_tso
+  out_index: index.qmd
+  sections:
+  - title: API Reference
+    options:
+      dynamic: true
+    contents:
+    - name: pandeia.make_scene
+

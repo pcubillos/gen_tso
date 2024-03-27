@@ -1,10 +1,11 @@
 shiny>=0.8.1
 pandeia.engine>=3.0.0
+numpy>=1.17
 scipy
-numpy>=1.15.1
 requests>=2.19.1
 astroquery
+pandas
 plotly
-shinywidgets
+shinywidgets>=0.3.0
 faicons
 
