@@ -6,8 +6,11 @@ import os
 
 def main():
     app = os.path.realpath(os.path.dirname(__file__)) + '/gen_tso_app.py'
-    subprocess.call(f'shiny run --reload --launch-browser {app}'.split())
-    # TBD: Try-except KeyboardInterrupt
+    try:
+        subprocess.call(f'shiny run --reload --launch-browser {app}'.split())
+    except KeyboardInterrupt:
+        pass
+
 
 if __name__ == "__main__":
     main()
