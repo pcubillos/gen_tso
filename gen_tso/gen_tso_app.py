@@ -320,12 +320,12 @@ app_ui = ui.page_fluid(
                         label='',
                         choices=['Transit', 'Eclipse'],
                     ),
+                    # Row 2
                     ui.output_text('transit_dur_label'),
                     ui.input_text("t_dur", "", value='2.0'),
-                    # Row 2
+                    # Row 3
                     ui.p("Obs_dur (h):"),
                     ui.input_text("obs_dur", "", value='5.0'),
-                    # Row 3
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
@@ -334,21 +334,12 @@ app_ui = ui.page_fluid(
                     fillable=True,
                 ),
                 ui.input_select(
-                    id="planet_model",
-                    label="Transit depth spectrum",
-                    choices=[],
+                    id="planet_model_type",
+                    label=ui.output_ui('depth_label'),
+                    choices=["Input"],
                 ),
+                ui.output_ui('choose_depth'),
                 class_="px-2 pt-2 pb-0 m-0",
-            ),
-            ui.panel_well(
-                ui.input_action_button('upload_spectrum', 'Upload spectrum'),
-                ui.input_radio_buttons(
-                    id="upload_type",
-                    label='',
-                    choices=['Transit', 'Eclipse', 'SED'],
-                    inline=True,
-                ),
-                class_="px-2 pb-0 m-0",
             ),
             body_args=dict(class_="p-2 m-0"),
         ),
@@ -637,6 +628,7 @@ def server(input, output, session):
     sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
     saturation_label = reactive.Value(None)
+    update_depth_flag = reactive.Value(None)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -723,16 +715,32 @@ def server(input, output, session):
         )
         # TBD: if exp_time << obs_dur, raise warning
 
-        depth_model_name = input.planet_model.get()
-        if depth_model_name is None:
-            ui.notification_show(
-                f"Missing {obs_type.lower()} depth model!",
-                type="error",
-                duration=5,
-            )
-            return
-
-        depth_model = list(spectra[depth_model_name].values())
+        model_type = input.planet_model_type.get()
+        depth_model_name = input.depth.get()
+        obs_geometry = input.geometry.get()
+        # TBD: parse depth_model_name
+        if model_type == 'Input':
+            if depth_model_name is None:
+                ui.notification_show(
+                    f"Missing {obs_type.lower()} depth model!",
+                    type="error",
+                    duration=5,
+                )
+                return
+            depth_model = list(spectra[depth_model_name].values())
+        elif model_type == 'Flat':
+            nwave = 1000
+            transit_depth = input.depth.get() * 0.01
+            depth_model = [
+                np.linspace(0.6, 30.0, nwave),
+                np.tile(transit_depth, nwave)
+            ]
+        elif model_type == 'Blackbody':
+            transit_depth = input.depth.get() * 0.01
+            t_planet = input.tplanet.get()
+            # TBD: make a BB scene, get Fplanet in mJy
+            # set E_depth = Fplanet/Fstar * rprs**2
+        print(depth_model)
 
         pando = jwst.PandeiaCalculation(inst_name, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
@@ -950,14 +958,37 @@ def server(input, output, session):
             spectrum_choices['sed'].remove(sed_file)
             spectra.pop(sed_file)
 
+    @render.ui
+    @reactive.event(input.geometry)
+    def depth_label():
+        """Set depth model label"""
+        obs_geometry = input.geometry.get()
+        return cs.label_tooltip_button(
+            label=f"{obs_geometry} depth spectrum: ",
+            tooltip_text=f'Click icon to upload {obs_geometry} depth model',
+            icon=fa.icon_svg("earth-americas", style='solid', fill='royalblue'),
+            #icon=fa.icon_svg("file-arrow-up", fill='black'),
+            label_id='depth_label_text',
+            button_id='upload_depth',
+        )
+
+
     @reactive.effect
     @reactive.event(input.geometry)
     def _():
         obs_geometry = input.geometry.get()
+        selected = input.planet_model_type.get()
+        if obs_geometry == 'Transit':
+            choices = ['Flat', 'Input']
+        elif obs_geometry == 'Eclipse':
+            choices = ['Blackbody', 'Input']
+        if selected not in choices:
+            selected = choices[0]
+
         ui.update_select(
-            id="planet_model",
-            label=f"{obs_geometry} depth spectrum:",
-            choices=spectrum_choices[obs_geometry.lower()],
+            id="planet_model_type",
+            choices=choices,
+            selected=selected,
         )
 
     @render.text
@@ -979,7 +1010,11 @@ def server(input, output, session):
     )
     def _():
         """Set observation time based on transit dur and popover settings"""
-        transit_dur = float(req(input.t_dur).get())
+        t_dur = req(input.t_dur).get()
+        if t_dur == '':
+            ui.update_text('obs_dur', value='')
+            return
+        transit_dur = float(t_dur)
         settling = req(input.settling_time).get()
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
@@ -989,31 +1024,109 @@ def server(input, output, session):
         ui.update_text('obs_dur', value=f'{t_total:.2f}')
 
 
+    @render.ui
+    @reactive.event(
+        input.target, input.geometry, input.planet_model_type,
+        update_depth_flag,
+    )
+    def choose_depth():
+        obs_geometry = input.geometry.get()
+        model_type = input.planet_model_type.get()
+
+        target_name = input.target.get()
+        if target_name not in planets:
+            rprs_square = 1.0
+            teq_planet = 1000.0
+        else:
+            index = planets.index(target_name)
+            teq_planet = teq[index]
+            rprs_square = rprs[index]**2.0
+
+        layout_kwargs = dict(
+            width=1/2,
+            fixed_width=False,
+            heights_equal='all',
+            gap='7px',
+            fill=False,
+            fillable=True,
+            class_="pb-2 pt-0 m-0",
+        )
+
+        if model_type == 'Flat':
+            return ui.layout_column_wrap(
+                ui.p("Depth (%):"),
+                ui.input_numeric(
+                    id="depth",
+                    label="",
+                    value=np.round(100*rprs_square, decimals=4),
+                    step=0.1,
+                ),
+                **layout_kwargs,
+            )
+        elif model_type == 'Blackbody':
+            return ui.layout_column_wrap(
+                ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
+                ui.input_numeric(
+                    id="depth",
+                    label="",
+                    value=np.round(100*rprs_square, decimals=4),
+                    step=0.1,
+                ),
+                ui.p("Temp (K):"),
+                ui.input_numeric(
+                    id="tplanet",
+                    label="",
+                    value=teq_planet,
+                    step=100,
+                ),
+                **layout_kwargs,
+            )
+
+        if model_type == 'Input':
+            choices = spectrum_choices[obs_geometry.lower()]
+            input_select = ui.input_select(
+                id="depth",
+                label="",
+                choices=choices,
+                #selected=selected,
+            )
+            if len(choices) > 0:
+                return input_select
+
+            if obs_geometry == 'Transit':
+                tooltip_text = f"a {obs_geometry.lower()}"
+            elif obs_geometry == 'Eclipse':
+                tooltip_text = f"an {obs_geometry.lower()}"
+            return ui.tooltip(
+                input_select,
+                f'Upload {tooltip_text} depth spectrum',
+                placement='right',
+            )
+
+
     @reactive.effect
     @reactive.event(input.upload_file)
     def _():
-        new_model = input.upload_file()
+        new_model = input.upload_file.get()
         if not new_model:
             print('No new model!')
             return
 
-        current_model = input.planet_model.get()
-        upload_type = input.upload_type.get().lower()
+        obs_geometry = input.geometry.get().lower()
         depth_file = new_model[0]['name']
         # TBD: remove file extension?
-        spectrum_choices[upload_type].append(depth_file)
+        spectrum_choices[obs_geometry].append(depth_file)
         wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
         spectra[depth_file] = {'wl': wl, 'depth': depth}
 
-        ui.update_select(
-            id="planet_model",
-            #label=f"{obs_geometry} depth spectrum:",
-            choices=spectrum_choices[upload_type],
-            selected=current_model,
-        )
+        if input.planet_model_type.get() != 'Input':
+            return
+        # Trigger update choose_depth
+        update_depth_flag.set(depth_file)
+
 
     @reactive.effect
-    @reactive.event(input.upload_spectrum)
+    @reactive.event(input.upload_sed)
     def _():
         sed_choices = [
             # TBD: can I get super-scripts?
@@ -1022,31 +1135,14 @@ def server(input, output, session):
             "erg s-1 cm-2 cm-1 (wavelength space)",
             "mJy",
         ]
-        depth_choices = [
-            "none",
-            "percent",
-            "ppm",
-        ]
-        if input.upload_type.get() == 'Transit':
-            choices = depth_choices
-            label1 = 'transit depth'
-            label2 = 'Depth units:'
-        elif input.upload_type.get() == 'Eclipse':
-            choices = depth_choices
-            label1 = 'eclipse depth'
-            label2 = 'Depth units:'
-        elif input.upload_type.get() == 'SED':
-            choices = sed_choices
-            label1 = 'stellar SED'
-            label2 = 'Flux units:'
-
         m = ui.modal(
             ui.input_file(
+                # Need to change the id to avoid conflict with upload_depth
                 id="upload_file",
                 label=ui.markdown(
                     "Input files must be plan-text files with two columns, "
                     "the first one being the wavelength (microns) and "
-                    f"the second one the {label1}. "
+                    f"the second one the stellar SED. "
                     "**Make sure the input units are correct!**"
                 ),
                 button_label="Browse",
@@ -1055,8 +1151,42 @@ def server(input, output, session):
             ),
             ui.input_radio_buttons(
                 id="flux_units",
-                label=label2,
-                choices=choices,
+                label='Flux units:',
+                choices=sed_choices,
+                width='100%',
+            ),
+            title="Upload Spectrum",
+            easy_close=True,
+        )
+        ui.modal_show(m)
+
+
+    @reactive.effect
+    @reactive.event(input.upload_depth)
+    def _():
+        depth_choices = [
+            "none",
+            "percent",
+            "ppm",
+        ]
+        obs_geometry = input.geometry.get().lower()
+        m = ui.modal(
+            ui.input_file(
+                id="upload_file",
+                label=ui.markdown(
+                    "Input files must be plan-text files with two columns, "
+                    "the first one being the wavelength (microns) and "
+                    f"the second one the {obs_geometry} depth. "
+                    "**Make sure the input units are correct!**"
+                ),
+                button_label="Browse",
+                multiple=True,
+                width='100%',
+            ),
+            ui.input_radio_buttons(
+                id="flux_units",
+                label='Depth units:',
+                choices=depth_choices,
                 width='100%',
             ),
             title="Upload Spectrum",
