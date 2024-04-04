@@ -45,23 +45,43 @@ def custom_card(*args, body_args={}, **kwargs):
 
 
 def label_tooltip_button(
-        label, tooltip_text, icon, label_id, button_id, placement='top',
+        label, icons, tooltips, button_ids, placement='top',
     ):
     """
-    A label text which has a tooltip and a clickable icon.
+    A label text which has one or more clickable icons (with tooltips).
+
+    Parameters
+    ----------
+    label: String
+        The label before the icons.
+    icons: favicon.icon_svg() instance(s)
+        This could be an icon_svg instance of a list of them.
+        If it is a list, assume that tooltips and button_ids also are.
+    tooltips: String(s)
+        The tooltips for each icon.
+    button_ids: String(s)
+        The id for each button assigned to the icons.
     """
-    return ui.tooltip(
-        ui.span(
-            label,
+    if not isinstance(icons, list):
+        icons = [icons]
+        tooltips = [tooltips]
+        button_ids = [button_ids]
+
+    icon_buttons = [
+        ui.tooltip(
             ui.input_action_link(
                 id=button_id,
                 label='',
                 icon=icon,
             ),
-        ),
-        tooltip_text,
-        placement=placement,
-        id=label_id,
+            text,
+            placement=placement,
+        )
+        for icon, text, button_id in zip(icons, tooltips, button_ids)
+    ]
+    return ui.span(
+        label,
+        *icon_buttons,
     )
 
 
