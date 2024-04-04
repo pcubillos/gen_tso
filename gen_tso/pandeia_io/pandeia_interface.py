@@ -213,7 +213,7 @@ def find_closest_sed(models_teff, models_logg, teff, logg):
     return idx
 
 
-def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
+def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     """
     Create a stellar point-source scene dictionary for use in Pandeia.
 
@@ -233,7 +233,7 @@ def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
 
     Examples
     --------
-    >>> import gen_tso.pandeia as jwst
+    >>> import gen_tso.pandeia_io as jwst
 
     >>> sed_type = 'phoenix'
     >>> sed_model = 'k5v'
@@ -270,12 +270,15 @@ def make_scene(sed_type, sed_model, norm_band, norm_magnitude):
     elif sed_type == 'blackbody':
         sed['temp'] = sed_model
 
-    normalization = {
-        'type': 'photsys',
-        'bandpass': norm_band,
-        'norm_flux': norm_magnitude,
-        'norm_fluxunit': 'vegamag',
-    }
+    if norm_band is None or norm_band == 'none':
+        normalization = {'type': 'none'}
+    else:
+        normalization = {
+            'type': 'photsys',
+            'bandpass': norm_band,
+            'norm_flux': norm_magnitude,
+            'norm_fluxunit': 'vegamag',
+        }
 
     spectrum = {
         'sed': sed,
@@ -343,12 +346,13 @@ def extract_sed(scene, wl_range=None):
     >>> plt.plot(wl3, bb, c='xkcd:green')
     >>> plt.xlim(0.5, 12)
     """
+    sed_model = sed.SEDFactory(config=scene['spectrum']['sed'], webapp=True, z=0)
     normalization = NormalizationFactory(
         config=scene['spectrum']['normalization'],
         webapp=True,
     )
-    sed_model = sed.SEDFactory(config=scene['spectrum']['sed'], webapp=True, z=0)
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
+
     if wl_range is None:
         wl_mask = np.ones(len(wave.value), bool)
     else:
