@@ -352,6 +352,13 @@ def extract_sed(scene, wl_range=None):
         webapp=True,
     )
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
+    if normalization.type == 'none':
+        if sed_model.sed_type in ['phoenix', 'k93models']:
+            # Convert wavelengths from A to um:
+            wave *= 1e-4  # pc.A / pc.um
+        if sed_model.sed_type == 'blackbody':
+            # Convert blackbody intensity to flux:
+            flux *= np.pi
 
     if wl_range is None:
         wl_mask = np.ones(len(wave.value), bool)
