@@ -274,8 +274,10 @@ def plotly_depth_spectra(
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
             bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
-            depth = bin_spectrum(bin_wl, wl, depth) / u(units)
-            wl = bin_wl
+            depth = bin_spectrum(bin_wl, wl, depth, ignore_gaps=True) / u(units)
+            mask = np.isfinite(depth)
+            wl = bin_wl[mask]
+            depth = depth[mask]
 
         if labels[j] == highlight_model:
             linedict = dict(color='Gold', width=2.0)
