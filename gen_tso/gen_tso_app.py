@@ -3,19 +3,20 @@
 
 import pickle
 
+import numpy as np
+import scipy.interpolate as si
+
 import faicons as fa
 from htmltools import HTML
-import numpy as np
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
 from gen_tso import catalogs as cat
-from gen_tso import pandeia as jwst
-from gen_tso import plotly as tplots
-from gen_tso import shiny as cs
+from gen_tso import pandeia_io as jwst
+from gen_tso import plotly_io as tplots
+from gen_tso import custom_shiny as cs
 from gen_tso.utils import ROOT
-
 
 
 # Confirmed planets
@@ -568,6 +569,27 @@ app_ui = ui.page_fluid(
 )
 
 
+def planet_model_name(input):
+    """
+    Get the planet model name based on the transit/eclipse depth values.
+
+    Returns
+    -------
+    depth_model_name: String
+        A string representation of the depth model.
+    """
+    model_type = input.planet_model_type.get()
+    if model_type == 'Input':
+        return input.depth.get()
+    obs_geometry = input.geometry.get().lower()
+    transit_depth = input.depth.get()
+    if model_type == 'Flat':
+        return f'Flat transit ({transit_depth:.3f}%)'
+    #else model_type == 'Blackbody':
+    t_planet = input.tplanet.get()
+    return f'Blackbody({t_planet:.0f}K, rprs\u00b2={transit_depth:.3f}%)'
+
+
 def parse_depth_spectrum(file_path):
     spectrum = np.loadtxt(file_path, unpack=True)
     # TBD: check valid format
@@ -714,10 +736,9 @@ def server(input, output, session):
             readout=readout, subarray=subarray,
         )
         # TBD: if exp_time << obs_dur, raise warning
-
         model_type = input.planet_model_type.get()
-        depth_model_name = input.depth.get()
-        obs_geometry = input.geometry.get()
+        depth_model_name = planet_model_name(input)
+        obs_geometry = input.geometry.get().lower()
         # TBD: parse depth_model_name
         if model_type == 'Input':
             if depth_model_name is None:
@@ -727,21 +748,35 @@ def server(input, output, session):
                     duration=5,
                 )
                 return
-            depth_model = list(spectra[depth_model_name].values())
-        elif model_type == 'Flat':
+        elif model_type == 'Flat' and depth_model_name not in spectra:
             nwave = 1000
             transit_depth = input.depth.get() * 0.01
-            depth_model = [
-                np.linspace(0.6, 30.0, nwave),
-                np.tile(transit_depth, nwave)
-            ]
-        elif model_type == 'Blackbody':
+            wl = np.linspace(0.6, 30.0, nwave)
+            t_depth = np.tile(transit_depth, nwave)
+            spectrum_choices[obs_geometry].append(depth_model_name)
+            spectra[depth_model_name] = {'wl': wl, 'depth': t_depth}
+        elif model_type == 'Blackbody' and depth_model_name not in spectra:
             transit_depth = input.depth.get() * 0.01
             t_planet = input.tplanet.get()
-            # TBD: make a BB scene, get Fplanet in mJy
-            # set E_depth = Fplanet/Fstar * rprs**2
-        print(depth_model)
+            # Un-normalized planet and star SEDs
+            star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
+            planet_scene = jwst.make_scene(
+                'blackbody', t_planet, norm_band='none',
+            )
+            wl, f_star = jwst.extract_sed(star_scene)
+            wl_planet, f_planet = jwst.extract_sed(planet_scene)
+            # Interpolate black body at wl_star
+            interp_func = si.interp1d(
+                wl_planet, f_planet, bounds_error=False, fill_value=0.0,
+            )
+            f_planet = interp_func(wl)
+            # Eclipse_depth = Fplanet/Fstar * rprs**2
+            e_depth = f_planet / f_star * transit_depth
 
+            spectrum_choices[obs_geometry].append(depth_model_name)
+            spectra[depth_model_name] = {'wl': wl, 'depth': e_depth}
+
+        depth_model = list(spectra[depth_model_name].values())
         pando = jwst.PandeiaCalculation(inst_name, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         tso = pando.tso_calculation(
@@ -1130,9 +1165,9 @@ def server(input, output, session):
     def _():
         sed_choices = [
             # TBD: can I get super-scripts?
-            "erg s-1 cm-2 Hz-1 (frequency space)",
-            "erg s-1 cm-2 cm (wavenumber space)",
-            "erg s-1 cm-2 cm-1 (wavelength space)",
+            "erg s\u207b\u00b1 cm\u207b\u00b2 Hz\u207b\u00b1 (frequency space)",
+            "erg s\u207b\u00b1 cm\u207b\u00b2 cm (wavenumber space)",
+            "erg s\u207b\u00b1 cm\u207b\u00b2 cm\u207b\u00b1 (wavelength space)",
             "mJy",
         ]
         m = ui.modal(
@@ -1327,7 +1362,7 @@ def server(input, output, session):
         if nmodels == 0:
             return go.Figure()
 
-        current_model = input.planet_model.get()
+        current_model = planet_model_name(input)
         units = input.plot_depth_units.get()
         wl_scale = input.plot_depth_xscale.get()
         resolution = input.depth_resolution.get()
