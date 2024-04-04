@@ -387,10 +387,9 @@ app_ui = ui.page_fluid(
                     id="groups",
                     label=cs.label_tooltip_button(
                         label='Groups per integration ',
-                        tooltip_text='Click icon to estimate saturation level',
-                        icon=fa.icon_svg("circle-play", fill='black'),
-                        label_id='ngroup_label',
-                        button_id='calc_saturation',
+                        icons=fa.icon_svg("circle-play", fill='black'),
+                        tooltips='Estimate saturation level',
+                        button_ids='calc_saturation',
                     ),
                     value=2,
                     min=2, max=10000,
@@ -969,12 +968,19 @@ def server(input, output, session):
         else:
             sed_icon = fa.icon_svg("star", style='regular', fill='black')
 
+        icons = [
+            sed_icon,
+            fa.icon_svg("file-arrow-up", fill='black'),
+        ]
+        texts = [
+            f'Bookmark SED',
+            f'Upload SED',
+        ]
         return cs.label_tooltip_button(
             label='Stellar SED model: ',
-            tooltip_text='Click star to bookmark SED',
-            icon=sed_icon,
-            label_id='sed_label',
-            button_id='sed_bookmark',
+            icons=icons,
+            tooltips=texts,
+            button_ids=['sed_bookmark', 'sed_upload']
         )
 
     @reactive.Effect
@@ -998,13 +1004,19 @@ def server(input, output, session):
     def depth_label():
         """Set depth model label"""
         obs_geometry = input.geometry.get()
+        icons = [
+            fa.icon_svg("earth-americas", style='solid', fill='royalblue'),
+            fa.icon_svg("file-arrow-up", fill='black'),
+        ]
+        texts = [
+            f'Bookmark {obs_geometry} depth model',
+            f'Upload {obs_geometry} depth model',
+        ]
         return cs.label_tooltip_button(
             label=f"{obs_geometry} depth spectrum: ",
-            tooltip_text=f'Click icon to upload {obs_geometry} depth model',
-            icon=fa.icon_svg("earth-americas", style='solid', fill='royalblue'),
-            #icon=fa.icon_svg("file-arrow-up", fill='black'),
-            label_id='depth_label_text',
-            button_id='upload_depth',
+            icons=icons,
+            tooltips=texts,
+            button_ids=['bookmark_depth', 'upload_depth']
         )
 
 
