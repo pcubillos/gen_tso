@@ -3,15 +3,15 @@
 
 __all__ = [
     'catalogs',
-    'pandeia',
-    'plotly',
-    'shiny',
+    'pandeia_io',
+    'plotly_io',
+    'custom_shiny',
 ]
 
 from . import catalogs
-from . import pandeia_io as pandeia
-from . import plotly_io as plotly
-from . import custom_shiny as shiny
+from . import pandeia_io
+from . import plotly_io
+from . import custom_shiny
 from .version import __version__
 
 
