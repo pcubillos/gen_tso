@@ -10,5 +10,5 @@ quartodoc:
     options:
       dynamic: true
     contents:
-    - name: pandeia.make_scene
+    - name: pandeia_io.make_scene
 
