@@ -151,6 +151,18 @@ trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
 css_file = f'{ROOT}data/style.css'
 
+depth_units = [
+    "none",
+    "percent",
+    "ppm",
+]
+sed_units = [
+    "erg s\u207b\u00b9 cm\u207b\u00b2 Hz\u207b\u00b9 (frequency space)",
+    "erg s\u207b\u00b9 cm\u207b\u00b2 cm (wavenumber space)",
+    "erg s\u207b\u00b9 cm\u207b\u00b2 cm\u207b\u00b9 (wavelength space)",
+    "mJy",
+]
+
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
@@ -489,7 +501,7 @@ app_ui = ui.page_fluid(
                         ui.input_select(
                             "plot_depth_units",
                             "Depth units:",
-                            choices = ['none', 'percent', 'ppm'],
+                            choices = depth_units,
                             selected='percent',
                         ),
                         ui.input_select(
@@ -529,7 +541,7 @@ app_ui = ui.page_fluid(
                         ui.input_select(
                             "plot_tso_units",
                             "Depth units:",
-                            choices = ['none', 'percent', 'ppm'],
+                            choices = depth_units,
                             selected='percent',
                         ),
                         ui.input_select(
@@ -580,13 +592,13 @@ def planet_model_name(input):
     model_type = input.planet_model_type.get()
     if model_type == 'Input':
         return input.depth.get()
-    obs_geometry = input.geometry.get().lower()
     transit_depth = input.depth.get()
     if model_type == 'Flat':
         return f'Flat transit ({transit_depth:.3f}%)'
-    #else model_type == 'Blackbody':
-    t_planet = input.tplanet.get()
-    return f'Blackbody({t_planet:.0f}K, rprs\u00b2={transit_depth:.3f}%)'
+    elif model_type == 'Blackbody':
+        t_planet = input.tplanet.get()
+        return f'Blackbody({t_planet:.0f}K, rprs\u00b2={transit_depth:.3f}%)'
+    raise ValueError('Invalid model type')
 
 
 def parse_depth_spectrum(file_path):
@@ -650,6 +662,7 @@ def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     saturation_label = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
+    uploaded_units = reactive.Value(None)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -973,14 +986,14 @@ def server(input, output, session):
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
-            f'Bookmark SED',
-            f'Upload SED',
+            'Bookmark SED',
+            'Upload SED',
         ]
         return cs.label_tooltip_button(
             label='Stellar SED model: ',
             icons=icons,
             tooltips=texts,
-            button_ids=['sed_bookmark', 'sed_upload']
+            button_ids=['sed_bookmark', 'upload_sed']
         )
 
     @reactive.Effect
@@ -1152,36 +1165,8 @@ def server(input, output, session):
 
 
     @reactive.effect
-    @reactive.event(input.upload_file)
-    def _():
-        new_model = input.upload_file.get()
-        if not new_model:
-            print('No new model!')
-            return
-
-        obs_geometry = input.geometry.get().lower()
-        depth_file = new_model[0]['name']
-        # TBD: remove file extension?
-        spectrum_choices[obs_geometry].append(depth_file)
-        wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
-        spectra[depth_file] = {'wl': wl, 'depth': depth}
-
-        if input.planet_model_type.get() != 'Input':
-            return
-        # Trigger update choose_depth
-        update_depth_flag.set(depth_file)
-
-
-    @reactive.effect
     @reactive.event(input.upload_sed)
     def _():
-        sed_choices = [
-            # TBD: can I get super-scripts?
-            "erg s\u207b\u00b1 cm\u207b\u00b2 Hz\u207b\u00b1 (frequency space)",
-            "erg s\u207b\u00b1 cm\u207b\u00b2 cm (wavenumber space)",
-            "erg s\u207b\u00b1 cm\u207b\u00b2 cm\u207b\u00b1 (wavelength space)",
-            "mJy",
-        ]
         m = ui.modal(
             ui.input_file(
                 # Need to change the id to avoid conflict with upload_depth
@@ -1189,7 +1174,7 @@ def server(input, output, session):
                 label=ui.markdown(
                     "Input files must be plan-text files with two columns, "
                     "the first one being the wavelength (microns) and "
-                    f"the second one the stellar SED. "
+                    "the second one the stellar SED. "
                     "**Make sure the input units are correct!**"
                 ),
                 button_label="Browse",
@@ -1197,9 +1182,9 @@ def server(input, output, session):
                 width='100%',
             ),
             ui.input_radio_buttons(
-                id="flux_units",
+                id="upload_units",
                 label='Flux units:',
-                choices=sed_choices,
+                choices=sed_units,
                 width='100%',
             ),
             title="Upload Spectrum",
@@ -1211,11 +1196,6 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.upload_depth)
     def _():
-        depth_choices = [
-            "none",
-            "percent",
-            "ppm",
-        ]
         obs_geometry = input.geometry.get().lower()
         m = ui.modal(
             ui.input_file(
@@ -1231,15 +1211,50 @@ def server(input, output, session):
                 width='100%',
             ),
             ui.input_radio_buttons(
-                id="flux_units",
+                id="upload_units",
                 label='Depth units:',
-                choices=depth_choices,
+                choices=depth_units,
                 width='100%',
             ),
             title="Upload Spectrum",
             easy_close=True,
         )
         ui.modal_show(m)
+
+
+    @reactive.effect
+    @reactive.event(input.upload_units)
+    def _():
+        uploaded_units.set(input.upload_units.get())
+
+
+    @reactive.effect
+    @reactive.event(input.upload_file)
+    def _():
+        new_model = input.upload_file.get()
+        if not new_model:
+            print('No new model!')
+            return
+
+        # The units tell this function SED or depth spectrum:
+        units = uploaded_units.get()
+        print(f'The units are: {repr(units)}')
+        if units in depth_units:
+            obs_geometry = input.geometry.get().lower()
+            depth_file = new_model[0]['name']
+            # TBD: remove file extension?
+            spectrum_choices[obs_geometry].append(depth_file)
+            wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
+            # TBD: convert depth units
+            spectra[depth_file] = {'wl': wl, 'depth': depth}
+
+            if input.planet_model_type.get() != 'Input':
+                return
+            # Trigger update choose_depth
+            update_depth_flag.set(depth_file)
+        elif units in sed_units:
+            pass
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
