@@ -601,6 +601,24 @@ def planet_model_name(input):
     raise ValueError('Invalid model type')
 
 
+def get_throughput(input):
+    inst = req(input.select_instrument).get().lower()
+    if inst == 'nircam':
+        subarray = 'full'
+    else:
+        subarray = req(input.subarray.get()).lower()
+
+    filter = input.filter.get().lower()
+    if inst == 'miri':
+        filter_name = 'None'
+
+    if subarray not in filter_throughputs[inst]:
+        return None
+    if filter not in filter_throughputs[inst][subarray]:
+        return None
+    return filter_throughputs[inst][subarray][filter]
+
+
 def parse_depth_spectrum(file_path):
     spectrum = np.loadtxt(file_path, unpack=True)
     # TBD: check valid format
@@ -1371,12 +1389,14 @@ def server(input, output, session):
         # Get current SED:
         sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
 
+        throughput = get_throughput(input)
         units = input.plot_sed_units.get()
         wl_scale = input.plot_sed_xscale.get()
         resolution = input.plot_sed_resolution.get()
         fig = tplots.plotly_sed_spectra(
-            sed_models, model_names, #current_model,
+            sed_models, model_names, current_model,
             units=units, wl_scale=wl_scale, resolution=resolution,
+            throughput=throughput,
         )
         return fig
 
@@ -1388,6 +1408,7 @@ def server(input, output, session):
         nmodels = len(model_names)
         if nmodels == 0:
             return go.Figure()
+        throughput = get_throughput(input)
 
         current_model = planet_model_name(input)
         units = input.plot_depth_units.get()
@@ -1399,6 +1420,7 @@ def server(input, output, session):
             depth_models, model_names, current_model,
             units=units, wl_scale=wl_scale, resolution=resolution,
             obs_geometry=obs_geometry,
+            throughput=throughput,
         )
         return fig
 
