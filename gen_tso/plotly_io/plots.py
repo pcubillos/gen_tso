@@ -8,6 +8,7 @@ __all__ = [
     'plotly_tso_spectra',
 ]
 
+from itertools import groupby
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,6 +19,53 @@ from ..utils import (
     constant_resolution_spectrum,
     u,
 )
+
+
+COLOR_SEQUENCE = [
+    'Royalblue', # blue
+    '#15b01a',  # green
+    '#000075',  # navy
+    '#f032e6',  # magenta
+    '#42d4f4',  # cyan
+    '#888888',  # grey
+    'Red',      # red
+    '#9A6324',  # brown
+    '#800000',  # maroon
+    '#000000',  #  black
+    '#469990',  # teal
+    '#911eb4',  # purple
+    '#808000',  # olive
+    'Green',  # green
+]
+
+
+def band_boundaries(band):
+    """
+    Find the wavelength boundaries of a passband where the response
+    is non-zero.
+
+    Parameters
+    ----------
+    band: dict
+        A dictionary of the band response and wavelength.
+
+    Returns
+    -------
+    bounds: list of float pairs
+        A list of the wavelength boundaries for each contiguous
+        segment with non-zero response.
+    """
+    wl = band['wl']
+    response = band['response']
+    bounds = []
+    # Contigous ranges where response is > 0:
+    for group, indices in groupby(range(len(wl)), lambda x: response[x]>0):
+        if group:
+            indices = list(indices)
+            imin = indices[0]
+            imax = indices[-1]
+            bounds.append((wl[imin], wl[imax]))
+    return bounds
 
 
 def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
@@ -188,12 +236,35 @@ def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
 def plotly_sed_spectra(
         sed_models, labels, highlight_model=None,
         wl_range=[0.5,12], units='mJy', wl_scale='linear', resolution=250.0,
+        throughput=None,
     ):
     """
     Make a plotly figure of stellar SED spectra.
     """
     nmodels = len(sed_models)
-    fig = go.Figure()
+    fig = go.Figure(
+        #layout={'colorway':px.colors.qualitative.Alphabet},
+        layout={'colorway':COLOR_SEQUENCE},
+    )
+
+    # Shaded area for filter:
+    if throughput is not None:
+        if 'order2' in throughput:
+            band_bounds = band_boundaries(throughput['order2'])
+            for bound in band_bounds:
+                fig.add_vrect(
+                    fillcolor="LightSalmon", opacity=0.4,
+                    x0=bound[0], x1=bound[1],
+                    layer="below", line_width=0,
+                )
+        band_bounds = band_boundaries(throughput)
+        for bound in band_bounds:
+            fig.add_vrect(
+                fillcolor="#069af3", opacity=0.4,
+                x0=bound[0], x1=bound[1],
+                layer="below", line_width=0,
+            )
+
     for j,model in enumerate(sed_models):
         wl = model['wl']
         flux = model['flux']
@@ -221,7 +292,7 @@ def plotly_sed_spectra(
             mode='lines',
             opacity=0.75,
             name=labels[j],
-            #line=linedict,
+            line=linedict,
             legendrank=rank,
         ))
 
@@ -261,12 +332,25 @@ def plotly_depth_spectra(
         depth_models, labels, highlight_model=None,
         wl_range=[0.5,12], units='percent', wl_scale='linear', resolution=250.0,
         obs_geometry='Transit',
+        throughput=None,
     ):
     """
     Make a plotly figure of transit/eclipse depth spectra.
     """
     nmodels = len(depth_models)
-    fig = go.Figure()
+    fig = go.Figure(
+        layout={'colorway':COLOR_SEQUENCE},
+    )
+    # Shaded area for filter:
+    if throughput is not None:
+        band_bounds = band_boundaries(throughput)
+        for bound in band_bounds:
+            fig.add_vrect(
+                x0=bound[0], x1=bound[1],
+                fillcolor="LightSalmon", opacity=0.5,
+                layer="below", line_width=0,
+            )
+
     for j,model in enumerate(depth_models):
         wl = model['wl']
         depth = model['depth']
