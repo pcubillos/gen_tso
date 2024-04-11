@@ -806,7 +806,6 @@ def server(input, output, session):
         )
         # TBD: if exp_time << obs_dur, raise warning
 
-        #model_type = input.planet_model_type.get()
         obs_geometry = input.geometry.get().lower()
         depth_label, wl, depth = parse_depth_model(input)
         if depth_label is None:

@@ -343,11 +343,19 @@ def plotly_depth_spectra(
     )
     # Shaded area for filter:
     if throughput is not None:
+        if 'order2' in throughput:
+            band_bounds = band_boundaries(throughput['order2'])
+            for bound in band_bounds:
+                fig.add_vrect(
+                    fillcolor="LightSalmon", opacity=0.4,
+                    x0=bound[0], x1=bound[1],
+                    layer="below", line_width=0,
+                )
         band_bounds = band_boundaries(throughput)
         for bound in band_bounds:
             fig.add_vrect(
+                fillcolor="#069af3", opacity=0.4,
                 x0=bound[0], x1=bound[1],
-                fillcolor="LightSalmon", opacity=0.5,
                 layer="below", line_width=0,
             )
 
@@ -366,11 +374,9 @@ def plotly_depth_spectra(
         if labels[j] == highlight_model:
             linedict = dict(color='Gold', width=2.0)
             rank = j + nmodels
-            visible = None
         else:
             linedict = dict(width=1.25)
             rank = j
-            visible = 'legendonly'
         fig.add_trace(go.Scatter(
             x=wl,
             y=depth,
@@ -378,7 +384,6 @@ def plotly_depth_spectra(
             name=labels[j],
             line=linedict,
             legendrank=rank,
-            visible=visible,
         ))
 
     fig.update_traces(
