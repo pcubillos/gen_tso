@@ -255,117 +255,59 @@ def generate_all_instruments():
         'sw_ts': 'SW Time Series',
         'lw_ts': 'LW Time Series',
     """
-    inst = get_configs(instrument='miri', obs_type='spectroscopy')[0]
-    mode = list(inst['mode'])[0]
-    dispersers = inst['dispersers']
-    filters = inst['filters']
-    subarrays = inst['subarrays']
-    readouts = inst['readouts']
+    detectors = []
+    # Spectroscopic observing modes
+    insts = get_configs(obs_type='spectroscopy')
+    for inst in insts:
+        mode = list(inst['mode'])[0]
+        dispersers = inst['dispersers']
+        filters = inst['filters']
+        subarrays = inst['subarrays']
+        readouts = inst['readouts']
 
-    # if mode == 'lrsslitless':
-    disperser_label = 'Disperser'
-    filter_label = ''
-    filters = {'': ''}
+        if mode == 'lrsslitless':
+            disperser_label = 'Disperser'
+            filter_label = ''
+            filters = {'': ''}
+            default_indices = 0, 0, 0, 0
+        if mode == 'ssgrism':
+            disperser_label = 'Grism'
+            filter_label = 'Filter'
+            default_indices = 0, 3, 3, 0
+        if mode == 'soss':
+            disperser_label = 'Disperser'
+            filter_label = 'Filter'
+            #'Single Object Slitless Spectroscopy (SOSS)',
+            default_indices = 0, 0, 0, 1
+        if mode == 'bots':
+            disperser_label = 'Slit'
+            filter_label = 'Grating/Filter'
+            #'Bright Object Time Series (BOTS)',
+            constraints = inst['gratings_constraints']
+            gratings = {}
+            for filter in filters:
+                for constraint in constraints:
+                    if filter in constraints[constraint]['filters']:
+                        label = f"{dispersers[constraint]}/{filters[filter]}"
+                        gratings[f'{constraint}/{filter}'] = label
+            filters = gratings
+            dispersers = inst['slits']
+            default_indices = 0, 6, 4, 1
 
-    lrs = Detector(
-        mode,
-        inst['mode'],
-        inst['instrument'],
-        inst['obs_type'],
-        disperser_label,
-        dispersers,
-        filter_label,
-        filters,
-        subarrays,
-        readouts,
-    )
-
-    inst = get_configs(instrument='nircam', obs_type='spectroscopy')[0]
-    mode = list(inst['mode'])[0]
-    dispersers = inst['dispersers']
-    filters = inst['filters']
-    subarrays = inst['subarrays']
-    readouts = inst['readouts']
-
-    disperser_label = 'Grism'
-    filter_label = 'Filter'
-    default_indices = 0, 3, 3, 0
-    nircam_grism = Detector(
-        mode,
-        inst['mode'],
-        inst['instrument'],
-        inst['obs_type'],
-        disperser_label,
-        dispersers,
-        filter_label,
-        filters,
-        subarrays,
-        readouts,
-        default_indices,
-    )
-
-    inst = get_configs(instrument='niriss', obs_type='spectroscopy')[0]
-    mode = list(inst['mode'])[0]
-    dispersers = inst['dispersers']
-    filters = inst['filters']
-    subarrays = inst['subarrays']
-    readouts = inst['readouts']
-
-    #mode = 'soss'
-    disperser_label = 'Disperser'
-    filter_label = 'Filter'
-    #'Single Object Slitless Spectroscopy (SOSS)',
-    default_indices = 0, 0, 0, 1
-
-    soss = Detector(
-        mode,
-        inst['mode'],
-        inst['instrument'],
-        inst['obs_type'],
-        disperser_label,
-        dispersers,
-        filter_label,
-        filters,
-        subarrays,
-        readouts,
-        default_indices,
-    )
-
-    inst = get_configs(instrument='nirspec', obs_type='spectroscopy')[0]
-    mode = list(inst['mode'])[0]
-    dispersers = inst['dispersers']
-    filters = inst['filters']
-    subarrays = inst['subarrays']
-    readouts = inst['readouts']
-
-    #mode = 'bots'
-    disperser_label = 'Slit'
-    filter_label = 'Grating/Filter'
-    #'Bright Object Time Series (BOTS)',
-    constraints = inst['gratings_constraints']
-    gratings = {}
-    for filter in filters:
-        for constraint in constraints:
-            if filter in constraints[constraint]['filters']:
-                label = f"{dispersers[constraint]}/{filters[filter]}"
-                gratings[f'{constraint}/{filter}'] = label
-    filters = gratings
-    dispersers = inst['slits']
-    default_indices = 0, 6, 4, 1
-
-    bots = Detector(
-        mode,
-        inst['mode'],
-        inst['instrument'],
-        inst['obs_type'],
-        disperser_label,
-        dispersers,
-        filter_label,
-        filters,
-        subarrays,
-        readouts,
-        default_indices,
-    )
+        det = Detector(
+            mode,
+            inst['mode'],
+            inst['instrument'],
+            inst['obs_type'],
+            disperser_label,
+            dispersers,
+            filter_label,
+            filters,
+            subarrays,
+            readouts,
+            default_indices,
+        )
+        detectors.append(det)
 
 
     #mrs_ts = Detector(
@@ -424,22 +366,6 @@ def generate_all_instruments():
     #    'NIRSpec',
     #    'acquisition',
     #)
-
-
-    detectors = [
-        lrs,
-        #mrs,
-        #miri_imaging,
-        #miri_ta,
-        nircam_grism,
-        #nircam_sw,
-        #nircam_lw,
-        #nircam_ta,
-        soss,
-        #niriss_ta,
-        bots,
-        #nirspec_ta,
-    ]
 
     return detectors
 
