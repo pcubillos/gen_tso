@@ -105,7 +105,7 @@ instruments = np.unique([det.instrument for det in detectors])
 def get_detector(mode=None, instrument=None):
     if mode is not None:
         for det in detectors:
-            if det.name == mode:
+            if det.mode == mode:
                 return det
         return None
 
@@ -733,7 +733,7 @@ def server(input, output, session):
         spec_modes = {}
         for det in detectors:
             if det.instrument == inst_name:
-                spec_modes.update(det.label)
+                spec_modes[det.mode] = det.mode_label
         choices = {}
         choices['Spectroscopy'] = spec_modes
         #choices['Photometry'] = photo_modes  TBD

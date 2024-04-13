@@ -151,7 +151,8 @@ def get_configs(instrument=None, obs_type=None):
             else:
                 mode_name = inst_config['mode_config'][mode]['display_string']
             #print(f'Aperture: {repr(aper)}\nMode: {mode_name}')
-            inst_dict['mode'] = {mode: mode_name}
+            inst_dict['mode'] = mode
+            inst_dict['mode_label'] = mode_name
 
             dispersers = get_constrained_values(
                 inst_config, aper, 'dispersers', mode,
@@ -213,12 +214,12 @@ def get_configs(instrument=None, obs_type=None):
 
 class Detector:
     def __init__(
-            self, name, label, instrument, obs_type,
+            self, mode, label, instrument, obs_type,
             disperser_label, dispersers, filter_label, filters,
             subarrays, readouts, default_indices=None,
         ):
-        self.name = name
-        self.label = label
+        self.mode = mode
+        self.mode_label = label
         self.instrument = instrument
         self.obs_type = obs_type
         self.disperser_label = disperser_label
@@ -259,7 +260,7 @@ def generate_all_instruments():
     # Spectroscopic observing modes
     insts = get_configs(obs_type='spectroscopy')
     for inst in insts:
-        mode = list(inst['mode'])[0]
+        mode = inst['mode']
         dispersers = inst['dispersers']
         filters = inst['filters']
         subarrays = inst['subarrays']
@@ -277,12 +278,12 @@ def generate_all_instruments():
         if mode == 'soss':
             disperser_label = 'Disperser'
             filter_label = 'Filter'
-            #'Single Object Slitless Spectroscopy (SOSS)',
+            inst['mode_label'] = 'Single Object Slitless Spectroscopy (SOSS)'
             default_indices = 0, 0, 0, 1
         if mode == 'bots':
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
-            #'Bright Object Time Series (BOTS)',
+            inst['mode_label'] = 'Bright Object Time Series (BOTS)'
             constraints = inst['gratings_constraints']
             gratings = {}
             for filter in filters:
@@ -296,7 +297,7 @@ def generate_all_instruments():
 
         det = Detector(
             mode,
-            inst['mode'],
+            inst['mode_label'],
             inst['instrument'],
             inst['obs_type'],
             disperser_label,
