@@ -730,11 +730,10 @@ def server(input, output, session):
     def _():
         inst_name = input.select_instrument.get()
         print(f"You selected me: {inst_name}")
-        spec_modes = {
-            det.name: det.label
-            for det in detectors
-            if det.instrument == inst_name
-        }
+        spec_modes = {}
+        for det in detectors:
+            if det.instrument == inst_name:
+                spec_modes.update(det.label)
         choices = {}
         choices['Spectroscopy'] = spec_modes
         #choices['Photometry'] = photo_modes  TBD
@@ -753,25 +752,25 @@ def server(input, output, session):
         detector = get_detector(mode=input.select_mode.get())
         ui.update_select(
             'disperser',
-            label=detector.disperser_title,
+            label=detector.disperser_label,
             choices=detector.dispersers,
-            selected=detector.disperser_default,
+            selected=detector.default_disperser,
         )
         ui.update_select(
             'filter',
-            label=detector.filter_title,
+            label=detector.filter_label,
             choices=detector.filters,
-            selected=detector.filter_default,
+            selected=detector.default_filter,
         )
         ui.update_select(
             'subarray',
             choices=detector.subarrays,
-            selected=detector.subarray_default,
+            selected=detector.default_subarray,
         )
         ui.update_select(
             'readout',
             choices=detector.readouts,
-            selected=detector.readout_default,
+            selected=detector.default_readout,
         )
         detector = get_detector(mode=input.select_mode.get())
         selected = input.filter_filter.get()

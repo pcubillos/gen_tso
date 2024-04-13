@@ -7,7 +7,6 @@ __all__ = [
     'detector_label',
 ]
 
-from dataclasses import dataclass
 from pandeia.engine.calc_utils import get_instrument_config
 
 
@@ -212,22 +211,34 @@ def get_configs(instrument=None, obs_type=None):
     return outputs
 
 
-@dataclass(order=True)
 class Detector:
-    name: str
-    label: str
-    instrument: str
-    obs_type: str
-    disperser_title: str
-    dispersers: list
-    filter_title: str
-    filters: list
-    subarrays: list
-    readouts: list
-    disperser_default: str
-    filter_default: str
-    subarray_default: str
-    readout_default: str
+    def __init__(
+            self, name, label, instrument, obs_type,
+            disperser_label, dispersers, filter_label, filters,
+            subarrays, readouts, default_indices=None,
+        ):
+        self.name = name
+        self.label = label
+        self.instrument = instrument
+        self.obs_type = obs_type
+        self.disperser_label = disperser_label
+        self.dispersers = dispersers
+        self.filter_label = filter_label
+        self.filters = filters
+        self.subarrays = subarrays
+        self.readouts = readouts
+
+        telescope = 'jwst'
+        self.ins_config = get_instrument_config(telescope, instrument.lower())
+
+        if default_indices is None:
+            idx_d = idx_f = idx_s = idx_r = 0
+        else:
+            idx_d, idx_f, idx_s, idx_r = default_indices
+        self.default_disperser = list(dispersers)[idx_d],
+        self.default_filter = list(filters)[idx_f],
+        self.default_subarray = list(subarrays)[idx_s],
+        self.default_readout = list(readouts)[idx_r],
 
 
 def generate_all_instruments():
@@ -244,8 +255,6 @@ def generate_all_instruments():
         'sw_ts': 'SW Time Series',
         'lw_ts': 'LW Time Series',
     """
-    telescope = 'jwst'
-
     inst = get_configs(instrument='miri', obs_type='spectroscopy')[0]
     mode = list(inst['mode'])[0]
     dispersers = inst['dispersers']
@@ -253,9 +262,11 @@ def generate_all_instruments():
     subarrays = inst['subarrays']
     readouts = inst['readouts']
 
+    # if mode == 'lrsslitless':
     disperser_label = 'Disperser'
     filter_label = ''
     filters = {'': ''}
+
     lrs = Detector(
         mode,
         inst['mode'],
@@ -267,12 +278,7 @@ def generate_all_instruments():
         filters,
         subarrays,
         readouts,
-        disperser_default=list(dispersers)[0],
-        filter_default='',
-        subarray_default=list(subarrays)[0],
-        readout_default=list(readouts)[0],
     )
-    lrs.ins_config = get_instrument_config(telescope, inst['instrument'].lower())
 
     inst = get_configs(instrument='nircam', obs_type='spectroscopy')[0]
     mode = list(inst['mode'])[0]
@@ -283,6 +289,7 @@ def generate_all_instruments():
 
     disperser_label = 'Grism'
     filter_label = 'Filter'
+    default_indices = 0, 3, 3, 0
     nircam_grism = Detector(
         mode,
         inst['mode'],
@@ -294,12 +301,8 @@ def generate_all_instruments():
         filters,
         subarrays,
         readouts,
-        disperser_default=list(dispersers)[0],
-        filter_default=list(filters)[3],
-        subarray_default=list(subarrays)[3],
-        readout_default=list(readouts)[0],
+        default_indices,
     )
-    nircam_grism.ins_config = get_instrument_config(telescope, inst['instrument'].lower())
 
     inst = get_configs(instrument='niriss', obs_type='spectroscopy')[0]
     mode = list(inst['mode'])[0]
@@ -312,6 +315,7 @@ def generate_all_instruments():
     disperser_label = 'Disperser'
     filter_label = 'Filter'
     #'Single Object Slitless Spectroscopy (SOSS)',
+    default_indices = 0, 0, 0, 1
 
     soss = Detector(
         mode,
@@ -324,12 +328,8 @@ def generate_all_instruments():
         filters,
         subarrays,
         readouts,
-        disperser_default=list(dispersers)[0],
-        filter_default=list(filters)[0],
-        subarray_default=list(subarrays)[0],
-        readout_default=list(readouts)[1],
+        default_indices,
     )
-    soss.ins_config = get_instrument_config(telescope, inst['instrument'].lower())
 
     inst = get_configs(instrument='nirspec', obs_type='spectroscopy')[0]
     mode = list(inst['mode'])[0]
@@ -351,6 +351,7 @@ def generate_all_instruments():
                 gratings[f'{constraint}/{filter}'] = label
     filters = gratings
     dispersers = inst['slits']
+    default_indices = 0, 6, 4, 1
 
     bots = Detector(
         mode,
@@ -363,12 +364,8 @@ def generate_all_instruments():
         filters,
         subarrays,
         readouts,
-        disperser_default=list(dispersers)[0],
-        filter_default=list(filters)[6],
-        subarray_default=list(subarrays)[4],
-        readout_default=list(readouts)[1],
+        default_indices,
     )
-    bots.ins_config = get_instrument_config(telescope, inst['instrument'].lower())
 
 
     #mrs_ts = Detector(
