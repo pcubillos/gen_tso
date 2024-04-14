@@ -773,8 +773,8 @@ def server(input, output, session):
         readout = input.readout.get().lower()
         filter = input.filter.get().lower()
         disperser = input.disperser.get().lower()
-        ngroup = input.groups.get()
-        nint = input.integrations.get()
+        ngroup = int(input.groups.get())
+        nint = int(input.integrations.get())
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
@@ -782,8 +782,7 @@ def server(input, output, session):
         transit_dur = float(input.t_dur.get())
         obs_dur = float(input.obs_dur.get())
         exp_time = jwst.exposure_time(
-            inst_name, nint=nint, ngroup=ngroup,
-            readout=readout, subarray=subarray,
+            inst_name, subarray, readout, ngroup, nint,
         )
         # TBD: if exp_time << obs_dur, raise warning
 
@@ -1403,8 +1402,7 @@ def server(input, output, session):
         if ngroup is None:
             return
         single_exp_time = jwst.exposure_time(
-            inst_name, nint=nint, ngroup=ngroup,
-            readout=readout, subarray=subarray,
+            inst_name, subarray, readout, int(ngroup), int(nint),
         )
         if single_exp_time == 0.0:
             return
@@ -1541,23 +1539,24 @@ def server(input, output, session):
     # Results
     @render.text
     def exp_time():
-        inst_name = input.select_instrument.get().lower()
+        instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
-        detector = get_detector(mode=mode)
-        subarray = input.subarray.get().lower()
-        readout = input.readout.get().lower()
+        detector = get_detector(mode=mode, instrument=instrument)
+        inst_name = instrument.lower()
+        subarray = input.subarray.get()
+        readout = input.readout.get()
         ngroup = input.groups.get()
         nint = input.integrations.get()
         if ngroup is None:
             return ''
+        ngroup = int(ngroup)
         exp_time = jwst.exposure_time(
-            inst_name, nint=nint, ngroup=ngroup,
-            readout=readout, subarray=subarray,
+            inst_name, subarray, readout, ngroup, int(nint),
         )
         exposure_hours = exp_time / 3600.0
         exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
 
-        filter = str(input.filter.get()).lower()
+        filter = input.filter.get()
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         saturation_label.get()  # enforce calc_saturation renders exp_time
         if mode == 'bots':
