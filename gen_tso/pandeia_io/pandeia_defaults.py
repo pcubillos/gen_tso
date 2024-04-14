@@ -320,6 +320,23 @@ class Detector:
         self.default_subarray = list(subarrays)[idx_s]
         self.default_readout = list(readouts)[idx_r]
 
+    def get_constrained_val(
+            self, var, disperser=None, filter=None, subarray=None, readout=None,
+        ):
+        if var not in self.constraints:
+            return getattr(self, var)
+        choices = {
+            'dispersers': disperser,
+            'filters': filter,
+            'subarrays': subarray,
+            'readouts': readout,
+        }
+        constraints = self.constraints[var]
+        # Assuming there's only one constraining variable
+        for constraint, options in constraints.items():
+            selected = choices[constraint]
+            return options[selected]
+
 
 def filter_throughputs():
     """
