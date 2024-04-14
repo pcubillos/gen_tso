@@ -279,7 +279,20 @@ class Detector:
             self, mode, label, instrument, obs_type,
             disperser_label, dispersers, filter_label, filters,
             subarrays, readouts, default_indices=None,
+            constraints={},
         ):
+        """
+        An object containing the available instrumental setup options.
+        (Intended for the front-end)
+
+        The constraints are a triple-nested dict of the form:
+        constraints[constrained_var][constraining_var][var] = constraints
+        For example, readout values constrained by the disperser:
+        constraints['readouts']['dispersers'] = {
+            'imager': ['nis', 'nisrapid'],
+            'nrm': ['nisrapid'],
+        }
+        """
         self.mode = mode
         self.mode_label = label
         self.instrument = instrument
@@ -290,6 +303,7 @@ class Detector:
         self.filters = filters
         self.subarrays = subarrays
         self.readouts = readouts
+        self.constraints = constraints
 
         telescope = 'jwst'
         self.ins_config = get_instrument_config(telescope, instrument.lower())
@@ -343,9 +357,10 @@ def generate_all_instruments():
         'lw_ts': 'LW Time Series',
     Examples
     --------
-    >>> from gen_tso.pandeia_io import get_configs
+    >>> from gen_tso.pandeia_io import get_configs, generate_all_instruments
     >>> insts = get_configs(obs_type='spectroscopy')
     >>> insts = get_configs(obs_type='acquisition')
+    >>> dets = generate_all_instruments()
     """
     detectors = []
     # Spectroscopic observing modes
@@ -414,16 +429,23 @@ def generate_all_instruments():
         readouts = inst['readouts']
         disperser_label = 'Acquisition mode'
         filter_label = 'Filter'
+        constraints = {}
 
         if inst['instrument'] == 'MIRI':
             default_indices = 0, 0, 5, 0
-            # handle groups - subarray
+            # Constraints for groups depends on subarray
+            constraints['groups'] = {'subarrays': inst['subarray_constraints']}
         if inst['instrument'] == 'NIRCam':
             default_indices = 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
             default_indices = 0, 0, 0, 1
             dispersers[insts[1]['aperture']] = insts[1]['mode_label']
-            # handle readouts
+            # Constraints for readouts / depend on disperser
+            const = {
+                ins['aperture']: list(ins['readouts'])
+                for ins in insts
+            }
+            constraints['readouts'] = {'dispersers': const}
         if inst['instrument'] == 'NIRSpec':
             default_indices = 0, 0, 1, 0
 
@@ -439,6 +461,7 @@ def generate_all_instruments():
             subarrays,
             readouts,
             default_indices,
+            constraints,
         )
         detectors.append(det)
 
