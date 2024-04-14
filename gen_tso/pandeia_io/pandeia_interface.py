@@ -732,7 +732,9 @@ class PandeiaCalculation():
         scene = make_scene(sed_type, sed_model, norm_band, norm_magnitude)
         self.calc['scene'] = [scene]
 
-    def get_saturation_values(self, filter, readout, subarray, disperser):
+    def get_saturation_values(
+            self, disperser, filter, subarray, readout, ngroup=2,
+        ):
         """
         Calculate the brightest-pixel rate (e-/s) and full_well (e-)
         for the current instrument and scene configuration, which once known,
@@ -741,7 +743,7 @@ class PandeiaCalculation():
 
         Examples
         --------
-        >>> import pandeia_interface as jwst
+        >>> import gen_tso.pandeia_io as jwst
 
         >>> instrument = 'nircam'
         >>> mode = 'ssgrism'
@@ -754,12 +756,24 @@ class PandeiaCalculation():
         >>>     disperser='grismr', filter='f444w',
         >>>     readout='rapid', subarray='subgrism64',
         >>> )
+
+        >>> # Also works for Target Acquisition:
+        >>> instrument = 'nircam'
+        >>> mode = 'target_acq'
+        >>> pando = jwst.PandeiaCalculation(instrument, mode)
+        >>> pando.set_scene(
+        >>>     sed_type='phoenix', sed_model='k5v',
+        >>>     norm_band='2mass,ks', norm_magnitude=8.351,
+        >>> )
+        >>> brightest_pixel_rate, full_well = pando.get_saturation_values(
+        >>>     disperser=None, filter='f335m',
+        >>>     readout='rapid', subarray='sub32tats', ngroup=3,
+        >>> )
         """
         saturation_run = self.perform_calculation(
-            nint=1, ngroup=2,
-            readout=readout, subarray=subarray,
-            disperser=disperser,
-            filter=filter,
+            disperser=disperser, filter=filter,
+            subarray=subarray, readout=readout,
+            ngroup=ngroup, nint=1,
         )
         pando_results = saturation_run['scalar']
         brightest_pixel_rate = pando_results['brightest_pixel']
@@ -783,19 +797,19 @@ class PandeiaCalculation():
             self.calc['configuration']['detector']['readout_pattern'] = readout
         if subarray is not None:
             self.calc['configuration']['detector']['subarray'] = subarray
+        if filter == '':
+            self.calc['configuration']['instrument']['filter'] = None
+        elif filter is not None:
+            self.calc['configuration']['instrument']['filter'] = filter
 
         if self.instrument == 'nircam':
-            self.calc['configuration']['instrument']['disperser'] = 'grismr'
-            self.calc['configuration']['instrument']['filter'] = filter
+            self.calc['configuration']['instrument']['disperser'] = disperser
         elif self.instrument == 'nirspec':
             self.calc['configuration']['instrument']['disperser'] = disperser
-            self.calc['configuration']['instrument']['filter'] = filter
         elif self.instrument == 'niriss':
-            self.calc['configuration']['instrument']['filter'] = filter
             self.calc['strategy']['order'] = 1
             # DataError: No mask configured for SOSS order 2.
-        elif self.instrument == 'miri':
-            pass
+        #elif self.instrument == 'miri':
 
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
