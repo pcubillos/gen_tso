@@ -343,11 +343,14 @@ def generate_all_instruments():
         'lw_ts': 'LW Time Series',
     Examples
     --------
+    >>> from gen_tso.pandeia_io import get_configs
+    >>> insts = get_configs(obs_type='spectroscopy')
+    >>> insts = get_configs(obs_type='acquisition')
     """
     detectors = []
     # Spectroscopic observing modes
-    insts = get_configs(obs_type='spectroscopy')
-    for inst in insts:
+    spec_insts = get_configs(obs_type='spectroscopy')
+    for inst in spec_insts:
         mode = inst['mode']
         dispersers = inst['dispersers']
         filters = inst['filters']
@@ -399,10 +402,13 @@ def generate_all_instruments():
         detectors.append(det)
 
     # Acquisition observing modes
-    insts = get_configs(obs_type='acquisition')
-    for inst in insts[:-1]:
+    acq_insts = get_configs(obs_type='acquisition')
+    for instrument in inst_names.values():
+        insts = [inst for inst in acq_insts if inst['instrument'] == instrument]
+        inst = insts[0]
         mode = inst['mode']
-        dispersers = {inst['mode']: inst['mode_label']}
+        # Use apertures in place of 'disperser'
+        dispersers = {inst['aperture']: inst['mode_label']}
         filters = inst['filters']
         subarrays = inst['subarrays']
         readouts = inst['readouts']
@@ -416,6 +422,7 @@ def generate_all_instruments():
             default_indices = 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
             default_indices = 0, 0, 0, 1
+            dispersers[insts[1]['aperture']] = insts[1]['mode_label']
             # handle readouts
         if inst['instrument'] == 'NIRSpec':
             default_indices = 0, 0, 1, 0
