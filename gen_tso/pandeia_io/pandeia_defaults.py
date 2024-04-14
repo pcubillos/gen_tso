@@ -248,6 +248,7 @@ class Detector:
 
 def filter_throughputs():
     """
+    Collect the throughput response curves for each instrument configuration
     """
     obs_types = [
         'spectroscopy',
@@ -334,6 +335,44 @@ def generate_all_instruments():
             subarrays,
             readouts,
             default_indices,
+        )
+        detectors.append(det)
+
+    # Acquisition observing modes
+    insts = get_configs(obs_type='acquisition')
+    for inst in insts[:-1]:
+        mode = inst['mode']
+        dispersers = {inst['mode']: inst['mode_label']}
+        filters = inst['filters']
+        subarrays = inst['subarrays']
+        readouts = inst['readouts']
+        disperser_label = 'Acquisition mode'
+        filter_label = 'Filter'
+
+        if inst['instrument'] == 'MIRI':
+            # handle groups
+            pass
+        if inst['instrument'] == 'NIRISS':
+            # handle subarrays
+            pass
+        #    filters = {'': ''}
+        #if mode == 'ssgrism':
+        #    default_indices = 0, 3, 3, 0
+        #if mode == 'soss':
+        #    default_indices = 0, 0, 0, 1
+        #if mode == 'bots':
+
+        det = Detector(
+            mode,
+            inst['mode_label'],
+            inst['instrument'],
+            inst['obs_type'],
+            disperser_label,
+            dispersers,
+            filter_label,
+            filters,
+            subarrays,
+            readouts,
         )
         detectors.append(det)
 
