@@ -373,12 +373,7 @@ app_ui = ui.page_fluid(
                     button_ids='calc_saturation',
                     class_='pb-1',
                 ),
-                ui.input_numeric(
-                    id="groups",
-                    label='',
-                    value=2,
-                    min=2, max=10000,
-                ),
+                ui.output_ui('groups_input'),
                 ui.output_ui('integration_input'),
                 ui.input_switch("integs_switch", "Match obs. duration", False),
                 class_="px-2 pt-2 pb-0 m-0",
@@ -1312,6 +1307,29 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
     @render.ui
+    @reactive.event(input.select_mode, input.subarray)
+    def groups_input():
+        mode = input.select_mode.get()
+        if mode == 'target_acq':
+            instrument = req(input.select_instrument).get()
+            det = get_detector(mode, instrument)
+            subarray = input.subarray.get()
+            choices = det.get_constrained_val('groups', subarray=subarray)
+
+            return ui.input_select(
+                id="groups",
+                label="",
+                choices=choices,
+            )
+        else:
+            return ui.input_numeric(
+                id="groups",
+                label='',
+                value=2,
+                min=2, max=10000,
+            )
+
+    @render.ui
     @reactive.event(input.select_mode)
     def integration_input():
         mode = input.select_mode.get()
@@ -1335,7 +1353,7 @@ def server(input, output, session):
         inst_name = input.select_instrument.get().lower()
         mode = input.select_mode.get()
         filter = input.filter.get().lower()
-        subarray = input.subarray.get().lower()
+        subarray = input.subarray.get()
         readout = input.readout.get().lower()
         disperser = input.disperser.get().lower()
         if mode == 'bots':
