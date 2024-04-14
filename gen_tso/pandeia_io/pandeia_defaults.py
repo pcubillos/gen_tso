@@ -222,6 +222,8 @@ def get_configs(instrument=None, obs_type=None):
                 groups = inst_config['mode_config'][mode]['enum_ngroups']
                 if not isinstance(groups, list):
                     groups = groups['default']
+                inst_dict['groups'] = groups
+                # Integrations and exposures are always one (so far)
                 #print(inst_config['mode_config'][mode]['enum_nexps'])
                 #print(inst_config['mode_config'][mode]['enum_nints'])
             outputs.append(inst_dict)
@@ -278,7 +280,7 @@ class Detector:
     def __init__(
             self, mode, label, instrument, obs_type,
             disperser_label, dispersers, filter_label, filters,
-            subarrays, readouts, default_indices=None,
+            subarrays, readouts, groups=None, default_indices=None,
             constraints={},
         ):
         """
@@ -303,6 +305,7 @@ class Detector:
         self.filters = filters
         self.subarrays = subarrays
         self.readouts = readouts
+        self.groups = groups
         self.constraints = constraints
 
         telescope = 'jwst'
@@ -412,7 +415,7 @@ def generate_all_instruments():
             filters,
             subarrays,
             readouts,
-            default_indices,
+            default_indices=default_indices,
         )
         detectors.append(det)
 
@@ -460,6 +463,7 @@ def generate_all_instruments():
             filters,
             subarrays,
             readouts,
+            inst['groups'],
             default_indices,
             constraints,
         )
