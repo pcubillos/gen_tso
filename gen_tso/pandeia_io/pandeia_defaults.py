@@ -13,6 +13,12 @@ from pandeia.engine.calc_utils import get_instrument_config
 from gen_tso.utils import ROOT
 
 
+inst_names = {
+    'miri': 'MIRI',
+    'nircam': 'NIRCam',
+    'niriss': 'NIRISS',
+    'nirspec': 'NIRSpec',
+}
 spec_modes = {
     'miri': 'lrsslitless',
     'nircam': 'ssgrism',
@@ -24,6 +30,10 @@ acq_modes = {
     'nircam': 'target_acq',
     'niriss': 'target_acq',
     'nirspec': 'target_acq',
+}
+all_modes = {
+    'spectroscopy': spec_modes,
+    'acquisition': acq_modes,
 }
 
 
@@ -112,12 +122,6 @@ def get_configs(instrument=None, obs_type=None):
         'nirspec': ['s1600a1'],
         'niriss': ['imager', 'nrm'],
     }
-    inst_names = {
-        'miri': 'MIRI',
-        'nircam': 'NIRCam',
-        'niriss': 'NIRISS',
-        'nirspec': 'NIRSpec',
-    }
     if instrument is None:
         instrument = 'miri nircam nirspec niriss'.split()
     elif isinstance(instrument, str):
@@ -198,6 +202,13 @@ def get_configs(instrument=None, obs_type=None):
                 name = str_or_dict(subarray_names, subarray, mode)
                 inst_dict['subarrays'][subarray] = name
                 #print(f"   {subarray}: {name}")
+            if inst_dict['instrument']=='MIRI' and mode=='target_acq':
+                constraints = inst_config['mode_config'][mode]['enum_ngroups']
+                inst_dict['subarray_constraints'] = {}
+                for subarray in subarrays:
+                    key = subarray if subarray in constraints else 'default'
+                    groups = constraints[key]
+                    inst_dict['subarray_constraints'][subarray] = groups
 
             slits = get_constrained_values(
                 inst_config, aper, 'slits', mode,
@@ -206,14 +217,61 @@ def get_configs(instrument=None, obs_type=None):
             for slit in slits:
                 name = str_or_dict(slit_names, slit, mode)
                 inst_dict['slits'][slit] = name
-                #print(f"   {slit}: {name}")
 
             if obs_type == 'acquisition':
-                print(inst_config['mode_config'][mode]['enum_nexps'])
-                print(inst_config['mode_config'][mode]['enum_nints'])
-                print(inst_config['mode_config'][mode]['enum_ngroups'])
+                groups = inst_config['mode_config'][mode]['enum_ngroups']
+                if not isinstance(groups, list):
+                    groups = groups['default']
+                #print(inst_config['mode_config'][mode]['enum_nexps'])
+                #print(inst_config['mode_config'][mode]['enum_nints'])
             outputs.append(inst_dict)
     return outputs
+
+
+def print_configs(instrument, mode, output):
+    telescope = 'jwst'
+    inst_config = get_instrument_config(telescope, instrument)
+
+    if mode is None:
+        return(inst_config['modes'])
+    config = inst_config['mode_config'][mode]
+
+    subarrays = config['subarrays']
+    screen_output = f'subarrays: {subarrays}\n'
+
+    if instrument == 'niriss':
+        readouts = inst_config['readout_patterns']
+    else:
+        readouts = config['readout_patterns']
+    screen_output += f'readout patterns: {readouts}\n'
+
+    if instrument == 'nirspec':
+        gratings_dict = inst_config['config_constraints']['dispersers']
+        gratings = filters = dispersers = []
+        for grating, filter_list in gratings_dict.items():
+            for filter in filter_list['filters']:
+                gratings.append(f'{grating}/{filter}')
+        screen_output += f'grating/filter pairs: {gratings}'
+    else:
+        filters = config['filters']
+        dispersers = [disperser for disperser in config['dispersers']]
+        screen_output += f'dispersers: {dispersers}\n'
+        screen_output += f'filters: {filters}'
+
+    if output is None:
+        print(screen_output)
+    elif output == 'readouts':
+        return readouts
+    elif output == 'subarrays':
+        return subarrays
+    elif output == 'filters':
+        return filters
+    elif output == 'dispersers':
+        return dispersers
+    elif instrument=='nirspec' and output=='gratings':
+        return gratings
+    else:
+        raise ValueError(f"Invalid config output: '{output}'")
 
 
 class Detector:
@@ -240,10 +298,10 @@ class Detector:
             idx_d = idx_f = idx_s = idx_r = 0
         else:
             idx_d, idx_f, idx_s, idx_r = default_indices
-        self.default_disperser = list(dispersers)[idx_d],
-        self.default_filter = list(filters)[idx_f],
-        self.default_subarray = list(subarrays)[idx_s],
-        self.default_readout = list(readouts)[idx_r],
+        self.default_disperser = list(dispersers)[idx_d]
+        self.default_filter = list(filters)[idx_f]
+        self.default_subarray = list(subarrays)[idx_s]
+        self.default_readout = list(readouts)[idx_r]
 
 
 def filter_throughputs():
@@ -257,7 +315,7 @@ def filter_throughputs():
     throughputs = {}
     for obs_type in obs_types:
         throughputs[obs_type] = {}
-        for inst_name, mode in spec_modes.items():
+        for inst_name, mode in all_modes[obs_type].items():
             throughputs[obs_type][inst_name] = {}
 
             t_file = f'{ROOT}data/throughputs_{inst_name}_{mode}.pickle'
@@ -283,6 +341,8 @@ def generate_all_instruments():
         'imaging_ts': 'Imaging Time Series',
         'sw_ts': 'SW Time Series',
         'lw_ts': 'LW Time Series',
+    Examples
+    --------
     """
     detectors = []
     # Spectroscopic observing modes
@@ -303,11 +363,6 @@ def generate_all_instruments():
             disperser_label = 'Grism'
             filter_label = 'Filter'
             default_indices = 0, 3, 3, 0
-        if mode == 'soss':
-            disperser_label = 'Disperser'
-            filter_label = 'Filter'
-            inst['mode_label'] = 'Single Object Slitless Spectroscopy (SOSS)'
-            default_indices = 0, 0, 0, 1
         if mode == 'bots':
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
@@ -322,6 +377,11 @@ def generate_all_instruments():
             filters = gratings
             dispersers = inst['slits']
             default_indices = 0, 6, 4, 1
+        if mode == 'soss':
+            disperser_label = 'Disperser'
+            filter_label = 'Filter'
+            inst['mode_label'] = 'Single Object Slitless Spectroscopy (SOSS)'
+            default_indices = 0, 0, 0, 1
 
         det = Detector(
             mode,
@@ -350,17 +410,15 @@ def generate_all_instruments():
         filter_label = 'Filter'
 
         if inst['instrument'] == 'MIRI':
-            # handle groups
-            pass
+            default_indices = 0, 0, 5, 0
+            # handle groups - subarray
+        if inst['instrument'] == 'NIRCam':
+            default_indices = 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
-            # handle subarrays
-            pass
-        #    filters = {'': ''}
-        #if mode == 'ssgrism':
-        #    default_indices = 0, 3, 3, 0
-        #if mode == 'soss':
-        #    default_indices = 0, 0, 0, 1
-        #if mode == 'bots':
+            default_indices = 0, 0, 0, 1
+            # handle readouts
+        if inst['instrument'] == 'NIRSpec':
+            default_indices = 0, 0, 1, 0
 
         det = Detector(
             mode,
@@ -373,6 +431,7 @@ def generate_all_instruments():
             filters,
             subarrays,
             readouts,
+            default_indices,
         )
         detectors.append(det)
 
