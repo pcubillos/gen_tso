@@ -90,13 +90,6 @@ inst_names = [
     'NIRSpec',
 ]
 
-spec_modes = {
-    'miri': 'lrsslitless',
-    'nircam': 'ssgrism',
-    'niriss': 'soss',
-    'nirspec': 'bots',
-}
-
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 
@@ -384,12 +377,7 @@ app_ui = ui.page_fluid(
                     value=2,
                     min=2, max=10000,
                 ),
-                ui.input_numeric(
-                    id="integrations",
-                    label="Integrations",
-                    value=1,
-                    min=1, max=10000,
-                ),
+                ui.output_ui('integration_input'),
                 ui.input_switch("integs_switch", "Match obs. duration", False),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
@@ -1321,6 +1309,24 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
+    @render.ui
+    @reactive.event(input.select_mode)
+    def integration_input():
+        mode = input.select_mode.get()
+        if mode == 'target_acq':
+            return ui.input_select(
+                id="integrations",
+                label="Integrations",
+                choices=[1],
+            )
+        else:
+            return ui.input_numeric(
+                id="integrations",
+                label="Integrations",
+                value=1,
+                min=1, max=10000,
+            )
+
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def _():
@@ -1356,11 +1362,13 @@ def server(input, output, session):
 
     @reactive.Effect
     @reactive.event(
-        input.integs_switch, input.obs_dur,
+        input.integs_switch, input.obs_dur, input.select_mode,
         input.select_instrument, input.groups, input.readout, input.subarray,
     )
     def _():
         """Switch to make the number of integrations match observation duration"""
+        if input.select_mode.get() == 'target_acq':
+            return
         match_dur = input.integs_switch.get()
         if not match_dur:
             ui.update_numeric('integrations', value=1)
@@ -1370,8 +1378,8 @@ def server(input, output, session):
         inst_name = input.select_instrument.get().lower()
         nint = 1
         ngroup = input.groups.get()
-        readout = input.readout.get().lower()
-        subarray = input.subarray.get().lower()
+        readout = input.readout.get()
+        subarray = input.subarray.get()
         if ngroup is None:
             return
         single_exp_time = jwst.exposure_time(
