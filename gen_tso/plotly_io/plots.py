@@ -39,15 +39,17 @@ COLOR_SEQUENCE = [
 ]
 
 
-def band_boundaries(band):
+def band_boundaries(band, threshold=0.03):
     """
     Find the wavelength boundaries of a passband where the response
-    is non-zero.
+    is greater than the required threshold.
 
     Parameters
     ----------
     band: dict
         A dictionary of the band response and wavelength.
+    threshold: float
+        Minimum band response for highlight.
 
     Returns
     -------
@@ -58,8 +60,8 @@ def band_boundaries(band):
     wl = band['wl']
     response = band['response']
     bounds = []
-    # Contigous ranges where response is > 0:
-    for group, indices in groupby(range(len(wl)), lambda x: response[x]>0):
+    # Contigous ranges where response > threshold:
+    for group, indices in groupby(range(len(wl)), lambda x: response[x]>threshold):
         if group:
             indices = list(indices)
             imin = indices[0]
@@ -68,22 +70,10 @@ def band_boundaries(band):
     return bounds
 
 
-def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
+def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
     """
     Make a plotly figure of the passband filters.
     """
-    nirspec_filters = [
-        'g140h/f070lp',
-        'g140m/f070lp',
-        'g140h/f100lp',
-        'g140m/f100lp',
-        'g235h/f170lp',
-        'g235m/f170lp',
-        'g395h/f290lp',
-        'g395m/f290lp',
-        'prism/clear',
-    ]
-
     if inst_name is None:
         return go.Figure()
 
@@ -94,35 +84,34 @@ def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
             if inst not in instruments
         ]
 
+    show_all_subarrays = {
+        'miri': 'slitlessprism',
+        'nircam': 'subgrism64',
+        'nirspec': 'sub2048',
+        'niriss': 'substrip256',
+    }
+    show_all_filters = {
+        'miri': ['None'],
+        'nircam': ['f322w2', 'f444w'],
+        'nirspec': ['g140h/f100lp', 'g235h/f170lp', 'g395h/f290lp', 'prism/clear'],
+        'niriss': ['clear'],
+    }
+
     # Parse filters to plot
     all_filters = {}
     nfilters = 0
     for inst in instruments:
         all_filters[inst] = {}
 
-        if inst in ['nircam', 'miri']:
-            subarray = list(passbands[inst].keys())[0]
-        elif inst != inst_name:
-            if inst == 'niriss':
-                subarray = 'substrip256'
-            elif inst == 'nirspec':
-                subarray = 'sub2048'
-        elif subarray not in passbands[inst_name]:
+        if inst != inst_name:
+            subarray = show_all_subarrays[inst]
+        if subarray not in passbands[inst]:
             return go.Figure()
 
         if inst == inst_name:
             filters = list(passbands[inst][subarray].keys())
-            if inst == 'nirspec':
-                filters = [f for f in nirspec_filters if f in filters]
         else:
-            if inst == 'nircam':
-                filters = ['f322w2', 'f444w']
-            elif inst == 'nirspec':
-                filters = ['g140h/f100lp', 'g235h/f170lp', 'g395h/f290lp', 'prism/clear']
-            elif inst == 'niriss':
-                filters = ['clear']
-            elif inst == 'miri':
-                filters = ['None']
+            filters = show_all_filters[inst]
 
         for filter in filters:
             band = passbands[inst][subarray][filter]
@@ -133,17 +122,17 @@ def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
 
 
     visible = [None for _ in range(nfilters)]
-    if inst_name == 'nirspec':
+    if mode == 'bots':
         for i,filter in enumerate(all_filters[inst_name].keys()):
             hide = ('h' in filter_name) is not ('h' in filter)
             if hide and 'prism' not in filter:
                 visible[i] = 'legendonly'
-    elif inst_name == 'nircam':
+    elif mode == 'ssgrism':
         for i,filter in enumerate(all_filters[inst_name].keys()):
             if filter != filter_name and filter not in ['f322w2', 'f444w']:
                 visible[i] = 'legendonly'
 
-    if inst_name == 'nirspec':
+    if mode == 'bots':
         primary_colors = px.colors.sample_colorscale(
             'Viridis', np.linspace(0, 0.8, 9),
         )
@@ -167,7 +156,6 @@ def plotly_filters(passbands, inst_name, subarray, filter_name, show_all):
     sel_cols = iter(primary_colors)
     other_cols = iter(secondary_colors)
     nirspec_cols = iter(secondary_nirspec)
-
 
     fig = go.Figure()
     j = 0

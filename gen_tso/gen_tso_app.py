@@ -706,7 +706,6 @@ def server(input, output, session):
     saturation_label = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
-    #instrument_state = reactive.Value(None)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -739,39 +738,44 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.select_mode)
     def _():
-        detector = get_detector(
-            mode=input.select_mode.get(),
-            instrument=input.select_instrument.get(),
-        )
+        instrument = req(input.select_instrument).get()
+        mode = input.select_mode.get()
+        det = get_detector(mode, instrument)
+
         ui.update_select(
             'disperser',
-            label=detector.disperser_label,
-            choices=detector.dispersers,
-            selected=detector.default_disperser,
+            label=det.disperser_label,
+            choices=det.dispersers,
+            selected=det.default_disperser,
         )
         ui.update_select(
             'filter',
-            label=detector.filter_label,
-            choices=detector.filters,
-            selected=detector.default_filter,
+            label=det.filter_label,
+            choices=det.filters,
+            selected=det.default_filter,
         )
         ui.update_select(
             'subarray',
-            choices=detector.subarrays,
-            selected=detector.default_subarray,
+            choices=det.subarrays,
+            selected=det.default_subarray,
         )
         ui.update_select(
             'readout',
-            choices=detector.readouts,
-            selected=detector.default_readout,
+            choices=det.readouts,
+            selected=det.default_readout,
         )
-        detector = get_detector(mode=input.select_mode.get())
+
         selected = input.filter_filter.get()
-        if selected != 'all':
+        if det.obs_type == 'acquisition':
+            choices = [det.instrument]
+        else:
+            choices = [det.instrument, 'all']
+
+        if selected != 'all' or det.obs_type=='acquisition':
             selected = None
         ui.update_radio_buttons(
             "filter_filter",
-            choices=[detector.instrument, 'all'],
+            choices=choices,
             selected=selected,
         )
 
@@ -1385,22 +1389,22 @@ def server(input, output, session):
     @render_plotly
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
-        inst_name = req(input.select_instrument).get().lower()
-        mode = req(input.select_mode).get()
-        subarray = req(input.subarray.get())
-        filter_name = input.filter.get()
+
+        inst = req(input.select_instrument).get().lower()
+        mode = input.select_mode.get()
+        filter = input.filter.get()
+        subarray = input.subarray.get()
+
         if mode == 'lrsslitless':
-            filter_name = 'None'
+            filter = 'None'
 
         if mode == 'target_acq':
             throughputs = filter_throughputs['acquisition']
         else:
             throughputs = filter_throughputs['spectroscopy']
-        print(throughputs['nircam'].keys(), subarray, filter_name)
 
-        show_all &= mode != 'target_acq'
         fig = tplots.plotly_filters(
-            throughputs, inst_name, mode, subarray, filter_name, show_all,
+            throughputs, inst, mode, subarray, filter, show_all,
         )
         return fig
 
