@@ -1,8 +1,6 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-import pickle
-
 import numpy as np
 import scipy.interpolate as si
 
@@ -106,31 +104,11 @@ def get_detector(mode=None, instrument=None):
     if mode is not None:
         for det in detectors:
             if det.mode == mode:
-                return det
+                if instrument is None or det.instrument==instrument:
+                    return det
         return None
 
-
-def filter_data_frame():
-    """
-    To be moved to pandeia_interface.py
-    """
-    filter_throughputs = {}
-    for inst_name,mode in spec_modes.items():
-        filter_throughputs[inst_name] = {}
-
-        t_file = f'{ROOT}data/throughputs_{inst_name}_{mode}.pickle'
-        with open(t_file, 'rb') as handle:
-            data = pickle.load(handle)
-
-        subarrays = list(data.keys())
-        if mode not in ['bots', 'soss']:
-            subarrays = subarrays[0:1]
-
-        for subarray in subarrays:
-            filter_throughputs[inst_name][subarray] = data[subarray]
-    return filter_throughputs
-
-filter_throughputs = filter_data_frame()
+filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
 tso_labels = {}
@@ -603,20 +581,26 @@ def planet_model_name(input):
 
 def get_throughput(input):
     inst = req(input.select_instrument).get().lower()
-    if inst == 'nircam':
+    mode = req(input.select_mode).get()
+    if mode == 'target_acq':
+        obs_type = 'acquisition'
+    else:
+        obs_type = 'spectroscopy'
+
+    if mode == 'ssgrism':
         subarray = 'full'
     else:
         subarray = req(input.subarray.get()).lower()
 
     filter = input.filter.get().lower()
-    if inst == 'miri':
+    if mode == 'lrsslitless':
         filter = 'None'
 
-    if subarray not in filter_throughputs[inst]:
+    if subarray not in filter_throughputs[obs_type][inst]:
         return None
-    if filter not in filter_throughputs[inst][subarray]:
+    if filter not in filter_throughputs[obs_type][inst][subarray]:
         return None
-    return filter_throughputs[inst][subarray][filter]
+    return filter_throughputs[obs_type][inst][subarray][filter]
 
 
 def parse_depth_spectrum(file_path):
@@ -722,6 +706,7 @@ def server(input, output, session):
     saturation_label = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
+    #instrument_state = reactive.Value(None)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -732,14 +717,19 @@ def server(input, output, session):
         print(f"You selected me: {inst_name}")
         spec_modes = {}
         for det in detectors:
-            if det.instrument == inst_name:
+            if det.instrument == inst_name and det.obs_type=='spectroscopy':
                 spec_modes[det.mode] = det.mode_label
         choices = {}
         choices['Spectroscopy'] = spec_modes
+
         #choices['Photometry'] = photo_modes  TBD
-        choices['Target acquisition'] = {
-            f'{inst_name}_target_acq': 'Target Acquisition'
-        }
+
+        acq_modes = {}
+        for det in detectors:
+            if det.instrument == inst_name and det.obs_type=='acquisition':
+                acq_modes[det.mode] = 'Target Acquisition'
+        choices['Acquisition'] = acq_modes
+
         ui.update_select(
             'select_mode',
             choices=choices,
@@ -749,7 +739,10 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.select_mode)
     def _():
-        detector = get_detector(mode=input.select_mode.get())
+        detector = get_detector(
+            mode=input.select_mode.get(),
+            instrument=input.select_instrument.get(),
+        )
         ui.update_select(
             'disperser',
             label=detector.disperser_label,
@@ -1393,13 +1386,21 @@ def server(input, output, session):
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
         inst_name = req(input.select_instrument).get().lower()
-        subarray = req(input.subarray.get()).lower()
-        filter_name = input.filter.get().lower()
-        if inst_name == 'miri':
+        mode = req(input.select_mode).get()
+        subarray = req(input.subarray.get())
+        filter_name = input.filter.get()
+        if mode == 'lrsslitless':
             filter_name = 'None'
 
+        if mode == 'target_acq':
+            throughputs = filter_throughputs['acquisition']
+        else:
+            throughputs = filter_throughputs['spectroscopy']
+        print(throughputs['nircam'].keys(), subarray, filter_name)
+
+        show_all &= mode != 'target_acq'
         fig = tplots.plotly_filters(
-            filter_throughputs, inst_name, subarray, filter_name, show_all,
+            throughputs, inst_name, mode, subarray, filter_name, show_all,
         )
         return fig
 
