@@ -769,12 +769,13 @@ def server(input, output, session):
     def _():
         inst_name = input.select_instrument.get().lower()
         mode = input.select_mode.get()
-        subarray = input.subarray.get().lower()
-        readout = input.readout.get().lower()
-        filter = input.filter.get().lower()
-        disperser = input.disperser.get().lower()
+        subarray = input.subarray.get()
+        readout = input.readout.get()
+        filter = input.filter.get()
+        disperser = input.disperser.get()
         ngroup = int(input.groups.get())
         nint = int(input.integrations.get())
+
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
@@ -1351,10 +1352,10 @@ def server(input, output, session):
     def _():
         inst_name = input.select_instrument.get().lower()
         mode = input.select_mode.get()
-        filter = input.filter.get().lower()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
         subarray = input.subarray.get()
-        readout = input.readout.get().lower()
-        disperser = input.disperser.get().lower()
+        readout = input.readout.get()
         if mode == 'bots':
             disperser, filter = filter.split('/')
 
@@ -1363,10 +1364,19 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 
+        if mode == 'target_acq':
+            ngroup = int(input.groups.get())
+            aperture = input.disperser.get()
+            pando.calc['configuration']['instrument']['aperture'] = aperture
+            disperser = None
+        else:
+            ngroup = 2
+
         flux_rate, full_well = pando.get_saturation_values(
-            filter, readout, subarray, disperser,
+            disperser, filter, subarray, readout, ngroup,
         )
 
+        # TBD: add aperture for NIRISS TA
         if mode == 'bots':
             filter = f'{disperser}/{filter}'
             sat_label = f'{filter}_{subarray}_{sed_label}'
@@ -1385,7 +1395,7 @@ def server(input, output, session):
         input.select_instrument, input.groups, input.readout, input.subarray,
     )
     def _():
-        """Switch to make the number of integrations match observation duration"""
+        """Switch to make the integrations match observation duration"""
         if input.select_mode.get() == 'target_acq':
             return
         match_dur = input.integs_switch.get()
