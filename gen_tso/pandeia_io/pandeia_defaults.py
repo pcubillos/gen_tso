@@ -3,12 +3,28 @@
 
 __all__ = [
     'get_configs',
+    'filter_throughputs',
     'generate_all_instruments',
     'detector_label',
 ]
 
+import pickle
 from pandeia.engine.calc_utils import get_instrument_config
+from gen_tso.utils import ROOT
 
+
+spec_modes = {
+    'miri': 'lrsslitless',
+    'nircam': 'ssgrism',
+    'niriss': 'soss',
+    'nirspec': 'bots',
+}
+acq_modes = {
+    'miri': 'target_acq',
+    'nircam': 'target_acq',
+    'niriss': 'target_acq',
+    'nirspec': 'target_acq',
+}
 
 
 def get_constrained_values(inst_config, aper, inst_property, mode):
@@ -85,6 +101,7 @@ def get_configs(instrument=None, obs_type=None):
 
     Examples
     --------
+    >>> from gen_tso.pandeia_io import get_configs
     >>> insts = get_configs(instrument='niriss', obs_type='spectroscopy')
     >>> insts = get_configs(obs_type='spectroscopy')
     >>> insts = get_configs(obs_type='acquisition')
@@ -101,19 +118,6 @@ def get_configs(instrument=None, obs_type=None):
         'niriss': 'NIRISS',
         'nirspec': 'NIRSpec',
     }
-    spec_modes = {
-        'miri': 'lrsslitless',
-        'nircam': 'ssgrism',
-        'niriss': 'soss',
-        'nirspec': 'bots',
-    }
-    acq_modes = {
-        'miri': 'target_acq',
-        'nircam': 'target_acq',
-        'niriss': 'target_acq',
-        'nirspec': 'target_acq',
-    }
-
     if instrument is None:
         instrument = 'miri nircam nirspec niriss'.split()
     elif isinstance(instrument, str):
@@ -242,6 +246,29 @@ class Detector:
         self.default_readout = list(readouts)[idx_r],
 
 
+def filter_throughputs():
+    """
+    """
+    obs_types = [
+        'spectroscopy',
+        'acquisition',
+    ]
+    throughputs = {}
+    for obs_type in obs_types:
+        throughputs[obs_type] = {}
+        for inst_name, mode in spec_modes.items():
+            throughputs[obs_type][inst_name] = {}
+
+            t_file = f'{ROOT}data/throughputs_{inst_name}_{mode}.pickle'
+            with open(t_file, 'rb') as handle:
+                data = pickle.load(handle)
+
+            for subarray in list(data.keys()):
+                throughputs[obs_type][inst_name][subarray] = data[subarray]
+
+    return throughputs
+
+
 def generate_all_instruments():
     """
     A list of Detector() objects to keep the instrument observing mode
@@ -337,35 +364,6 @@ def generate_all_instruments():
     #    'short wavelength time-series imaging',
     #    'NIRCam',
     #    'photometry',
-    #)
-
-
-    #miri_ta = Detector(
-    #    'target_acq',
-    #    'Target Acquisition',
-    #    'MIRI',
-    #    'acquisition',
-    #)
-
-    #nircam_ta = Detector(
-    #    'target_acq',
-    #    'Target Acquisition',
-    #    'NIRCam',
-    #    'acquisition',
-    #)
-
-    #niriss_ta = Detector(
-    #    'target_acq',
-    #    'Target Acquisition',
-    #    'NIRISS',
-    #    'acquisition',
-    #)
-
-    #nirspec_ta = Detector(
-    #    'target_acq',
-    #    'Target Acquisition',
-    #    'NIRSpec',
-    #    'acquisition',
     #)
 
     return detectors
