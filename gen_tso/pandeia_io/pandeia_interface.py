@@ -61,12 +61,45 @@ def fetch_vega():
 
 
 def exposure_time(
-        instrument, calculation=None,
-        nexp=1, nint=None, ngroup=None, readout=None, subarray=None,
+        instrument, subarray, readout,
+        ngroup=None, nint=None, nexp=1,
     ):
     """
+    Calculate the exposure time for the given instrumental setup.
     Based on pandeia.engine.exposure.
-    nircam full is not giving the right numbers, all else OK.
+
+    Parameters
+    ----------
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    ngroup: Integeer
+        Number of groups per integration.  Must be >= 2.
+    nint: Integer
+        Number of integrations.
+    nexp: Integer
+        Number of exposures.
+
+    Returns
+    -------
+    exp_time: Float
+        Exposure time in seconds.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> inst = 'nircam'
+    >>> subarray = 'subgrism64'
+    >>> subarray = 'full'
+    >>> readout = 'rapid'
+    >>> nint = 1
+    >>> ngroup = 20
+    >>> exp_time = jwst.exposure_time(inst, subarray, readout, ngroup, nint)
+    >>> print(exp_time)
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
@@ -80,16 +113,20 @@ def exposure_time(
     if readout not in ins_config['readout_pattern_config']:
         return 0.0
 
-    tfffr  = ins_config['subarray_config']['default'][subarray]['tfffr']
-    tframe = ins_config['subarray_config']['default'][subarray]['tframe']
-    nframe = ins_config['readout_pattern_config'][readout]['nframe']
-    ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
+    subarray_config = ins_config['subarray_config']['default'][subarray]
+    readout_config = ins_config['readout_pattern_config'][readout]
+    tfffr = subarray_config['tfffr']
+    tframe = subarray_config['tframe']
+    nframe = readout_config['nframe']
+    ndrop2 = readout_config['ndrop2']
     ndrop1 = ndrop3 = 0
     nreset1 = nreset2 = 1
-    if 'nreset1' in ins_config['readout_pattern_config'][readout]:
-        nreset1 = ins_config['readout_pattern_config'][readout]['nreset1']
-    if 'nreset2' in ins_config['readout_pattern_config'][readout]:
-        nreset2 = ins_config['readout_pattern_config'][readout]['nreset2']
+    if 'nreset1' in readout_config:
+        nreset1 = readout_config['nreset1']
+    elif 'nreset1' in subarray_config:
+        nreset1 = subarray_config['nreset1']
+    if 'nreset2' in readout_config:
+        nreset2 = readout_config['nreset2']
 
     exposure_time = nexp * (
         tfffr * nint +
