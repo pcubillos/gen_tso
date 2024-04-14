@@ -46,6 +46,7 @@ def custom_card(*args, body_args={}, **kwargs):
 
 def label_tooltip_button(
         label, icons, tooltips, button_ids, placement='top',
+        class_=None,
     ):
     """
     A label text which has one or more clickable icons (with tooltips).
@@ -79,9 +80,10 @@ def label_tooltip_button(
         )
         for icon, text, button_id in zip(icons, tooltips, button_ids)
     ]
-    return ui.span(
+    return ui.div(
         label,
         *icon_buttons,
+        class_=class_,
     )
 
 
