@@ -366,14 +366,16 @@ app_ui = ui.page_fluid(
             ),
             # groups / integs
             ui.panel_well(
+                cs.label_tooltip_button(
+                    label='Groups per integration ',
+                    icons=fa.icon_svg("circle-play", fill='black'),
+                    tooltips='Estimate saturation level',
+                    button_ids='calc_saturation',
+                    class_='pb-1',
+                ),
                 ui.input_numeric(
                     id="groups",
-                    label=cs.label_tooltip_button(
-                        label='Groups per integration ',
-                        icons=fa.icon_svg("circle-play", fill='black'),
-                        tooltips='Estimate saturation level',
-                        button_ids='calc_saturation',
-                    ),
+                    label='',
                     value=2,
                     min=2, max=10000,
                 ),
