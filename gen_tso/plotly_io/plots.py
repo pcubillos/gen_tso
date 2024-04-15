@@ -13,11 +13,10 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 #import pyratbay.spectrum as ps
-#import pyratbay.tools as pt
+from pyratbay.tools import u
 from ..utils import (
     bin_spectrum,
     constant_resolution_spectrum,
-    u,
 )
 
 

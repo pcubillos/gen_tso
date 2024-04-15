@@ -26,7 +26,8 @@ dependencies = [
     'plotly',
     'shinywidgets',
     'faicons',
-    #'pyratbay>2.0.0'
+    'pyratbay>=1.1.6'
+    #'pyratbay>=2.0.0'
 ]
 
 [project.urls]

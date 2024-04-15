@@ -7,5 +7,6 @@ astroquery
 pandas
 plotly
 shinywidgets>=0.3.0
+pyratbay>=1.1.6
 faicons
 
