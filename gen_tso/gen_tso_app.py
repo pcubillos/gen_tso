@@ -117,6 +117,21 @@ spectrum_choices = {
 }
 spectra = {}
 
+# Load default spectra:
+t_models, e_models, sed_models = collect_spectra(f'{ROOT}data/models')
+for label, model in t_models.items():
+    spectra[label] = model
+    spectrum_choices['transit'].append(label)
+for label, model in e_models.items():
+    spectra[label] = model
+    spectrum_choices['eclipse'].append(label)
+# for label, model in sed_models.items():
+    # 'depth' --> 'flux'
+    #spectra[label] = {'wl': wl, 'depth': depth}
+    #spectrum_choices['sed'].append(label)
+
+
+
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
