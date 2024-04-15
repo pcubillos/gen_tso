@@ -795,7 +795,6 @@ def server(input, output, session):
         )
         # TBD: if exp_time << obs_dur, raise warning
 
-        obs_geometry = input.geometry.get().lower()
         depth_label, wl, depth = parse_depth_model(input)
         if depth_label is None:
             ui.notification_show(
@@ -805,7 +804,7 @@ def server(input, output, session):
             )
             return
         if depth_label not in spectra:
-            spectrum_choices[obs_geometry].append(depth_label)
+            spectrum_choices[obs_geometry.lower()].append(depth_label)
             spectra[depth_label] = {'wl': wl, 'depth': depth}
         depth_model = [wl, depth]
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
