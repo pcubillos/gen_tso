@@ -14,7 +14,7 @@
 
 ### Install as:
 
-Not yet on PyPI or Conda, but for the moment you can do:
+Not yet on PyPI or Conda, but for the moment you can get the code from Github:
 ```
 git clone https://github.com/pcubillos/gen_tso/
 cd gen_tso
@@ -22,6 +22,11 @@ pip install .
 ```
 
 Then setup the pandeia reference files following these instructions: [https://pcubillos.github.io/gen_tso/install.html](https://pcubillos.github.io/gen_tso/install.html#pandeia-engine-installation)
+
+To launch the application use this prompt command:
+```
+tso
+```
 
 ### Docs at:
 
