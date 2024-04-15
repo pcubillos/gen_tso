@@ -1,7 +1,7 @@
 # ✨ Gen TSO ✨
 ### A general ETC interface for time-series observations with JWST
 
-(Nearly there...)
+(Getting there...)
 
 <!--
 [![Tests](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml)
@@ -26,6 +26,10 @@ Then setup the pandeia reference files following these instructions: [https://pc
 ### Docs at:
 
 <https://pcubillos.github.io/gen_tso/>
+
+### Take a look:
+
+<img alt="Gen_TSO" src="https://github.com/pcubillos/gen_tso/blob/master/docs/gen_tso_screenshot.png">
 
 ### Cite as:
 
