@@ -14,7 +14,7 @@ from gen_tso import catalogs as cat
 from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
-from gen_tso.utils import ROOT
+from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
 
 
 # Confirmed planets
@@ -586,13 +586,6 @@ def get_throughput(input):
     if filter not in filter_throughputs[obs_type][inst][subarray]:
         return None
     return filter_throughputs[obs_type][inst][subarray][filter]
-
-
-def parse_depth_spectrum(file_path):
-    spectrum = np.loadtxt(file_path, unpack=True)
-    # TBD: check valid format
-    wl, depth = spectrum
-    return wl, depth
 
 
 def get_auto_sed(input):
@@ -1287,19 +1280,26 @@ def server(input, output, session):
 
         # The units tell this function SED or depth spectrum:
         units = uploaded_units.get()
+        label, wl, depth = read_spectrum_file(
+            new_model[0]['datapath'], on_fail='warning',
+        )
+        if wl is None:
+            # TBD: capture and pop up the warning
+            return
+        # Need to manually handle the label
+        label = new_model[0]['name']
+        if label.endswith('.dat') or label.endswith('.txt'):
+            label = label[0:-4]
+
         if units in depth_units:
             obs_geometry = input.geometry.get().lower()
-            depth_file = new_model[0]['name']
-            # TBD: remove file extension?
-            spectrum_choices[obs_geometry].append(depth_file)
-            wl, depth = parse_depth_spectrum(new_model[0]['datapath'])
+            spectrum_choices[obs_geometry].append(label)
             # TBD: convert depth units
-            spectra[depth_file] = {'wl': wl, 'depth': depth}
-
+            spectra[label] = {'wl': wl, 'depth': depth}
             if input.planet_model_type.get() != 'Input':
                 return
             # Trigger update choose_depth
-            update_depth_flag.set(depth_file)
+            update_depth_flag.set(label)
         elif units in sed_units:
             pass
 
