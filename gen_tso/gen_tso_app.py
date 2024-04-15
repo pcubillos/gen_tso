@@ -1,6 +1,9 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
+import sys
+import os
+
 import numpy as np
 import scipy.interpolate as si
 
@@ -15,7 +18,6 @@ from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
-
 
 # Confirmed planets
 nea_data = cat.load_nea_targets_table()
@@ -117,19 +119,24 @@ spectrum_choices = {
 }
 spectra = {}
 
-# Load default spectra:
-t_models, e_models, sed_models = collect_spectra(f'{ROOT}data/models')
-for label, model in t_models.items():
-    spectra[label] = model
-    spectrum_choices['transit'].append(label)
-for label, model in e_models.items():
-    spectra[label] = model
-    spectrum_choices['eclipse'].append(label)
-# for label, model in sed_models.items():
-    # 'depth' --> 'flux'
-    #spectra[label] = {'wl': wl, 'depth': depth}
-    #spectrum_choices['sed'].append(label)
+# Load spectra from user-defined folder and/or from default folder
+loading_folders = []
+if len(sys.argv) == 2:
+    loading_folders.append(os.path.realpath(sys.argv[1]))
+loading_folders.append(f'{ROOT}data/models')
 
+for location in loading_folders:
+    t_models, e_models, sed_models = collect_spectra(location)
+    for label, model in t_models.items():
+        spectra[label] = model
+        spectrum_choices['transit'].append(label)
+    for label, model in e_models.items():
+        spectra[label] = model
+        spectrum_choices['eclipse'].append(label)
+    # for label, model in sed_models.items():
+        # 'depth' --> 'flux'
+        #spectra[label] = {'wl': wl, 'depth': depth}
+        #spectrum_choices['sed'].append(label)
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
