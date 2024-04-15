@@ -14,6 +14,8 @@ __all__ = [
     'Tophat',
     'constant_resolution_spectrum',
     'bin_spectrum',
+    'read_spectrum_file',
+    'collect_spectra',
 ]
 
 import operator
@@ -542,4 +544,95 @@ def resample(signal, wn, specwn, normalize=False):
     # Return the normalized interpolated filter and the indices:
     return resampled, wnidx
 
+
+def read_spectrum_file(file, on_fail=None):
+    """
+    Parameters
+    ----------
+    file: String
+        Spectrum file to read (transit depth, eclipse depth, or stellar SED)
+        This is a plain-text file with two columns (white space separater)
+        First column is the wavelength, second is the depth/flux.
+        Should be readable by numpy.loadtxt().
+    on_fail: String
+        if 'warning' raise a warning.
+        if 'error' raise an error.
+
+    Examples
+    --------
+    >>> import gen_tso.utils as u
+
+    >>> file = f'{u.ROOT}data/models/WASP80b_transit.dat'
+    >>> spectra = u.read_spectrum_file(file, on_fail='warning')
+    """
+    try:
+        data = np.loadtxt(file, unpack=True)
+        wl, depth = data
+    except ValueError as error:
+        wl = None
+        depth = None
+        str_error = str(on_fail).capitalize()
+        error_msg = (
+                f'{str_error}, could not load spectrum file: '
+                f'{repr(file)}\n'
+                f'{error}'
+        )
+        if on_fail == 'warning':
+            print(error_msg)
+        if on_fail == 'error':
+            raise ValueError(error_msg)
+
+    path, label = os.path.split(file)
+    if label.endswith('.dat') or label.endswith('.txt'):
+        label = label[0:-4]
+    return label, wl, depth
+
+
+def collect_spectra(folder, on_fail=None):
+    """
+    Parameters
+    ----------
+    on_fail: String
+        if 'warning' raise a warning.
+        if 'error' raise an error.
+    Examples
+    --------
+    >>> import gen_tso.utils as u
+
+    >>> folder = f'{u.ROOT}data/models/'
+    >>> spectra = u.collect_spectra(folder, on_fail=None)
+    """
+    files = os.listdir(folder)
+    transit_files = [
+        file for file in sorted(files)
+        if 'transit' in file or 'transmission' in file
+    ]
+    eclipse_files = [
+        file for file in sorted(files)
+        if 'eclipse' in file or 'emission' in file
+    ]
+    sed_files = [
+        file for file in sorted(files)
+        if 'sed' in file or 'star' in file
+    ]
+
+    transit_spectra = {}
+    for file in transit_files:
+        label, wl, depth = read_spectrum_file(f'{folder}/{file}', on_fail)
+        if wl is not None:
+            transit_spectra[label] = {'wl': wl, 'depth': depth}
+
+    eclipse_spectra = {}
+    for file in eclipse_files:
+        label, wl, depth = read_spectrum_file(f'{folder}/{file}', on_fail)
+        if wl is not None:
+            eclipse_spectra[label] = {'wl': wl, 'depth': depth}
+
+    sed_spectra = {}
+    for file in sed_files:
+        label, wl, model = read_spectrum_file(f'{folder}/{file}', on_fail)
+        if wl is not None:
+            sed_spectra[label] = {'wl': wl, 'depth': model}
+
+    return transit_spectra, eclipse_spectra, sed_spectra
 
