@@ -699,7 +699,10 @@ class PandeiaCalculation():
             raise ValueError(f"Invalid config output: '{output}'")
 
 
-    def set_scene(self, sed_type, sed_model, norm_band, norm_magnitude):
+    def set_scene(
+            self, sed_type, sed_model, norm_band, norm_magnitude,
+            background='ecliptic_low',
+        ):
         """
         Set the stellar point-source scene to observe.
 
@@ -716,6 +719,10 @@ class PandeiaCalculation():
             Band over which to normalize the spectrum.
         norm_magnitude: float
             Magnitude of the star at norm_band.
+        background: String
+            Set the background flux. Select from:
+            'ecliptic_low', 'ecliptic_medium', 'ecliptic_high',
+            'minzodi_low',  'minzodi_medium',  'minzodi_high'
 
         Examples
         --------
@@ -731,6 +738,10 @@ class PandeiaCalculation():
         """
         scene = make_scene(sed_type, sed_model, norm_band, norm_magnitude)
         self.calc['scene'] = [scene]
+        bkg, bkg_level = background.strip().split('_')
+        self.calc['background'] = bkg
+        self.calc['background_level'] = bkg_level
+
 
     def get_saturation_values(
             self, disperser, filter, subarray, readout, ngroup=2,
