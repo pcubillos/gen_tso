@@ -804,6 +804,8 @@ class PandeiaCalculation():
         """
         Run pandeia.
         """
+        if disperser is not None:
+            self.calc['configuration']['instrument']['disperser'] = disperser
         if readout is not None:
             self.calc['configuration']['detector']['readout_pattern'] = readout
         if subarray is not None:
@@ -813,14 +815,9 @@ class PandeiaCalculation():
         elif filter is not None:
             self.calc['configuration']['instrument']['filter'] = filter
 
-        if self.instrument == 'nircam':
-            self.calc['configuration']['instrument']['disperser'] = disperser
-        elif self.instrument == 'nirspec':
-            self.calc['configuration']['instrument']['disperser'] = disperser
-        elif self.instrument == 'niriss':
+        if self.instrument == 'niriss':
             self.calc['strategy']['order'] = 1
             # DataError: No mask configured for SOSS order 2.
-        #elif self.instrument == 'miri':
 
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
