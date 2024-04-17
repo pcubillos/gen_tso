@@ -8,6 +8,7 @@ __all__ = [
     'detector_label',
 ]
 
+from itertools import product
 import pickle
 from pandeia.engine.calc_utils import get_instrument_config
 from gen_tso.utils import ROOT
@@ -19,22 +20,16 @@ inst_names = {
     'niriss': 'NIRISS',
     'nirspec': 'NIRSpec',
 }
-spec_modes = {
-    'miri': 'lrsslitless',
-    'nircam': 'ssgrism',
-    'niriss': 'soss',
-    'nirspec': 'bots',
-}
-acq_modes = {
-    'miri': 'target_acq',
-    'nircam': 'target_acq',
-    'niriss': 'target_acq',
-    'nirspec': 'target_acq',
-}
-all_modes = {
-    'spectroscopy': spec_modes,
-    'acquisition': acq_modes,
-}
+spec_modes = [
+   'lrsslitless',
+   'mrs_ts',
+   'ssgrism',
+   'soss',
+   'bots',
+]
+acq_modes = [
+    'target_acq',
+]
 
 
 def get_constrained_values(inst_config, aper, inst_property, mode):
@@ -113,6 +108,7 @@ def get_configs(instrument=None, obs_type=None):
     --------
     >>> from gen_tso.pandeia_io import get_configs
     >>> insts = get_configs(instrument='niriss', obs_type='spectroscopy')
+    >>> insts = get_configs(instrument='miri')
     >>> insts = get_configs(obs_type='spectroscopy')
     >>> insts = get_configs(obs_type='acquisition')
     """
@@ -127,11 +123,24 @@ def get_configs(instrument=None, obs_type=None):
     elif isinstance(instrument, str):
         instrument = [instrument]
 
+    if obs_type is None:
+        obs_type = ['spectroscopy', 'acquisition']
+    elif isinstance(obs_type, str):
+        obs_type = [obs_type]
+
+    modes = []
+    if 'spectroscopy' in obs_type:
+        modes += spec_modes
+    if 'acquisition' in obs_type:
+        modes += acq_modes
+
     telescope = 'jwst'
     outputs = []
-    for inst in instrument:
+    for mode, inst in product(modes, instrument):
         inst_config = get_instrument_config(telescope, inst)
-        # inst_config['modes']   # To see all modes
+        if mode not in inst_config['modes']:
+            continue
+
         disperser_names = inst_config['disperser_config']
         filter_names = inst_config['filter_config']
         readout_names = inst_config['readout_pattern_config']
@@ -139,13 +148,16 @@ def get_configs(instrument=None, obs_type=None):
         if 'slit_config' in inst_config:
             slit_names = inst_config['slit_config']
 
-        if obs_type == 'spectroscopy':
-            mode = spec_modes[inst]
-        elif obs_type == 'acquisition':
-            mode = acq_modes[inst]
-        #print(f'\n{inst}:  {mode}')
+        if mode in spec_modes:
+            obs_type = 'spectroscopy'
+        elif mode in acq_modes:
+            obs_type = 'acquisition'
         #print(inst_config['mode_config'][mode]['apertures'])
         apertures = inst_config['mode_config'][mode]['apertures']
+
+        if mode == 'mrs_ts':
+            # They are all the same, and slit is a mirror of aperture
+            apertures = apertures[0:1]
 
         for aper in apertures:
             inst_dict = {}
@@ -342,22 +354,24 @@ def filter_throughputs():
     """
     Collect the throughput response curves for each instrument configuration
     """
-    obs_types = [
-        'spectroscopy',
-        'acquisition',
-    ]
+    detectors = generate_all_instruments()
     throughputs = {}
-    for obs_type in obs_types:
-        throughputs[obs_type] = {}
-        for inst_name, mode in all_modes[obs_type].items():
-            throughputs[obs_type][inst_name] = {}
+    for detector in detectors:
+        inst = detector.instrument.lower()
+        mode = detector.mode
+        obs_type = detector.obs_type
+        #print(inst, mode, obs_type)
+        if obs_type not in throughputs:
+            throughputs[obs_type] = {}
+        if inst not in throughputs[obs_type]:
+            throughputs[obs_type][inst] = {}
 
-            t_file = f'{ROOT}data/throughputs_{inst_name}_{mode}.pickle'
-            with open(t_file, 'rb') as handle:
-                data = pickle.load(handle)
+        t_file = f'{ROOT}data/throughputs_{inst}_{mode}.pickle'
+        with open(t_file, 'rb') as handle:
+            data = pickle.load(handle)
 
-            for subarray in list(data.keys()):
-                throughputs[obs_type][inst_name][subarray] = data[subarray]
+        for subarray in list(data.keys()):
+            throughputs[obs_type][inst][subarray] = data[subarray]
 
     return throughputs
 
@@ -369,12 +383,11 @@ def generate_all_instruments():
 
     TBD
     ---
-    Spectroscopy
-        'mrs_ts': 'MRS Time Series',
     Imaging
-        'imaging_ts': 'Imaging Time Series',
-        'sw_ts': 'SW Time Series',
-        'lw_ts': 'LW Time Series',
+        'imaging_ts': 'Imaging Time Series'
+        'sw_ts': 'SW Time Series'
+        'lw_ts': 'LW Time Series'
+
     Examples
     --------
     >>> from gen_tso.pandeia_io import get_configs, generate_all_instruments
@@ -394,6 +407,11 @@ def generate_all_instruments():
 
         if mode == 'lrsslitless':
             disperser_label = 'Disperser'
+            filter_label = ''
+            filters = {'': ''}
+            default_indices = 0, 0, 0, 0
+        if mode == 'mrs_ts':
+            disperser_label = 'Wavelength Range'
             filter_label = ''
             filters = {'': ''}
             default_indices = 0, 0, 0, 0
@@ -487,13 +505,6 @@ def generate_all_instruments():
         detectors.append(det)
 
 
-    #mrs_ts = Detector(
-    #    'mrs_ts',
-    #    'Medium Resolution Spectroscopy (MRS) time series',
-    #    'MIRI',
-    #    'spectroscopy',
-    #)
-
     #imaging_ts = Detector(
     #    'imaging_ts',
     #    'Imaging time series',
@@ -523,6 +534,8 @@ def detector_label(mode, disperser, filter, subarray, readout):
     Generate a pretty and (as succinct as possible) label for the
     detector configuration.
     """
+    if mode == 'mrs_ts':
+        return 'MIRI MRS'
     if mode == 'lrsslitless':
         return 'MIRI LRS'
     if mode == 'soss':
