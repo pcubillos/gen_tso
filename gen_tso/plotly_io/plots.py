@@ -38,7 +38,7 @@ COLOR_SEQUENCE = [
 ]
 
 
-def band_boundaries(band, threshold=0.03):
+def band_boundaries(band, threshold=0.001):
     """
     Find the wavelength boundaries of a passband where the response
     is greater than the required threshold.
@@ -199,6 +199,7 @@ def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
 
     wl_scale = 'log'
     wl_range = [np.log10(0.6), np.log10(13.5)]
+    wl_range = [np.log10(0.6), np.log10(28.0)]
     fig.update_xaxes(
         title_text='wavelength (um)',
         title_standoff=0,
@@ -222,7 +223,7 @@ def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
 
 def plotly_sed_spectra(
         sed_models, labels, highlight_model=None,
-        wl_range=[0.5,12], units='mJy', wl_scale='linear', resolution=250.0,
+        wl_range=[0.5,28], units='mJy', wl_scale='linear', resolution=250.0,
         throughput=None,
     ):
     """
@@ -237,7 +238,7 @@ def plotly_sed_spectra(
     # Shaded area for filter:
     if throughput is not None:
         if 'order2' in throughput:
-            band_bounds = band_boundaries(throughput['order2'])
+            band_bounds = band_boundaries(throughput['order2'], threshold=0.03)
             for bound in band_bounds:
                 fig.add_vrect(
                     fillcolor="LightSalmon", opacity=0.4,
@@ -331,7 +332,7 @@ def plotly_depth_spectra(
     # Shaded area for filter:
     if throughput is not None:
         if 'order2' in throughput:
-            band_bounds = band_boundaries(throughput['order2'])
+            band_bounds = band_boundaries(throughput['order2'], threshold=0.03)
             for bound in band_bounds:
                 fig.add_vrect(
                     fillcolor="LightSalmon", opacity=0.4,
