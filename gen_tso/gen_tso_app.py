@@ -459,6 +459,7 @@ app_ui = ui.page_fluid(
                             "plot_sed_xscale",
                             "Wavelength axis:",
                             choices = ['linear', 'log'],
+                            selected='log',
                         ),
                         placement="right",
                         id="sed_popover",
@@ -493,6 +494,7 @@ app_ui = ui.page_fluid(
                             "plot_depth_xscale",
                             "Wavelength axis:",
                             choices = ['linear', 'log'],
+                            selected='log',
                         ),
                         placement="right",
                         id="depth_popover",
@@ -594,14 +596,14 @@ def get_throughput(input):
     else:
         obs_type = 'spectroscopy'
 
-    if mode == 'ssgrism':
-        subarray = 'full'
-    else:
-        subarray = req(input.subarray.get()).lower()
+    subarray = input.subarray.get()
 
-    filter = input.filter.get().lower()
     if mode == 'lrsslitless':
         filter = 'None'
+    elif mode == 'mrs_ts':
+        filter = input.disperser.get()
+    else:
+        filter = input.filter.get()
 
     if subarray not in filter_throughputs[obs_type][inst]:
         return None
@@ -1379,7 +1381,6 @@ def server(input, output, session):
         readout = input.readout.get()
         if mode == 'bots':
             disperser, filter = filter.split('/')
-
         pando = jwst.PandeiaCalculation(inst_name, mode)
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
@@ -1454,6 +1455,8 @@ def server(input, output, session):
 
         if mode == 'lrsslitless':
             filter = 'None'
+        if mode == 'mrs_ts':
+            filter = input.disperser.get()
 
         if mode == 'target_acq':
             throughputs = filter_throughputs['acquisition']
