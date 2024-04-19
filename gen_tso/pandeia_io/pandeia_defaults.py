@@ -20,12 +20,18 @@ inst_names = {
     'niriss': 'NIRISS',
     'nirspec': 'NIRSpec',
 }
+
 spec_modes = [
    'lrsslitless',
    'mrs_ts',
    'ssgrism',
    'soss',
    'bots',
+]
+photo_modes = [
+    'imaging_ts',
+    'lw_ts',
+    'sw_ts',
 ]
 acq_modes = [
     'target_acq',
@@ -133,6 +139,8 @@ def get_configs(instrument=None, obs_type=None):
         modes += spec_modes
     if 'acquisition' in obs_type:
         modes += acq_modes
+    if 'photometry' in obs_type:
+        modes += photo_modes
 
     telescope = 'jwst'
     outputs = []
@@ -145,6 +153,7 @@ def get_configs(instrument=None, obs_type=None):
         filter_names = inst_config['filter_config']
         readout_names = inst_config['readout_pattern_config']
         subarray_names = inst_config['subarray_config']['default']
+        aperture_names = inst_config['aperture_config']
         if 'slit_config' in inst_config:
             slit_names = inst_config['slit_config']
 
@@ -152,93 +161,108 @@ def get_configs(instrument=None, obs_type=None):
             obs_type = 'spectroscopy'
         elif mode in acq_modes:
             obs_type = 'acquisition'
-        #print(inst_config['mode_config'][mode]['apertures'])
+        elif mode in photo_modes:
+            obs_type = 'photometry'
+
+        inst_dict = {}
+        inst_dict['instrument'] = inst_names[inst]
+        inst_dict['obs_type'] = obs_type
+        mode_name = inst_config['mode_config'][mode]['display_string']
+        inst_dict['mode'] = mode
+        inst_dict['mode_label'] = mode_name
+
         apertures = inst_config['mode_config'][mode]['apertures']
+        if obs_type == 'acquisition':
+            apertures = [
+                aper for aper in apertures
+                if aper in ta_apertures[inst]
+            ]
+        inst_dict['apertures'] = {
+            aperture: str_or_dict(aperture_names, aperture, mode)
+            for aperture in apertures
+        }
+        aper = apertures[0]
 
-        if mode == 'mrs_ts':
-            # They are all the same, and slit is a mirror of aperture
-            apertures = apertures[0:1]
+        dispersers = get_constrained_values(
+            inst_config, aper, 'dispersers', mode,
+        )
+        inst_dict['dispersers'] = {
+            disperser: str_or_dict(disperser_names, disperser, mode)
+            for disperser in dispersers
+        }
 
-        for aper in apertures:
-            inst_dict = {}
-            inst_dict['instrument'] = inst_names[inst]
-            inst_dict['obs_type'] = obs_type
-            inst_dict['aperture'] = aper
-            if obs_type == 'acquisition':
-                if aper not in ta_apertures[inst]:
-                    continue
-                mode_name = inst_config['aperture_config'][aper]['display_string'][mode]
-            else:
-                mode_name = inst_config['mode_config'][mode]['display_string']
-            #print(f'Aperture: {repr(aper)}\nMode: {mode_name}')
-            inst_dict['mode'] = mode
-            inst_dict['mode_label'] = mode_name
+        filters = get_constrained_values(inst_config, aper, 'filters', mode)
+        inst_dict['filters'] = {
+            filter: str_or_dict(filter_names, filter, mode)
+            for filter in filters
+        }
 
-            dispersers = get_constrained_values(
-                inst_config, aper, 'dispersers', mode,
-            )
-            #print('Dispersers:  ', dispersers)
-            inst_dict['dispersers'] = {}
-            for disperser in dispersers:
-                name = str_or_dict(disperser_names, disperser, mode)
-                inst_dict['dispersers'][disperser] = name
-                #print(f"   {disperser}: {name}")
-            if mode == 'bots':
-                constraints = inst_config['config_constraints']['dispersers']
-                inst_dict['gratings_constraints'] = constraints
+        readouts = get_constrained_values(
+            inst_config, aper, 'readout_patterns', mode,
+        )
+        inst_dict['readouts'] = {
+            readout: str_or_dict(readout_names, readout, mode)
+            for readout in readouts
+        }
 
-            filters = get_constrained_values(inst_config, aper, 'filters', mode)
-            inst_dict['filters'] = {}
-            #print('Filters:  ', filters)
-            for filter in filters:
-                name = str_or_dict(filter_names, filter, mode)
-                inst_dict['filters'][filter] = name
-                #print(f"   {filter}: {name}")
+        subarrays = get_constrained_values(inst_config, aper, 'subarrays', mode)
+        inst_dict['subarrays'] = {
+            subarray: str_or_dict(subarray_names, subarray, mode)
+            for subarray in subarrays
+        }
 
-            readouts = get_constrained_values(
-                inst_config, aper, 'readout_patterns', mode,
-            )
-            inst_dict['readouts'] = {}
-            #print('Readouts:', readouts)
-            for readout in readouts:
-                name = str_or_dict(readout_names, readout, mode)
-                inst_dict['readouts'][readout] = name
-                #print(f"   {readout}: {name}")
+        slits = get_constrained_values(inst_config, aper, 'slits', mode)
+        inst_dict['slits'] = {
+            slit: str_or_dict(slit_names, slit, mode)
+            for slit in slits
+        }
 
-            subarrays = get_constrained_values(
-                inst_config, aper, 'subarrays', mode,
-            )
-            inst_dict['subarrays'] = {}
-            #print('Subarrays:', subarrays)
+        # Special constraints
+        if mode == 'bots':
+            constraints = inst_config['config_constraints']['dispersers']
+            inst_dict['gratings_constraints'] = constraints
+
+        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
+            constraints = inst_config['mode_config'][mode]['enum_ngroups']
+            inst_dict['subarray_constraints'] = {}
             for subarray in subarrays:
-                name = str_or_dict(subarray_names, subarray, mode)
-                inst_dict['subarrays'][subarray] = name
-                #print(f"   {subarray}: {name}")
-            if inst_dict['instrument']=='MIRI' and mode=='target_acq':
-                constraints = inst_config['mode_config'][mode]['enum_ngroups']
-                inst_dict['subarray_constraints'] = {}
-                for subarray in subarrays:
-                    key = subarray if subarray in constraints else 'default'
-                    groups = constraints[key]
-                    inst_dict['subarray_constraints'][subarray] = groups
+                key = subarray if subarray in constraints else 'default'
+                groups = constraints[key]
+                inst_dict['subarray_constraints'][subarray] = groups
 
-            slits = get_constrained_values(
-                inst_config, aper, 'slits', mode,
-            )
-            inst_dict['slits'] = {}
-            for slit in slits:
-                name = str_or_dict(slit_names, slit, mode)
-                inst_dict['slits'][slit] = name
+        if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
+            inst_dict['aperture_constraints'] = {}
+            for aperture in apertures:
+                readouts = get_constrained_values(
+                    inst_config, aperture, 'readout_patterns', mode,
+                )
+                inst_dict['aperture_constraints'][aperture] = readouts
 
-            if obs_type == 'acquisition':
-                groups = inst_config['mode_config'][mode]['enum_ngroups']
-                if not isinstance(groups, list):
-                    groups = groups['default']
-                inst_dict['groups'] = groups
-                # Integrations and exposures are always one (so far)
-                #print(inst_config['mode_config'][mode]['enum_nexps'])
-                #print(inst_config['mode_config'][mode]['enum_nints'])
-            outputs.append(inst_dict)
+        if mode == 'lw_ts' or mode == 'sw_ts':
+            inst_dict['filter_constraints']  = inst_config['double_filters']
+        if mode == 'sw_ts':
+            inst_dict['aperture_constraints'] = {}
+            for aperture in apertures:
+                filters = get_constrained_values(
+                    inst_config, aperture, 'filters', mode,
+                )
+                inst_dict['aperture_constraints'][aperture] = filters
+            inst_dict['subarray_constraints'] = {}
+            for aperture in apertures:
+                subarrays = get_constrained_values(
+                    inst_config, aperture, 'subarrays', mode,
+                )
+                inst_dict['subarray_constraints'][aperture] = subarrays
+
+        if obs_type == 'acquisition':
+            groups = inst_config['mode_config'][mode]['enum_ngroups']
+            if not isinstance(groups, list):
+                groups = groups['default']
+            inst_dict['groups'] = groups
+            # Integrations and exposures are always one (so far)
+            #print(inst_config['mode_config'][mode]['enum_nexps'])
+            #print(inst_config['mode_config'][mode]['enum_nints'])
+        outputs.append(inst_dict)
     return outputs
 
 
@@ -292,7 +316,8 @@ class Detector:
     def __init__(
             self, mode, label, instrument, obs_type,
             disperser_label, dispersers, filter_label, filters,
-            subarrays, readouts, groups=None, default_indices=None,
+            subarrays, readouts, apertures,
+            groups=None, default_indices=None,
             constraints={},
         ):
         """
@@ -317,6 +342,7 @@ class Detector:
         self.filters = filters
         self.subarrays = subarrays
         self.readouts = readouts
+        self.apertures = apertures
         self.groups = groups
         self.constraints = constraints
 
@@ -404,6 +430,7 @@ def generate_all_instruments():
         filters = inst['filters']
         subarrays = inst['subarrays']
         readouts = inst['readouts']
+        apertures = inst['apertures']
 
         if mode == 'lrsslitless':
             disperser_label = 'Disperser'
@@ -450,18 +477,17 @@ def generate_all_instruments():
             filters,
             subarrays,
             readouts,
+            apertures,
             default_indices=default_indices,
         )
         detectors.append(det)
 
     # Acquisition observing modes
     acq_insts = get_configs(obs_type='acquisition')
-    for instrument in inst_names.values():
-        insts = [inst for inst in acq_insts if inst['instrument'] == instrument]
-        inst = insts[0]
+    for inst in acq_insts:
         mode = inst['mode']
         # Use apertures in place of 'disperser'
-        dispersers = {inst['aperture']: inst['mode_label']}
+        dispersers = inst['apertures']
         filters = inst['filters']
         subarrays = inst['subarrays']
         readouts = inst['readouts']
@@ -477,13 +503,10 @@ def generate_all_instruments():
             default_indices = 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
             default_indices = 0, 0, 0, 1
-            dispersers[insts[1]['aperture']] = insts[1]['mode_label']
-            # Constraints for readouts / depend on disperser
-            const = {
-                ins['aperture']: list(ins['readouts'])
-                for ins in insts
+            # Constraints for readouts / depend on disperser (i.e., aperture)
+            constraints['readouts'] = {
+                'dispersers': inst['aperture_constraints'],
             }
-            constraints['readouts'] = {'dispersers': const}
         if inst['instrument'] == 'NIRSpec':
             default_indices = 0, 0, 1, 0
 
@@ -498,33 +521,13 @@ def generate_all_instruments():
             filters,
             subarrays,
             readouts,
+            apertures,
             inst['groups'],
             default_indices,
             constraints,
         )
         detectors.append(det)
 
-
-    #imaging_ts = Detector(
-    #    'imaging_ts',
-    #    'Imaging time series',
-    #    'MIRI',
-    #    'photometry',
-    #)
-
-    #nircam_grism = Detector(
-    #    'lw_ts',
-    #    'long wavelength time-series imaging',
-    #    'NIRCam',
-    #    'photometry',
-    #)
-
-    #nircam_grism = Detector(
-    #    'sw_ts',
-    #    'short wavelength time-series imaging',
-    #    'NIRCam',
-    #    'photometry',
-    #)
 
     return detectors
 
