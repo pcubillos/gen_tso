@@ -61,7 +61,10 @@ def get_constrained_values(inst_config, aper, inst_property, mode):
         mode in constraints[aper][inst_property]
     )
 
-    if is_constrained:
+    if mode == 'sw_ts' and inst_property == 'filters':
+        values = constraints[aper][inst_property]
+        values = values[mode] if isinstance(values, dict) else values
+    elif is_constrained:
         values = constraints[aper][inst_property][mode]
     elif inst_property in inst_config['mode_config'][mode]:
         values = inst_config['mode_config'][mode][inst_property]
@@ -177,6 +180,7 @@ def get_configs(instrument=None, obs_type=None):
                 aper for aper in apertures
                 if aper in ta_apertures[inst]
             ]
+        #print(f'\n{inst} / {mode}')
         inst_dict['apertures'] = {
             aperture: str_or_dict(aperture_names, aperture, mode)
             for aperture in apertures
