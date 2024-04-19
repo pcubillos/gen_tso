@@ -113,13 +113,23 @@ def get_configs(instrument=None, obs_type=None):
     -------
     A list of dictionaries containing the observing modes info.
 
+    Some properties have special constraints which are specified
+    by the 'constraints' item, which is a nested dict of the shape:
+        options = constraints[constrained_field][constrainer_field][val]
+    For example, for nirspec bots the filters options depend on the disperser,
+    then to get the filters available for the 'g140h' disperser do:
+        constrained_filters = constraints['filter']['disperser']['g140h']
+
     Examples
     --------
     >>> from gen_tso.pandeia_io import get_configs
-    >>> insts = get_configs(instrument='niriss', obs_type='spectroscopy')
-    >>> insts = get_configs(instrument='miri')
+
     >>> insts = get_configs(obs_type='spectroscopy')
+    >>> insts = get_configs(obs_type='photometry')
     >>> insts = get_configs(obs_type='acquisition')
+
+    >>> insts = get_configs(instrument='miri')
+    >>> insts = get_configs(instrument='niriss', obs_type='spectroscopy')
     """
     ta_apertures = {
         'miri': ['imager'],
@@ -221,43 +231,6 @@ def get_configs(instrument=None, obs_type=None):
             for slit in slits
         }
 
-        # Special constraints
-        if mode == 'bots':
-            constraints = inst_config['config_constraints']['dispersers']
-            inst_dict['gratings_constraints'] = constraints
-
-        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
-            constraints = inst_config['mode_config'][mode]['enum_ngroups']
-            inst_dict['subarray_constraints'] = {}
-            for subarray in subarrays:
-                key = subarray if subarray in constraints else 'default'
-                groups = constraints[key]
-                inst_dict['subarray_constraints'][subarray] = groups
-
-        if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
-            inst_dict['aperture_constraints'] = {}
-            for aperture in apertures:
-                readouts = get_constrained_values(
-                    inst_config, aperture, 'readout_patterns', mode,
-                )
-                inst_dict['aperture_constraints'][aperture] = readouts
-
-        if mode == 'lw_ts' or mode == 'sw_ts':
-            inst_dict['filter_constraints']  = inst_config['double_filters']
-        if mode == 'sw_ts':
-            inst_dict['aperture_constraints'] = {}
-            for aperture in apertures:
-                filters = get_constrained_values(
-                    inst_config, aperture, 'filters', mode,
-                )
-                inst_dict['aperture_constraints'][aperture] = filters
-            inst_dict['subarray_constraints'] = {}
-            for aperture in apertures:
-                subarrays = get_constrained_values(
-                    inst_config, aperture, 'subarrays', mode,
-                )
-                inst_dict['subarray_constraints'][aperture] = subarrays
-
         if obs_type == 'acquisition':
             groups = inst_config['mode_config'][mode]['enum_ngroups']
             if not isinstance(groups, list):
@@ -266,6 +239,60 @@ def get_configs(instrument=None, obs_type=None):
             # Integrations and exposures are always one (so far)
             #print(inst_config['mode_config'][mode]['enum_nexps'])
             #print(inst_config['mode_config'][mode]['enum_nints'])
+
+        # Special constraints
+        inst_dict['constraints'] = {}
+        if mode == 'bots':
+            disp_constraints = inst_config['config_constraints']['dispersers']
+            constraints = {
+                disperser: disp_constraints[disperser]['filters']
+                for disperser in dispersers
+            }
+            inst_dict['constraints']['filter'] = {'disperser': constraints}
+            constraints = {}
+            for disperser in dispersers:
+                subs = subarrays.copy()
+                if disperser == 'prism':
+                    subs.remove('sub1024a')
+                constraints[disperser] = subs
+            inst_dict['constraints']['subarray'] = {'disperser': constraints}
+
+        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
+            group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
+            constraints = {}
+            for subarray in subarrays:
+                key = subarray if subarray in group_constraints else 'default'
+                constraints[subarray] = group_constraints[key]
+            inst_dict['constraints']['group'] = {'subarray': constraints}
+
+        if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
+            constraints = {
+                aperture: get_constrained_values(
+                    inst_config, aperture, 'readout_patterns', mode,
+                )
+                for aperture in apertures
+            }
+            inst_dict['constraints']['aperture'] = {'aperture': constraints}
+
+        if mode == 'lw_ts' or mode == 'sw_ts':
+            # NIRCam is so special
+            inst_dict['double_filter_constraints']  = inst_config['double_filters']
+        if mode == 'sw_ts':
+            constraints = {
+                aperture: get_constrained_values(
+                    inst_config, aperture, 'filters', mode,
+                )
+                for aperture in apertures
+            }
+            inst_dict['constraints']['filter'] = {'aperture': constraints}
+            constraints = {
+                aperture: get_constrained_values(
+                    inst_config, aperture, 'subarrays', mode,
+                )
+                for aperture in apertures
+            }
+            inst_dict['constraints']['subarray'] = {'aperture': constraints}
+
         outputs.append(inst_dict)
     return outputs
 
