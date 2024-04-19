@@ -6,6 +6,7 @@ __all__ = [
     'filter_throughputs',
     'generate_all_instruments',
     'detector_label',
+    'Detector',
 ]
 
 from itertools import product
@@ -248,14 +249,14 @@ def get_configs(instrument=None, obs_type=None):
                 disperser: disp_constraints[disperser]['filters']
                 for disperser in dispersers
             }
-            inst_dict['constraints']['filter'] = {'disperser': constraints}
+            inst_dict['constraints']['filters'] = {'dispersers': constraints}
             constraints = {}
             for disperser in dispersers:
                 subs = subarrays.copy()
                 if disperser == 'prism':
                     subs.remove('sub1024a')
                 constraints[disperser] = subs
-            inst_dict['constraints']['subarray'] = {'disperser': constraints}
+            inst_dict['constraints']['subarrays'] = {'dispersers': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
             group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
@@ -263,7 +264,7 @@ def get_configs(instrument=None, obs_type=None):
             for subarray in subarrays:
                 key = subarray if subarray in group_constraints else 'default'
                 constraints[subarray] = group_constraints[key]
-            inst_dict['constraints']['group'] = {'subarray': constraints}
+            inst_dict['constraints']['groups'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
             constraints = {
@@ -272,7 +273,7 @@ def get_configs(instrument=None, obs_type=None):
                 )
                 for aperture in apertures
             }
-            inst_dict['constraints']['aperture'] = {'aperture': constraints}
+            inst_dict['constraints']['readouts'] = {'apertures': constraints}
 
         if mode == 'lw_ts' or mode == 'sw_ts':
             # NIRCam is so special
@@ -284,14 +285,14 @@ def get_configs(instrument=None, obs_type=None):
                 )
                 for aperture in apertures
             }
-            inst_dict['constraints']['filter'] = {'aperture': constraints}
+            inst_dict['constraints']['filters'] = {'apertures': constraints}
             constraints = {
                 aperture: get_constrained_values(
                     inst_config, aperture, 'subarrays', mode,
                 )
                 for aperture in apertures
             }
-            inst_dict['constraints']['subarray'] = {'aperture': constraints}
+            inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
         outputs.append(inst_dict)
     return outputs
@@ -390,21 +391,48 @@ class Detector:
         self.default_readout = list(readouts)[idx_r]
 
     def get_constrained_val(
-            self, var, disperser=None, filter=None, subarray=None, readout=None,
+            self, var,
+            disperser=None, filter=None, subarray=None, readout=None,
+            aperture=None,
         ):
-        if var not in self.constraints:
-            return getattr(self, var)
+        """
+        det = generate_all_instruments()[5]
+        get_constrained_val(det, 'filters', disperser='nrm')
+        get_constrained_val(det, 'readouts', disperser='nrm')
+        get_constrained_val(det, 'readouts', disperser='imager')
+        get_constrained_val(det, 'readouts', filter='imager')
+        get_constrained_val(det, 'readouts')
+        get_constrained_val(det, 'readouts', disperser='lala')
+        """
         choices = {
             'dispersers': disperser,
             'filters': filter,
             'subarrays': subarray,
             'readouts': readout,
+            'apertures': aperture,
         }
-        constraints = self.constraints[var]
-        # Assuming there's only one constraining variable
-        for constraint, options in constraints.items():
-            selected = choices[constraint]
-            return options[selected]
+
+        default_vals = getattr(self, var)
+        if var not in self.constraints:
+            return default_vals
+
+        for field, constraint in choices.items():
+            if constraint is None:
+                continue
+            is_constrained = (
+                field in self.constraints[var] and
+                constraint in self.constraints[var][field]
+            )
+            if is_constrained:
+                values = self.constraints[var][field][constraint]
+                return {
+                    val:label
+                    for val,label in default_vals.items()
+                    if val in values
+                }
+        return default_vals
+
+
 
 
 def filter_throughputs():
@@ -448,9 +476,10 @@ def generate_all_instruments():
     Examples
     --------
     >>> from gen_tso.pandeia_io import get_configs, generate_all_instruments
-    >>> insts = get_configs(obs_type='spectroscopy')
-    >>> insts = get_configs(obs_type='acquisition')
+    >>> spec_insts = get_configs(obs_type='spectroscopy')
+    >>> acq_insts = get_configs(obs_type='acquisition')
     >>> dets = generate_all_instruments()
+    >>> det = dets[5]
     """
     detectors = []
     # Spectroscopic observing modes
@@ -462,6 +491,7 @@ def generate_all_instruments():
         subarrays = inst['subarrays']
         readouts = inst['readouts']
         apertures = inst['apertures']
+        constraints = inst['constraints']
 
         if mode == 'lrsslitless':
             disperser_label = 'Disperser'
@@ -481,16 +511,16 @@ def generate_all_instruments():
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
             inst['mode_label'] = 'Bright Object Time Series (BOTS)'
-            constraints = inst['gratings_constraints']
+            filter_constraints = constraints['filters']['dispersers']
             gratings = {}
             for filter in filters:
-                for constraint in constraints:
-                    if filter in constraints[constraint]['filters']:
-                        label = f"{dispersers[constraint]}/{filters[filter]}"
-                        gratings[f'{constraint}/{filter}'] = label
+                for disperser, c_filters in filter_constraints.items():
+                    if filter in c_filters:
+                        label = f"{dispersers[disperser]}/{filters[filter]}"
+                        gratings[f'{disperser}/{filter}'] = label
             filters = gratings
             dispersers = inst['slits']
-            default_indices = 0, 6, 4, 1
+            default_indices = 0, 7, 4, 1
         if mode == 'soss':
             disperser_label = 'Disperser'
             filter_label = 'Filter'
@@ -510,6 +540,7 @@ def generate_all_instruments():
             readouts,
             apertures,
             default_indices=default_indices,
+            constraints=constraints,
         )
         detectors.append(det)
 
@@ -522,22 +553,20 @@ def generate_all_instruments():
         filters = inst['filters']
         subarrays = inst['subarrays']
         readouts = inst['readouts']
+        apertures = inst['apertures']
         disperser_label = 'Acquisition mode'
         filter_label = 'Filter'
-        constraints = {}
+        constraints = inst['constraints']
 
         if inst['instrument'] == 'MIRI':
             default_indices = 0, 0, 5, 0
-            # Constraints for groups depends on subarray
-            constraints['groups'] = {'subarrays': inst['subarray_constraints']}
         if inst['instrument'] == 'NIRCam':
             default_indices = 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
             default_indices = 0, 0, 0, 1
-            # Constraints for readouts / depend on disperser (i.e., aperture)
-            constraints['readouts'] = {
-                'dispersers': inst['aperture_constraints'],
-            }
+            # Re-label constraint for front-end (aperture-->disperser)
+            r_constraint = constraints['readouts'].pop('apertures')
+            constraints['readouts']['dispersers'] = r_constraint
         if inst['instrument'] == 'NIRSpec':
             default_indices = 0, 0, 1, 0
 
