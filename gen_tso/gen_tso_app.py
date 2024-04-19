@@ -756,16 +756,6 @@ def server(input, output, session):
             choices=det.filters,
             selected=det.default_filter,
         )
-        ui.update_select(
-            'subarray',
-            choices=det.subarrays,
-            selected=det.default_subarray,
-        )
-        ui.update_select(
-            'readout',
-            choices=det.readouts,
-            selected=det.default_readout,
-        )
 
         selected = input.filter_filter.get()
         if det.obs_type == 'acquisition':
@@ -779,6 +769,49 @@ def server(input, output, session):
             "filter_filter",
             choices=choices,
             selected=selected,
+        )
+
+    @reactive.Effect
+    @reactive.event(input.disperser, input.filter)
+    def update_subarray():
+        instrument = req(input.select_instrument).get()
+        mode = input.select_mode.get()
+        det = get_detector(mode, instrument)
+
+        if mode == 'bots':
+            disperser = input.filter.get().split('/')[0]
+        else:
+            disperser = input.disperser.get()
+        choices = det.get_constrained_val('subarrays', disperser=disperser)
+
+        subarray = input.subarray.get()
+        if subarray not in choices:
+            subarray = det.default_subarray
+
+        ui.update_select(
+            'subarray',
+            choices=choices,
+            selected=subarray,
+        )
+
+    @reactive.Effect
+    @reactive.event(input.disperser)
+    def update_readout():
+        instrument = req(input.select_instrument).get()
+        mode = input.select_mode.get()
+        det = get_detector(mode, instrument)
+
+        disperser = input.disperser.get()
+        choices = det.get_constrained_val('readouts', disperser=disperser)
+
+        readout = input.readout.get()
+        if readout not in choices:
+            readout = det.default_readout
+
+        ui.update_select(
+            'readout',
+            choices=choices,
+            selected=readout,
         )
 
     @reactive.Effect
@@ -1034,7 +1067,7 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_file = parse_sed(input)
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
-            wl, flux = jwst.extract_sed(scene, wl_range=[0.3,21.0])
+            wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
             spectrum_choices['sed'].append(sed_file)
             spectra[sed_file] = {'wl': wl, 'flux': flux}
         else:
