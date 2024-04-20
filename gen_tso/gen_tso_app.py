@@ -1,8 +1,9 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-import sys
+from collections.abc import Iterable
 import os
+import sys
 
 import numpy as np
 import scipy.interpolate as si
@@ -699,6 +700,20 @@ def parse_depth_model(input):
         depth = f_planet / f_star * transit_depth
 
     return depth_label, wl, depth
+
+
+def make_saturation_label(mode, disperser, filter, subarray, sed_label):
+    """
+    Make a label of unique saturation setups to identify when and
+    when not the saturation level can be estimated.
+    """
+    sat_label = f'{mode}_{filter}'
+    if mode == 'bots':
+        sat_label = f'{sat_label}_{subarray}'
+    elif mode == 'mrs_ts':
+        sat_label = f'{sat_label}_{disperser}'
+    sat_label = f'{sat_label}_{sed_label}'
+    return sat_label
 
 
 def server(input, output, session):
@@ -1405,44 +1420,52 @@ def server(input, output, session):
 
     @reactive.Effect
     @reactive.event(input.calc_saturation)
-    def _():
-        inst_name = input.select_instrument.get().lower()
+    def calculate_saturation_level():
+        inst = input.select_instrument.get().lower()
         mode = input.select_mode.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
+        aperture = None
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        sat_label = make_saturation_label(
+            mode, disperser, filter, subarray, sed_label,
+        )
+        #print(
+        #    repr(inst), repr(mode), repr(disperser), repr(filter),
+        #    repr(subarray), repr(readout), repr(aperture),
+        #)
+
         if mode == 'bots':
             disperser, filter = filter.split('/')
-        pando = jwst.PandeiaCalculation(inst_name, mode)
-
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
             ngroup = int(input.groups.get())
             aperture = input.disperser.get()
-            pando.calc['configuration']['instrument']['aperture'] = aperture
             disperser = None
         else:
             ngroup = 2
 
+        pando = jwst.PandeiaCalculation(inst, mode)
+        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         flux_rate, full_well = pando.get_saturation_values(
             disperser, filter, subarray, readout, ngroup,
+            aperture,
         )
+        if isinstance(flux_rate, Iterable):
+            idx = np.argmax(flux_rate*full_well)
+            flux_rate = flux_rate[idx]
+            full_well = full_well[idx]
 
-        # TBD: add aperture for NIRISS TA
-        if mode == 'bots':
-            filter = f'{disperser}/{filter}'
-            sat_label = f'{filter}_{subarray}_{sed_label}'
-        else:
-            sat_label = f'{filter}_{sed_label}'
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate = flux_rate,
             full_well = full_well,
         )
         # This reactive variable enforces a re-rendering of exp_time
         saturation_label.set(sat_label)
+
 
     @reactive.Effect
     @reactive.event(
@@ -1459,7 +1482,7 @@ def server(input, output, session):
             return
 
         obs_dur = float(req(input.obs_dur).get())
-        inst_name = input.select_instrument.get().lower()
+        inst = input.select_instrument.get().lower()
         nint = 1
         ngroup = input.groups.get()
         readout = input.readout.get()
@@ -1467,7 +1490,7 @@ def server(input, output, session):
         if ngroup is None:
             return
         single_exp_time = jwst.exposure_time(
-            inst_name, subarray, readout, int(ngroup), int(nint),
+            inst, subarray, readout, int(ngroup), int(nint),
         )
         if single_exp_time == 0.0:
             return
@@ -1609,27 +1632,28 @@ def server(input, output, session):
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
         detector = get_detector(mode=mode, instrument=instrument)
-        inst_name = instrument.lower()
+        inst = instrument.lower()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
         ngroup = input.groups.get()
         nint = input.integrations.get()
-        if ngroup is None:
+        if ngroup is None or detector is None:
             return ''
         ngroup = int(ngroup)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        sat_label = make_saturation_label(
+            mode, disperser, filter, subarray, sed_label,
+        )
+
         exp_time = jwst.exposure_time(
-            inst_name, subarray, readout, ngroup, int(nint),
+            inst, subarray, readout, ngroup, int(nint),
         )
         exposure_hours = exp_time / 3600.0
         exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
 
-        filter = input.filter.get()
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         saturation_label.get()  # enforce calc_saturation renders exp_time
-        if mode == 'bots':
-            sat_label = f'{filter}_{subarray}_{sed_label}'
-        else:
-            sat_label = f'{filter}_{sed_label}'
         if sat_label not in cache_saturation:
             return exp_text
 
