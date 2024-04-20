@@ -13,7 +13,9 @@ __all__ = [
     'PandeiaCalculation',
 ]
 
+from collections.abc import Iterable
 import copy
+from itertools import product
 import json
 import os
 import random
@@ -745,6 +747,7 @@ class PandeiaCalculation():
 
     def get_saturation_values(
             self, disperser, filter, subarray, readout, ngroup=2,
+            aperture=None,
         ):
         """
         Calculate the brightest-pixel rate (e-/s) and full_well (e-)
@@ -760,8 +763,8 @@ class PandeiaCalculation():
         >>> mode = 'ssgrism'
         >>> pando = jwst.PandeiaCalculation(instrument, mode)
         >>> pando.set_scene(
-        >>>     sed_type='phoenix', sed_model='k5v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.637,
+        >>>     sed_type='phoenix', sed_model='k2v',
+        >>>     norm_band='2mass,ks', norm_magnitude=8.351,
         >>> )
         >>> brightest_pixel_rate, full_well = pando.get_saturation_values(
         >>>     disperser='grismr', filter='f444w',
@@ -781,29 +784,109 @@ class PandeiaCalculation():
         >>>     readout='rapid', subarray='sub32tats', ngroup=3,
         >>> )
         """
-        saturation_run = self.perform_calculation(
+        # TBD: Automate here the group setting
+        reports = self.perform_calculation(
+            ngroup=ngroup, nint=1,
             disperser=disperser, filter=filter,
             subarray=subarray, readout=readout,
-            ngroup=ngroup, nint=1,
+            aperture=aperture,
         )
-        pando_results = saturation_run['scalar']
-        brightest_pixel_rate = pando_results['brightest_pixel']
+        if not isinstance(reports, list):
+            reports = [reports]
 
-        full_well = (
-            brightest_pixel_rate
-            * pando_results['saturation_time']
-            / pando_results['fraction_saturation']
-        )
+        ncalc = len(reports)
+        brightest_pixel_rate = np.zeros(ncalc)
+        full_well = np.zeros(ncalc)
+        for i,report in enumerate(reports):
+            results = report['scalar']
+            brightest_pixel_rate[i] = results['brightest_pixel']
+            full_well[i] = (
+                brightest_pixel_rate[i]
+                * results['saturation_time']
+                / results['fraction_saturation']
+            )
+        if len(reports) == 1:
+            return brightest_pixel_rate[0], full_well[0]
         return brightest_pixel_rate, full_well
 
 
     def perform_calculation(
-            self, nint, ngroup,
-            filter=None, readout=None, subarray=None, disperser=None,
+            self, ngroup, nint,
+            disperser=None, filter=None, subarray=None, readout=None,
+            aperture=None,
         ):
         """
-        Run pandeia.
+        Run pandeia's perform_calculation() for the given configuration
+        (or set of configurations, see notes below).
+
+        Parameter
+        ----------
+        ngroup: Integeer
+            Number of groups per integration.  Must be >= 2.
+        nint: Integer
+            Number of integrations.
+        disperser: String
+            Disperser/grating for the given instrument.
+        filter: String
+            Filter for the given instrument.
+        subarray: String
+            Subarray mode for the given instrument.
+        readout: String
+            Readout pattern mode for the given instrument.
+        aperture: String
+            Aperture configuration for the given instrument.
+
+        Returns
+        -------
+        report: dict
+            The Pandeia's report output for the given configuration.
+            If there's more than one requested calculation, return a
+            list of reports.
+
+        Notes
+        -----
+        - Provide a list of values for any of these arguments to
+          compute a batch of calculations.
+        - To leave a config parameter unmodified, leave the respective
+          argument as None.
+          To set a config parameter as None, set the argument to ''.
         """
+        if not isinstance(nint, Iterable):
+            nint = [nint]
+        if not isinstance(ngroup, Iterable):
+            ngroup = [ngroup]
+        if not isinstance(disperser, Iterable) or isinstance(disperser, str):
+            disperser = [disperser]
+        if not isinstance(filter, Iterable) or isinstance(filter, str):
+            filter = [filter]
+        if not isinstance(subarray, Iterable) or isinstance(subarray, str):
+            subarray = [subarray]
+        if not isinstance(readout, Iterable) or isinstance(readout, str):
+            readout = [readout]
+        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
+            aperture = [aperture]
+
+        configs = product(
+            aperture, disperser, filter, subarray, readout, nint, ngroup,
+        )
+
+        reports = [
+            self._perform_calculation(config)
+            for config in configs
+        ]
+        if len(reports) == 1:
+            return reports[0]
+        return reports
+
+
+    def _perform_calculation(self, params):
+        """
+        (the real function that) runs pandeia.
+        """
+        # Unpack configuration parameters
+        aperture, disperser, filter, subarray, readout, nint, ngroup = params
+        if aperture is not None:
+            self.calc['configuration']['instrument']['aperture'] = aperture
         if disperser is not None:
             self.calc['configuration']['instrument']['disperser'] = disperser
         if readout is not None:
@@ -823,8 +906,9 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['nint'] = nint
         self.calc['configuration']['detector']['ngroup'] = ngroup
 
-        self.report = perform_calculation(self.calc)
-        return self.report
+        report = perform_calculation(self.calc)
+        self.report = report
+        return report
 
     def calc_noise(self, obs_dur, ngroup, readout, subarray, disperser, filter):
         """
@@ -867,7 +951,7 @@ class PandeiaCalculation():
 
         nint = int(obs_dur*3600/single_exp_time)
         report = self.perform_calculation(
-            nint, ngroup, filter, readout, subarray, disperser,
+            ngroup, nint, disperser, filter, subarray, readout,
         )
 
         # Flux:
