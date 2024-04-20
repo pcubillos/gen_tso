@@ -425,6 +425,8 @@ class Detector:
             )
             if is_constrained:
                 values = self.constraints[var][field][constraint]
+                if isinstance(default_vals, list):
+                    return values
                 return {
                     val:label
                     for val,label in default_vals.items()
