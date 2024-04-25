@@ -62,6 +62,36 @@ def fetch_vega():
         file.write(response.content)
 
 
+def read_noise_variance(report, ins_config):
+    """
+    Extract the read noise from instrument configuration data.
+
+    Parameters
+    ----------
+    report: dict
+        A pandeia perform_calculation() output.
+    ins_config: dict
+        A pandeia get_instrument_config() output for a given instrument.
+
+    Returns
+    -------
+    read_noise: Float
+        The instrumental read noise (electrons per pixel?)
+    """
+    report_config = report['input']['configuration']['instrument']
+    if report_config['mode'] == 'bots':
+        read_noise = ins_config['detector_config']['default']['rn']['default']
+    elif report_config['mode'] == 'mrs_ts':
+        aperture = report_config['aperture']
+        detector = ins_config['aperture_config'][aperture]['detector']
+        read_noise = ins_config['detector_config'][detector]['rn']
+    else:
+        aperture = report_config['aperture']
+        read_noise = ins_config['detector_config'][aperture]['rn']
+
+    return read_noise
+
+
 def exposure_time(
         instrument, subarray, readout,
         ngroup=None, nint=None, nexp=1,
@@ -910,7 +940,10 @@ class PandeiaCalculation():
         self.report = report
         return report
 
-    def calc_noise(self, obs_dur, ngroup, readout, subarray, disperser, filter):
+    def calc_noise(
+            self, obs_dur, ngroup,
+            disperser, filter, subarray, readout, aperture,
+        ):
         """
         Run a Pandeia calculation and extract the observed wavelength,
         flux, and variances.
@@ -921,10 +954,11 @@ class PandeiaCalculation():
             Duration of the observation.
         ngroup: Integer
             Number of groups per integrations
-        filter: String
-        readout: String
-        subarray: String
         disperser: String
+        filter: String
+        subarray: String
+        readout: String
+        aperture: String
 
         Returns
         -------
@@ -932,7 +966,7 @@ class PandeiaCalculation():
 
         Examples
         --------
-        >>> import pandeia_interface as jwst
+        >>> import gen_tso.pandeia_io as jwst
 
         >>> instrument = 'nircam'
         >>> mode = 'ssgrism'
@@ -961,28 +995,17 @@ class PandeiaCalculation():
 
         # Background variance:
         background_var = report['1d']['extracted_bg_only'][1] * measurement_time
-
         # Read noise variance:
-        if self.calc['configuration']['instrument']['mode'] == 'bots':
-            read_noise = ins_config['detector_config']['default']['rn']['default']
-        else:
-            aperture = self.calc['configuration']['instrument']['aperture']
-            read_noise = ins_config['detector_config'][aperture]['rn']
+        read_noise = read_noise_variance(report, ins_config)
         npix = report['scalar']['extraction_area']
         read_noise_var = 2.0 * read_noise**2.0 * nint * npix
-
         # Pandeia (multiaccum) noise:
         shot_var = (report['1d']['extracted_noise'][1] * measurement_time)**2.0
-
         # Last-minus-first (LMF) noise:
         lmf_var = np.abs(flux) + background_var + read_noise_var
 
-        return (
-            report,
-            wl, flux,
-            lmf_var, shot_var, background_var, read_noise_var,
-            measurement_time,
-        )
+        variances = lmf_var, shot_var, background_var, read_noise_var
+        return report, wl, flux, variances, measurement_time
 
 
     def tso_calculation(
