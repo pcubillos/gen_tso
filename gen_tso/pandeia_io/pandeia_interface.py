@@ -594,7 +594,7 @@ def simulate_tso(
 
     >>> tso = pando.tso_calculation(
     >>>     obs_type, transit_dur, obs_dur, depth_model,
-    >>>     ngroup, filter, readout, subarray, disperser,
+    >>>     ngroup, disperser, filter, subarray, readout,
     >>> )
 
     >>> bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
@@ -985,7 +985,7 @@ class PandeiaCalculation():
 
         nint = int(obs_dur*3600/single_exp_time)
         report = self.perform_calculation(
-            ngroup, nint, disperser, filter, subarray, readout,
+            ngroup, nint, disperser, filter, subarray, readout, aperture,
         )
 
         # Flux:
@@ -1005,12 +1005,14 @@ class PandeiaCalculation():
         lmf_var = np.abs(flux) + background_var + read_noise_var
 
         variances = lmf_var, shot_var, background_var, read_noise_var
+
         return report, wl, flux, variances, measurement_time
 
 
     def tso_calculation(
             self, obs_type, transit_dur, obs_dur, depth_model,
-            ngroup, filter, readout, subarray, disperser,
+            ngroup, disperser=None, filter=None,
+            subarray=None, readout=None, aperture=None,
         ):
         """
         Run pandeia to simulate a transit/eclipse time-series observation
@@ -1029,10 +1031,11 @@ class PandeiaCalculation():
             the wavelength (um) and the second is the depth.
         ngroup: Integer
             Number of groups per integrations
-        filter: String
-        readout: String
-        subarray: String
         disperser: String
+        filter: String
+        subarray: String
+        readout: String
+        aperture: String
 
         Returns
         -------
@@ -1046,6 +1049,8 @@ class PandeiaCalculation():
             - time_out: Out-of-transit/eclipse measuring time (seconds)
             - flux_out: Out-of-transit/eclipse flux (e-)
             - var_out:  Out-of-transit/eclipse
+            - report_in:  In-transit/eclipse pandeia output report
+            - report_out:  Out-of-transit/eclipse pandeia output report
 
         Examples
         --------
@@ -1074,7 +1079,7 @@ class PandeiaCalculation():
 
         >>> tso = pando.tso_calculation(
         >>>     obs_type, transit_dur, obs_dur, depth_model,
-        >>>     ngroup, filter, readout, subarray, disperser,
+        >>>     ngroup, disperser, filter, subarray, readout,
         >>> )
 
         >>> # Fluxes and Flux rates
@@ -1110,46 +1115,99 @@ class PandeiaCalculation():
         scene = self.calc['scene'][0]
         star_scene, depth_scene = set_depth_scene(scene, obs_type, depth_model)
         if obs_type == 'eclipse':
-            in_transit_scene = star_scene
-            out_transit_scene = depth_scene
+            scene_in = star_scene
+            scene_out = depth_scene
         elif obs_type == 'transit':
-            in_transit_scene = depth_scene
-            out_transit_scene = star_scene
+            scene_in = depth_scene
+            scene_out = star_scene
+
+        if not isinstance(ngroup, Iterable):
+            ngroup = [ngroup]
+        if not isinstance(disperser, Iterable) or isinstance(disperser, str):
+            disperser = [disperser]
+        if not isinstance(filter, Iterable) or isinstance(filter, str):
+            filter = [filter]
+        if not isinstance(subarray, Iterable) or isinstance(subarray, str):
+            subarray = [subarray]
+        if not isinstance(readout, Iterable) or isinstance(readout, str):
+            readout = [readout]
+        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
+            aperture = [aperture]
+
+        configs = product(
+            aperture, disperser, filter, subarray, readout, ngroup,
+        )
+
+        tso = [
+            self._tso_calculation(config, scene_in, scene_out, transit_dur, obs_dur)
+            for config in configs
+        ]
+        if len(tso) == 1:
+             tso = tso[0]
+        self.tso = tso
+        # Return scene to its previous state
+        self.calc['scene'][0] = scene
+        return tso
+
+
+    def _tso_calculation(
+            self, config, scene_in, scene_out, transit_dur, obs_dur,
+        ):
+        """
+        (the real function that) runs a TSO calculation.
+        """
+        aperture, disperser, filter, subarray, readout, ngroup = config
+        if aperture is not None:
+            self.calc['configuration']['instrument']['aperture'] = aperture
+        if disperser is not None:
+            self.calc['configuration']['instrument']['disperser'] = disperser
+        if readout is not None:
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+        if subarray is not None:
+            self.calc['configuration']['detector']['subarray'] = subarray
+        if filter == '':
+            self.calc['configuration']['instrument']['filter'] = None
+        elif filter is not None:
+            self.calc['configuration']['instrument']['filter'] = filter
 
         # Compute observed fluxes and noises:
-        self.calc['scene'][0] = in_transit_scene
-        in_transit = self.calc_noise(
-            transit_dur, ngroup, readout, subarray, disperser, filter,
+        self.calc['scene'][0] = scene_in
+        report_in, wl, flux_in, variances_in, time_in = self.calc_noise(
+            transit_dur, ngroup,
+            disperser, filter, subarray, readout, aperture,
         )
-        self.calc['scene'][0] = out_transit_scene
+        var_lmf_in = variances_in[0]
+
         out_transit_dur = obs_dur - transit_dur
-        out_transit = self.calc_noise(
-            out_transit_dur, ngroup, readout, subarray, disperser, filter,
+        self.calc['scene'][0] = scene_out
+        report_out, wl, flux_out, variances_out, time_out = self.calc_noise(
+            out_transit_dur, ngroup,
+            disperser, filter, subarray, readout, aperture,
         )
-        # report, wl, flux, lmf_var, shot_var, bkg_var, read_var, dt
-        self.calc['scene'][0] = scene
+        var_lmf_out = variances_out[0]
 
-        mask = in_transit[2] > 1e-6 * np.median(in_transit[2])
-        wl = in_transit[1][mask]
-        flux_in = in_transit[2][mask]
-        flux_out = out_transit[2][mask]
-        var_in = in_transit[3][mask]
-        var_out = out_transit[3][mask]
-        dt_in = in_transit[7]
-        dt_out = out_transit[7]
-        obs_depth = 1 - (flux_in/dt_in) / (flux_out/dt_out)
+        # Mask out un-illumnated wavelengths (looking at you, G395H)
+        mask = flux_in > 1e-6 * np.median(flux_in)
+        wl = wl[mask]
+        flux_in = flux_in[mask]
+        flux_out = flux_out[mask]
+        var_in = var_lmf_in[mask]
+        var_out = var_lmf_out[mask]
+        obs_depth = 1 - (flux_in/time_in) / (flux_out/time_out)
 
-        self.tso = {
+        tso = {
             'wl': wl,
             'depth_spectrum': obs_depth,
-            'time_in': dt_in,
+            'time_in': time_in,
             'flux_in': flux_in,
             'var_in': var_in,
-            'time_out': dt_out,
+            'time_out': time_out,
             'flux_out': flux_out,
             'var_out': var_out,
+            'report_in': report_in,
+            'report_out': report_out,
         }
-        return self.tso
+        return tso
 
     def simulate_tso(
             self, n_obs=1, resolution=None, bins=None, noiseless=False,
