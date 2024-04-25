@@ -5,6 +5,51 @@ import gen_tso.pandeia_io as jwst
 import numpy as np
 
 
+def test_tso_calculation_single():
+    pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    # Set the stellar scene:
+    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.637)
+    depth_model = np.loadtxt('data/models/WASP80b_transit.dat', unpack=True)
+
+    # Set a NIRSpec observation
+    disperser = 'g395h'
+    filter = 'f290lp'
+    readout = 'nrsrapid'
+    subarray = 'sub2048'
+    ngroup = 16
+
+    transit_dur = 2.753
+    obs_dur = 7.1
+    obs_type = 'transit'
+    tso = pando.tso_calculation(
+        obs_type, transit_dur, obs_dur, depth_model,
+        ngroup, disperser, filter, subarray, readout,
+    )
+    # assert
+
+
+def test_tso_calculation_multiple():
+    pando = jwst.PandeiaCalculation('miri', 'mrs_ts')
+    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.637)
+    depth_model = np.loadtxt('data/models/WASP80b_transit.dat', unpack=True)
+
+    disperser = 'short'
+    filter = None
+    readout = 'fastr1'
+    subarray = 'full'
+    ngroup = 16
+    aperture = ['ch1', 'ch2']
+
+    transit_dur = 2.753
+    obs_dur = 7.1
+    obs_type = 'transit'
+    tso = pando.tso_calculation(
+        obs_type, transit_dur, obs_dur, depth_model,
+        ngroup, disperser, filter, subarray, readout, aperture,
+    )
+    # assert
+
+
 def test_calc_saturation_single():
     instrument = 'nircam'
     mode = 'ssgrism'
