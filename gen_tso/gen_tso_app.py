@@ -638,7 +638,10 @@ def parse_sed(input):
 
     sed_type = input.sed_type()
     if sed_type in ['phoenix', 'kurucz']:
-        sed_model = sed_dict[sed_type][input.sed()]
+        sed = input.sed.get()
+        if sed not in sed_dict[sed_type]:
+            return None, None, None, None, None
+        sed_model = sed_dict[sed_type][sed]
         model_label = f'{sed_type}_{sed_model}'
     elif sed_type == 'blackbody':
         sed_model = float(input.teff.get())
@@ -1639,10 +1642,12 @@ def server(input, output, session):
         readout = input.readout.get()
         ngroup = input.groups.get()
         nint = input.integrations.get()
-        if ngroup is None or detector is None:
-            return ''
-        ngroup = int(ngroup)
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+
+        if ngroup is None or detector is None or sed_label is None:
+            return ' '
+
+        ngroup = int(ngroup)
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
