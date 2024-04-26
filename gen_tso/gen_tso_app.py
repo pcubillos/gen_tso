@@ -837,15 +837,21 @@ def server(input, output, session):
     def _():
         inst_name = input.select_instrument.get().lower()
         mode = input.select_mode.get()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
-        filter = input.filter.get()
-        disperser = input.disperser.get()
         ngroup = int(input.groups.get())
         nint = int(input.integrations.get())
+        aperture = None
 
+        # "Exceptions":
         if mode == 'bots':
             disperser, filter = filter.split('/')
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'target_acq':
+            aperture = input.disperser.get()
 
         obs_geometry = input.geometry.get()
         transit_dur = float(input.t_dur.get())
@@ -873,7 +879,7 @@ def server(input, output, session):
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         tso = pando.tso_calculation(
             obs_geometry.lower(), transit_dur, exp_time, depth_model,
-            ngroup, filter, readout, subarray, disperser,
+            ngroup, disperser, filter, subarray, readout, aperture,
         )
 
         ui.notification_show(
@@ -905,9 +911,10 @@ def server(input, output, session):
             obs_type=obs_geometry,
             t_dur=transit_dur,
             obs_dur=obs_dur,
-            depth_model_name=depth_label,  # TBD: depth_label
+            depth_model_name=depth_label,
             depth_model=depth_model,
             # The instrumental setting
+            aperture=aperture,
             disperser=disperser,
             filter=filter,
             subarray=subarray,
@@ -1613,14 +1620,9 @@ def server(input, output, session):
         if tso_label in tso_runs:
             tso_run = tso_runs[tso_label]
             planet = tso_run['depth_model_name']
-            tso = tso_run['tso']
-            bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
-               tso, n_obs=n_obs, resolution=resolution, noiseless=False,
-            )
             fig = tplots.plotly_tso_spectra(
-                tso['wl'], tso['depth_spectrum'],
-                bin_wl, bin_spec, bin_err,
-                label=planet, bin_widths=None,
+                tso_run['tso'], resolution, n_obs, label=planet,
+                bin_widths=None,
                 units=units, wl_range=wl_range, wl_scale=wl_scale,
                 obs_geometry='Transit',
             )
