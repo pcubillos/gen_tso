@@ -409,6 +409,7 @@ def plotly_depth_spectra(
 
 def plotly_tso_spectra(
         tso_list, resolution, n_obs, label,
+        bin_widths=None,
         units='percent', wl_range=None, wl_scale='linear',
         obs_geometry='Transit',
     ):
@@ -424,6 +425,7 @@ def plotly_tso_spectra(
 
     ymax = 0.0
     ymin = np.inf
+    legends = []
     for tso in tso_list:
         bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
            tso, n_obs=n_obs, resolution=resolution, noiseless=False,
@@ -431,21 +433,29 @@ def plotly_tso_spectra(
         wl = tso['wl']
         spec = tso['depth_spectrum']
 
+        show_legend = 'model' not in legends
         fig.add_trace(go.Scatter(
             x=wl,
             y=spec/u(units),
             mode='lines',
             name='model',
+            legendgroup='model',
+            showlegend=show_legend,
             line=dict(color=model_col, width=1.5),
         ))
+        legends.append('model')
+        show_legend = label not in legends
         fig.add_trace(go.Scatter(
             x=bin_wl,
             y=bin_spec/u(units),
             error_y=dict(type='data', array=bin_err/u(units), visible=True),
             mode='markers',
             name=label,
+            legendgroup=label,
+            showlegend=show_legend,
             marker=dict(color=obs_col, size=5),
         ))
+        legends.append(label)
         ymax = np.amax([ymax, np.amax(spec)])
         ymin = np.amin([ymin, np.amin(spec)])
 
