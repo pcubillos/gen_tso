@@ -14,6 +14,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 #import pyratbay.spectrum as ps
 from pyratbay.tools import u
+from .. import pandeia_io as jwst
 from ..utils import (
     bin_spectrum,
     constant_resolution_spectrum,
@@ -407,26 +408,37 @@ def plotly_depth_spectra(
 
 
 def plotly_tso_spectra(
-        wl, spec, bin_wl, bin_spec, bin_err, label,
-        bin_widths=None,
-        units='percent', wl_range=None, wl_scale='linear', resolution=250.0,
+        tso_list, resolution, n_obs, label,
+        units='percent', wl_range=None, wl_scale='linear',
         obs_geometry='Transit',
     ):
     """
     Make a plotly figure of transit/eclipse depth TSO spectra.
     """
+    if not isinstance(tso_list, list):
+        tso_list = [tso_list]
+
     fig = go.Figure()
     obs_col = px.colors.sample_colorscale('Viridis', 0.2)[0]
     model_col = px.colors.sample_colorscale('Viridis', 0.75)[0]
 
-    fig.add_trace(go.Scatter(
+    ymax = 0.0
+    ymin = np.inf
+    for tso in tso_list:
+        bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
+           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+        )
+        wl = tso['wl']
+        spec = tso['depth_spectrum']
+
+        fig.add_trace(go.Scatter(
             x=wl,
             y=spec/u(units),
             mode='lines',
             name='model',
             line=dict(color=model_col, width=1.5),
         ))
-    fig.add_trace(go.Scatter(
+        fig.add_trace(go.Scatter(
             x=bin_wl,
             y=bin_spec/u(units),
             error_y=dict(type='data', array=bin_err/u(units), visible=True),
@@ -434,14 +446,16 @@ def plotly_tso_spectra(
             name=label,
             marker=dict(color=obs_col, size=5),
         ))
+        ymax = np.amax([ymax, np.amax(spec)])
+        ymin = np.amin([ymin, np.amin(spec)])
 
     fig.update_traces(
         hovertemplate=
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
-    ymax = np.amax(spec)/u(units)
-    ymin = np.amin(spec)/u(units)
+    ymax = ymax/u(units)
+    ymin = ymin/u(units)
     dy = 0.1 * (ymax-ymin)
     y_range = [ymin-dy, ymax+dy]
     title = f'{obs_geometry} depth ({units})'
