@@ -835,7 +835,8 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.run_pandeia)
     def _():
-        inst_name = input.select_instrument.get().lower()
+        inst_name = input.select_instrument.get()
+        inst = inst_name.lower()
         mode = input.select_mode.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
@@ -844,6 +845,9 @@ def server(input, output, session):
         ngroup = int(input.groups.get())
         nint = int(input.integrations.get())
         aperture = None
+
+        detector = get_detector(mode, inst_name)
+        inst_label = jwst.instrument_label(detector, disperser, filter)
 
         # "Exceptions":
         if mode == 'bots':
@@ -857,7 +861,7 @@ def server(input, output, session):
         transit_dur = float(input.t_dur.get())
         obs_dur = float(input.obs_dur.get())
         exp_time = jwst.exposure_time(
-            inst_name, subarray, readout, ngroup, nint,
+            inst, subarray, readout, ngroup, nint,
         )
         # TBD: if exp_time << obs_dur, raise warning
 
@@ -875,7 +879,7 @@ def server(input, output, session):
         depth_model = [wl, depth]
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
-        pando = jwst.PandeiaCalculation(inst_name, mode)
+        pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         tso = pando.tso_calculation(
             obs_geometry.lower(), transit_dur, exp_time, depth_model,
@@ -900,8 +904,9 @@ def server(input, output, session):
 
         tso_runs[tso_label] = dict(
             # The detector
-            inst=inst_name,
+            inst=inst,
             mode=mode,
+            inst_label=inst_label,
             # The SED
             sed_type=sed_type,
             sed_model=sed_model,
@@ -925,7 +930,7 @@ def server(input, output, session):
             #pandeia_results=pandeia_results,
         )
 
-        print(inst_name, mode, disperser, filter, subarray, readout)
+        print(inst, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
@@ -1621,7 +1626,9 @@ def server(input, output, session):
             tso_run = tso_runs[tso_label]
             planet = tso_run['depth_model_name']
             fig = tplots.plotly_tso_spectra(
-                tso_run['tso'], resolution, n_obs, label=planet,
+                tso_run['tso'], resolution, n_obs,
+                model_label=planet,
+                instrument_label=tso_run['inst_label'],
                 bin_widths=None,
                 units=units, wl_range=wl_range, wl_scale=wl_scale,
                 obs_geometry='Transit',
