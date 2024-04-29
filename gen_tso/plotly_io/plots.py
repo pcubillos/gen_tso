@@ -408,7 +408,7 @@ def plotly_depth_spectra(
 
 
 def plotly_tso_spectra(
-        tso_list, resolution, n_obs, label,
+        tso_list, resolution, n_obs, model_label, instrument_label,
         bin_widths=None,
         units='percent', wl_range=None, wl_scale='linear',
         obs_geometry='Transit',
@@ -419,6 +419,9 @@ def plotly_tso_spectra(
     if not isinstance(tso_list, list):
         tso_list = [tso_list]
 
+    if isinstance(instrument_label, str):
+        instrument_label = [instrument_label for tso in tso_list]
+
     fig = go.Figure()
     obs_col = px.colors.sample_colorscale('Viridis', 0.2)[0]
     model_col = px.colors.sample_colorscale('Viridis', 0.75)[0]
@@ -426,36 +429,37 @@ def plotly_tso_spectra(
     ymax = 0.0
     ymin = np.inf
     legends = []
-    for tso in tso_list:
+    for i,tso in enumerate(tso_list):
         bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
            tso, n_obs=n_obs, resolution=resolution, noiseless=False,
         )
         wl = tso['wl']
         spec = tso['depth_spectrum']
 
-        show_legend = 'model' not in legends
+        show_legend = model_label not in legends
         fig.add_trace(go.Scatter(
             x=wl,
             y=spec/u(units),
             mode='lines',
-            name='model',
-            legendgroup='model',
+            name=model_label,
+            legendgroup=model_label,
             showlegend=show_legend,
             line=dict(color=model_col, width=1.5),
         ))
-        legends.append('model')
-        show_legend = label not in legends
+        legends.append(model_label)
+
+        show_legend = instrument_label[i] not in legends
         fig.add_trace(go.Scatter(
             x=bin_wl,
             y=bin_spec/u(units),
             error_y=dict(type='data', array=bin_err/u(units), visible=True),
             mode='markers',
-            name=label,
-            legendgroup=label,
+            name=instrument_label[i],
+            legendgroup=instrument_label[i],
             showlegend=show_legend,
             marker=dict(color=obs_col, size=5),
         ))
-        legends.append(label)
+        legends.append(instrument_label[i])
         ymax = np.amax([ymax, np.amax(spec)])
         ymin = np.amin([ymin, np.amin(spec)])
 
