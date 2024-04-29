@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'read_noise_variance',
     'exposure_time',
     'saturation_time',
     'load_sed_list',
@@ -79,15 +80,19 @@ def read_noise_variance(report, ins_config):
         The instrumental read noise (electrons per pixel?)
     """
     report_config = report['input']['configuration']['instrument']
-    if report_config['mode'] == 'bots':
-        read_noise = ins_config['detector_config']['default']['rn']['default']
-    elif report_config['mode'] == 'mrs_ts':
+    if report_config['mode'] == 'mrs_ts':
         aperture = report_config['aperture']
-        detector = ins_config['aperture_config'][aperture]['detector']
-        read_noise = ins_config['detector_config'][detector]['rn']
+        aperture = ins_config['aperture_config'][aperture]['detector']
     else:
+        #aperture = self.calc['configuration']['instrument']['aperture']
         aperture = report_config['aperture']
-        read_noise = ins_config['detector_config'][aperture]['rn']
+
+    if aperture not in ins_config['detector_config']:
+        aperture = 'default'
+
+    read_noise = ins_config['detector_config'][aperture]['rn']
+    if isinstance(read_noise, dict):
+        read_noise = read_noise['default']
 
     return read_noise
 
