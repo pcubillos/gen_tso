@@ -5,8 +5,9 @@ __all__ = [
     'get_configs',
     'filter_throughputs',
     'generate_all_instruments',
-    'detector_label',
     'Detector',
+    'detector_label',
+    'instrument_label',
 ]
 
 from itertools import product
@@ -612,4 +613,31 @@ def detector_label(mode, disperser, filter, subarray, readout):
         if filter == 'f070lp':
             disperser = f'{disperser}/{filter}'
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
+
+
+def instrument_label(detector, disperser, filter):
+    """
+    Generate a pretty label with only instrument, mode,
+    and sometimes disperser or filter.
+    """
+    inst = detector.instrument
+    mode = detector.mode
+    if mode == 'mrs_ts':
+        disperser_label = detector.dispersers[disperser]
+        label = f'{inst} / MRS / {disperser_label}'
+    if mode == 'lrsslitless':
+        label = f'{inst} / LRS'
+    if mode == 'soss':
+        label = f'{inst} / SOSS'
+    if mode == 'ssgrism':
+        filter_label = detector.filters[filter]
+        label = f'{inst} / {filter_label}'
+    elif mode == 'bots':
+        disperser_label = detector.filters[filter]
+        disperser_label = disperser_label[:disperser_label.index('/')]
+        label = f'{inst} / {disperser_label}'
+    elif mode == 'target_acq':
+        label = f'{inst} / acquisition'
+
+    return label
 
