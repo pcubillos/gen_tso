@@ -2,13 +2,14 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
-    'load_nea_targets_table',
+    'load_targets_table',
     'load_trexolits_table',
     'load_aliases',
     'normalize_name',
 ]
 
 import pickle
+import re
 
 from astropy.io import ascii
 import numpy as np
@@ -26,16 +27,34 @@ msun = 1.9885e+33
 day = 86400.0
 
 
-def load_nea_targets_table():
+def load_targets_table(database='nea_data.txt'):
     """
     Unpack star and planet properties from plain text file.
+
+    Parameters
+    ----------
+    databases: String
+        nea_data.txt or tess_data.txt
+
+    Returns
+    -------
+    planets: 1D string array
+    hosts: 1D string array
+    ra: 1D float array
+    dec: 1D float array
+    ks_mag: 1D float array
+    teff: 1D float array
+    log_g: 1D float array
+    tr_dur: 1D float array
+    rprs: 1D float array
+    teq: 1D float array
 
     Examples
     --------
     >>> import source_catalog as cat
     >>> nea_data = cat.load_nea_targets_table()
     """
-    with open(f'{ROOT}data/nea_data.txt', 'r') as f:
+    with open(f'{ROOT}data/{database}', 'r') as f:
         lines = f.readlines()
 
     planets = []
@@ -78,13 +97,25 @@ def load_trexolits_table(all_aliases=False):
     Get the list of targets in trexolists (as named at the NEA).
     A dictionary of name aliases contains alternative names found.
 
+    Returns
+    -------
+    jwst_targets: List
+        trexolists host names as found in the NEA database.
+    aliases: Dict
+        aliases of hosts as found in the trexolists database.
+    missing: List
+        trexolists hosts not found in the NEA database.
+    original_names: Dict
+        Names of targets as listed in the trexolists database.
+
     Examples
     --------
-    >>> import source_catalog as cat
-    >>> targets, aliases, missing = cat.load_trexolits_table()
+    >>> import gen_tso.catalogs as cat
+    >>> targets, aliases, missing, og = cat.load_trexolits_table(True)
     """
-    nea_data = load_nea_targets_table()
-    hosts = nea_data[1]
+    nea_data = load_targets_table('nea_data.txt')
+    tess_data = load_targets_table('tess_data.txt')
+    hosts = list(nea_data[1]) + list(tess_data[1])
 
     trexolist_data = ascii.read(
         f'{ROOT}data/trexolists.csv',
@@ -92,10 +123,14 @@ def load_trexolits_table(all_aliases=False):
     )
     targets = np.unique(trexolist_data['Target'].data)
 
+    original_names = {}
     norm_targets = []
     for target in targets:
         name = normalize_name(target)
         norm_targets.append(name)
+        if name not in original_names:
+            original_names[name] = []
+        original_names[name] += [target]
     norm_targets = np.unique(norm_targets)
 
     # jwst targets that are in nea list:
@@ -103,10 +138,14 @@ def load_trexolits_table(all_aliases=False):
 
     # Missing targets, might be because of name aliases
     if all_aliases:
-        with open(f'{ROOT}data/nea_all_aliases.pickle', 'rb') as handle:
+        with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
             aliases = pickle.load(handle)
+        with open(f'{ROOT}data/tess_aliases.pickle', 'rb') as handle:
+            tess_aliases = pickle.load(handle)
+        aliases.update(tess_aliases)
     else:
         aliases = load_aliases(as_hosts=True)
+
     alias = {}
     missing = []
     trix = norm_targets[np.in1d(norm_targets, hosts, invert=True)]
@@ -114,13 +153,17 @@ def load_trexolits_table(all_aliases=False):
         if target in aliases:
             alias[target] = aliases[target]
             jwst_targets.append(aliases[target])
+            if aliases[target] not in original_names:
+                original_names[aliases[target]] = []
+            original_names[aliases[target]] += original_names[target]
+            original_names.pop(target)
         elif target.endswith(' A') and target[:-2] in aliases:
             alias[target] = aliases[target[:-2]]
             jwst_targets.append(aliases[target[:-2]])
         else:
             missing.append(target)
 
-    return np.unique(jwst_targets), alias, np.unique(missing)
+    return np.unique(jwst_targets), alias, np.unique(missing), original_names
 
 
 def normalize_name(target):
@@ -128,26 +171,33 @@ def normalize_name(target):
     Normalize target names into a 'more standard' format.
     Mainly to resolve trexolists target names.
     """
-    name = target
+    name = re.sub(r'\s+', ' ', target)
     # It's a case issue:
     name = name.replace('KEPLER', 'Kepler')
     name = name.replace('TRES', 'TrES')
     name = name.replace('WOLF-', 'Wolf ')
     name = name.replace('HATP', 'HAT-P-')
+    name = name.replace('AU-MIC', 'AU Mic')
     # Prefixes
     name = name.replace('GL', 'GJ')
-    prefixes = ['L', 'G', 'HD', 'GJ', 'LTT', 'LHS', 'HIP', 'WD', 'LP', '2MASS']
+    prefixes = [
+        'L', 'G', 'HD', 'GJ', 'LTT', 'LHS', 'HIP', 'WD', 'LP', '2MASS', 'PSR',
+    ]
     for prefix in prefixes:
         prefix_len = len(prefix)
         if name.startswith(prefix) and not name[prefix_len].isalpha():
-            name = target.replace(f'{prefix}-', f'{prefix} ')
+            name = name.replace(f'{prefix}-', f'{prefix} ')
             if name[prefix_len] != ' ':
                 name = f'{prefix} ' + name[prefix_len:]
-    if name.startswith('CD-'):
-        dash_loc = name.index('-', 3)
-        name = name[0:dash_loc] + ' ' + name[dash_loc+1:]
+
+    prefixes = ['CD-', 'BD-', 'BD+']
+    for prefix in prefixes:
+        prefix_len = len(prefix)
+        dash_loc = name.find('-', prefix_len)
+        if name.startswith(prefix) and dash_loc > 0:
+            name = name[0:dash_loc] + ' ' + name[dash_loc+1:]
     # Main star
-    if name.endswith('A'):
+    if name.endswith('A') and not name[-2].isspace():
         name = name[:-1] + ' A'
     # Custom corrections:
     if name in ['55CNC', 'RHO01-CNC']:
