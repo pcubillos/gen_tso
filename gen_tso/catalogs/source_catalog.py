@@ -13,18 +13,8 @@ import re
 
 from astropy.io import ascii
 import numpy as np
-import requests
 
 from ..utils import ROOT
-
-
-# CGS constants:
-rsun = 69570000000.0
-rearth = 637810000.0
-au = 14959787070000.0
-G = 6.6743e-08
-msun = 1.9885e+33
-day = 86400.0
 
 
 def load_targets_table(database='nea_data.txt'):
@@ -113,10 +103,6 @@ def load_trexolits_table(all_aliases=False):
     >>> import gen_tso.catalogs as cat
     >>> targets, aliases, missing, og = cat.load_trexolits_table(True)
     """
-    nea_data = load_targets_table('nea_data.txt')
-    tess_data = load_targets_table('tess_data.txt')
-    hosts = list(nea_data[1]) + list(tess_data[1])
-
     trexolist_data = ascii.read(
         f'{ROOT}data/trexolists.csv',
         format='csv', guess=False, fast_reader=False, comment='#',
@@ -134,6 +120,10 @@ def load_trexolits_table(all_aliases=False):
     norm_targets = np.unique(norm_targets)
 
     # jwst targets that are in nea list:
+    nea_data = load_targets_table('nea_data.txt')
+    tess_data = load_targets_table('tess_data.txt')
+    hosts = list(nea_data[1]) + list(tess_data[1])
+
     jwst_targets = list(norm_targets[np.in1d(norm_targets, hosts)])
 
     # Missing targets, might be because of name aliases
@@ -247,188 +237,4 @@ def to_float(value):
     if value == 'None':
         return None
     return float(value)
-
-
-def fetch_nea_targets_database():
-    """
-    Fetch (web request) the entire NASA Exoplanet Archive database
-
-    I absolutely need:
-    - st_teff (stellar_model, tsm, esm)
-    - st_logg (stellar_model)
-    - sy_kmag (stellar_model, tsm, esm)
-    - pl_trandur (n_integrations, obs_dur)
-
-    I may want to have
-    - st_rad (tsm, esm) or [pl_ratror]
-    - pl_rade (tsm, esm)
-    - pl_masse (tsm)
-    - pl_orbsmax (tsm, esm)  or [pl_ratdor] or [pl_orbper and st_mass]
-    """
-    # COLUMN pl_name:        Planet Name
-    # COLUMN hostname:       Host Name
-    # COLUMN default_flag:   Default Parameter Set
-    # COLUMN sy_pnum:        Number of Planets
-    # COLUMN sy_kmag:        Ks (2MASS) Magnitude
-
-    # COLUMN st_spectype:    Spectral Type
-    # COLUMN st_teff:        Stellar Effective Temperature [K]
-    # COLUMN st_rad:         Stellar Radius [Solar Radius]
-    # COLUMN st_mass:        Stellar Mass [Solar mass]
-    # COLUMN st_met:         Stellar Metallicity [dex]
-    # COLUMN st_age:         Stellar Age [Gyr]
-
-    # COLUMN pl_orbper:      Orbital Period [days]
-    # COLUMN pl_orbsmax:     Orbit Semi-Major Axis [au])
-    # COLUMN pl_rade:        Planet Radius [Earth Radius]
-    # COLUMN pl_radj:        Planet Radius [Jupiter Radius]
-    # COLUMN pl_massj:       Planet Mass [Jupiter Mass]
-    # COLUMN pl_eqt:         Equilibrium Temperature [K]
-    # COLUMN pl_ratdor:      Ratio of Semi-Major Axis to Stellar Radius
-    # COLUMN pl_ratror:      Ratio of Planet to Stellar Radius
-
-    # Fetch all planetary system entries
-    r = requests.get(
-        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
-        "select+hostname,pl_name,default_flag,sy_kmag,sy_pnum,disc_facility,"
-        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,"
-        "pl_trandur,pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_ratdor,pl_ratror+"
-        "from+ps+"
-        "&format=json"
-    )
-    if not r.ok:
-        raise ValueError("Something's not OK")
-
-    resp = r.json()
-    host_entries = [entry['hostname'] for entry in resp]
-    hosts, counts = np.unique(host_entries, return_counts=True)
-
-    planet_entries = np.array([entry['pl_name'] for entry in resp])
-    planet_names, idx, counts = np.unique(
-        planet_entries,
-        return_index=True,
-        return_counts=True,
-    )
-    nplanets = len(planet_names)
-
-    # Make list of unique entries
-    planets = [resp[i].copy() for i in idx]
-    for i in range(nplanets):
-        planet = planets[i]
-        name = planet['pl_name']
-        idx_duplicates = np.where(planet_entries==name)[0]
-        # default_flag takes priority
-        def_flags = [resp[j]['default_flag'] for j in idx_duplicates]
-        j = idx_duplicates[def_flags.index(1)]
-        planets[i] = complete_entry(resp[j].copy())
-        dups = [resp[k] for k in idx_duplicates if k!=j]
-        rank = rank_planets(dups)
-        # Fill the gaps if any
-        for j in rank:
-            entry = complete_entry(dups[j])
-            for field in planet.keys():
-                if planets[i][field] is None and entry[field] is not None:
-                    planets[i][field] = entry[field]
-        planets[i] = complete_entry(planets[i])
-
-    with open(f'{ROOT}data/nea_data.pickle', 'wb') as handle:
-        pickle.dump(planets, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    # TBD: and make a copy with current date
-
-    def as_str(val, fmt):
-        if val is None:
-            return None
-        return f'{val:{fmt}}'
-
-    # Save as plain text:
-    with open(f'{ROOT}data/nea_data.txt', 'w') as f:
-        host = ''
-        for entry in planets:
-            ra = entry['ra']
-            dec = entry['dec']
-            ks_mag = entry['sy_kmag']
-            planet = entry['pl_name']
-            tr_dur = entry['pl_trandur']
-            teff = as_str(entry['st_teff'], '.1f')
-            logg = as_str(entry['st_logg'], '.3f')
-            rprs = as_str(entry['pl_ratror'], '.3f')
-            teq = t_eq(entry['st_teff'], entry['st_rad'], entry['pl_orbsmax'])
-            teq = as_str(teq, '.1f')
-
-            if entry['hostname'] != host:
-                host = entry['hostname']
-                f.write(f">{host}: {ra} {dec} {ks_mag} {teff} {logg}\n")
-            f.write(f" {planet}: {tr_dur} {rprs} {teq}\n")
-
-
-def t_eq(tstar, rstar, sma, f=0.25, A=0.0):
-    if tstar is None or rstar is None or sma is None:
-        return None
-    return tstar * np.sqrt(rstar*rsun/(sma*au)) *(f*(1-A))**0.25
-
-
-def rank_planets(entries):
-    """
-    Rank entries with the most data
-    """
-    points = [
-        (
-            (entry['st_teff'] is None) +
-            (entry['st_logg'] is None) +
-            (entry['st_met'] is None) +
-            (entry['pl_trandur'] is None) +
-            (entry['pl_rade'] is None) +
-            (entry['pl_orbsmax'] is None and entry['pl_ratdor'] is None) +
-            (entry['st_rad'] is None and entry['pl_ratror'] is None)
-        )
-        for entry in entries
-    ]
-    rank = np.argsort(np.array(points))
-    return rank
-
-
-def complete_entry(entry):
-    entry['pl_rade'], entry['st_rad'], entry['pl_ratror'] = solve_rp_rs(
-        entry['pl_rade'], entry['st_rad'], entry['pl_ratror'],
-    )
-    entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'] = solve_a_rs(
-        entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'],
-    )
-    entry['pl_orbper'], entry['pl_orbsmax'] = solve_period_sma(
-        entry['pl_orbper'], entry['pl_orbsmax'], entry['st_mass']
-    )
-    return entry
-
-
-def solve_period_sma(period, sma, mstar):
-    if mstar is None or mstar == 0:
-        return period, sma
-    if period is None and sma is not None:
-        period = (
-            2.0*np.pi * np.sqrt((sma*au)**3.0/G/(mstar*msun)) / day
-        )
-    elif sma is None and period is not None:
-        sma = (
-            ((period*day/(2.0*np.pi))**2.0*G*mstar*msun)**(1/3)/au
-        )
-    return period, sma
-
-
-def solve_rp_rs(rp, rs, rprs):
-    if rp is None and rs is not None and rprs is not None:
-        rp = rprs * (rs*rsun) / rearth
-    if rs is None and rp is not None and rprs is not None:
-        rs = rp*rearth / rprs / rsun
-    if rprs is None and rp is not None and rs is not None:
-        rprs = rp*rearth / (rs*rsun)
-    return rp, rs, rprs
-
-def solve_a_rs(a, rs, ars):
-    if a is None and rs is not None and ars is not None:
-        a = ars * (rs*rsun) / au
-    if rs is None and a is not None and ars is not None:
-        rs = a*au / ars / rsun
-    if ars is None and a is not None and rs is not None:
-        ars = a*au / (rs*rsun)
-    return a, rs, ars
 
