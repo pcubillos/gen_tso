@@ -33,6 +33,7 @@ import pyratbay.atmosphere as pa
 # For developing
 if False:
     from gen_tso.utils import ROOT
+    import gen_tso.catalogs.catalog_utils as u
     from gen_tso.catalogs.source_catalog import (
         load_targets_table,
         load_trexolits_table,
@@ -45,6 +46,7 @@ from .source_catalog import (
     load_trexolits_table,
     normalize_name,
 )
+from . import catalog_utils as u
 
 
 def update_databases():
@@ -66,51 +68,17 @@ def update_databases():
     curate_aliases()
 
 
-def is_letter(name):
-    """
-    Check if name ends with a blank + lower-case letter (it's a planet)
-    """
-    return name[-1].islower() and name[-2] == ' '
-
-
-def is_candidate(name):
-    """
-    Check if name ends with a blank + lower-case letter (it's a planet)
-    """
-    return name[-3] == '.' and name[-2:].isnumeric()
-
-
-def get_letter(name):
-    """
-    Extract 'letter' identifier for a planet name.
-    Valid confirmed planet names end with a lower-case letter preceded
-    by a blank.  Valid planet candidate names end with a dot followed
-    by two numbers.
-
-    Examples
-    --------
-    >>> get_letter('TOI-741.01')
-    >>> get_letter('WASP-69 b')
-    """
-    if is_letter(name):
-        return name[-2:]
-    if '.' in name:
-        idx = name.rfind('.')
-        return name[idx:]
-    return ''
-
-
 def get_children(host_aliases, planet_aliases):
     """
     Cross check a dictionary of star and planet aliases to see
     whether the star is the host of the planets.
     """
     # get all planet aliases minus the 'letter' identifier
-    planet_aka = invert_aliases(planet_aliases)
+    planet_aka = u.invert_aliases(planet_aliases)
     for planet, aliases in planet_aka.items():
         aka = []
         for alias in aliases:
-            len_letter = len(get_letter(alias))
+            len_letter = len(u.get_letter(alias))
             aka.append(alias[0:-len_letter])
         planet_aka[planet] = aka
 
@@ -152,7 +120,7 @@ def curate_aliases():
             continue
         for prefix in prefixes:
             if alias.startswith(prefix):
-                if is_letter(name) or is_candidate(name):
+                if u.is_letter(name) or u.is_candidate(name):
                     kept_aliases[alias] = name
 
     aka = {}
@@ -164,14 +132,14 @@ def curate_aliases():
     to_remove = []
     for name, aliases in aka.items():
         # remove .0N if letter exist:
-        any_letter = np.any([is_letter(val) for val in aliases])
+        any_letter = np.any([u.is_letter(val) for val in aliases])
         if any_letter:
-            aliases = [alias for alias in aliases if is_letter(alias)]
+            aliases = [alias for alias in aliases if u.is_letter(alias)]
         # Remove TOI-XX.0N when name is TOI-XX letter:
-        if name.startswith('TOI') and is_letter(name):
+        if name.startswith('TOI') and u.is_letter(name):
             aliases = [
                 alias for alias in aliases
-                if not (alias.startswith('TOI') and not is_letter(alias))
+                if not (alias.startswith('TOI') and not u.is_letter(alias))
             ]
         aka[name] = aliases
 
@@ -592,7 +560,7 @@ def fetch_aliases(hosts, output_file):
     for i in range(nhosts):
         # Isolate host-planet(s) aliases
         stars = np.unique(list(host_aliases[i].values()))
-        hosts_aka = invert_aliases(host_aliases[i])
+        hosts_aka = u.invert_aliases(host_aliases[i])
         for host, h_aliases in hosts_aka.items():
             if hosts[i] in h_aliases:
                 host_name = host
@@ -627,13 +595,13 @@ def fetch_aliases(hosts, output_file):
         for alias in new_aliases:
             h_aliases[alias] = host_name
             for planet in children_names:
-                letter = get_letter(planet)
+                letter = u.get_letter(planet)
                 p_aliases[alias+letter] = planet
 
         # Ensure trexolists aliases for planets are in
         for name in h_aliases.keys():
             for planet in children_names:
-                letter = get_letter(planet)
+                letter = u.get_letter(planet)
                 planet_name = f'{name}{letter}'
                 if planet_name not in p_aliases:
                     p_aliases[planet_name] = planet
@@ -747,7 +715,7 @@ def fetch_tess_aliases(ncpu=None):
 
     with open(tess_aliases_file, 'rb') as handle:
         tess_aliases = pickle.load(handle)
-    aka = invert_aliases(tess_aliases)
+    aka = u.invert_aliases(tess_aliases)
 
     # First idea, search in simbad using best known alias to get Ks magnitude
     catalogs = ['2MASS', 'Gaia DR3', 'Gaia DR2', 'TOI']
@@ -764,7 +732,7 @@ def fetch_tess_aliases(ncpu=None):
         if ks_mag[i] > 0:
             continue
 
-        name = select_alias(aka[tess_host], catalogs)
+        name = u.select_alias(aka[tess_host], catalogs)
         if i%200 == 0:
             print(f"~~ [{i}] Searching for '{tess_host}' / '{name}' ~~")
         aliases, kmag = fetch_simbad_aliases(name, verbose=False)
@@ -774,7 +742,7 @@ def fetch_tess_aliases(ncpu=None):
 
     # Plan B, batch search in vizier catalog:
     two_mass_hosts = np.array([
-        select_alias(aka[host], catalogs, host)
+        u.select_alias(aka[host], catalogs, host)
         for host in tess_hosts
     ])
     mask = [
@@ -799,7 +767,7 @@ def fetch_tess_aliases(ncpu=None):
     data = results[catalog].as_array().data
     vizier_names = [d[3] for d in data]
     for i, tess_host in enumerate(tess_hosts):
-        host_alias = select_alias(aka[tess_host], catalogs)
+        host_alias = u.select_alias(aka[tess_host], catalogs)
         if host_alias in two_mass_hosts:
             idx = vizier_names.index(host_alias[-16:])
             ks_mag[i] = data[idx][4]
@@ -809,14 +777,14 @@ def fetch_tess_aliases(ncpu=None):
     missing_hosts = [host for host,ks in zip(tess_hosts,ks_mag) if ks==0.0]
     missing_hosts = np.unique(missing_hosts)
     missing_hosts = [
-        select_alias(aka[host], catalogs)
+        u.select_alias(aka[host], catalogs)
         for host in missing_hosts
     ]
     with mp.get_context('fork').Pool(ncpu) as pool:
         vizier_ks = pool.map(fetch_vizier_ks, missing_hosts)
 
     for i, tess_host in enumerate(tess_hosts):
-        alias_host = select_alias(aka[tess_host], catalogs)
+        alias_host = u.select_alias(aka[tess_host], catalogs)
         if alias_host in missing_hosts:
             idx = list(missing_hosts).index(alias_host)
             if vizier_ks[idx] is not None:
@@ -859,29 +827,6 @@ def fetch_tess_aliases(ncpu=None):
     today = date.today()
     with open(f'{ROOT}data/last_updated_tess.txt', 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
-
-
-def select_alias(aka, catalogs, default_name=None):
-    """
-    Search alternative names take first one found in catalogs list.
-    """
-    for catalog in catalogs:
-        for alias in aka:
-            if alias.startswith(catalog):
-                return alias
-    return default_name
-
-
-def invert_aliases(aliases):
-    """
-    Invert an {alias:name} dictionary into {name:aliases_list}
-    """
-    aka = {}
-    for key,val in aliases.items():
-        if val not in aka:
-            aka[val] = []
-        aka[val].append(key)
-    return aka
 
 
 def scrap_nea_kmag(target):

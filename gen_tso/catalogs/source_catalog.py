@@ -5,17 +5,15 @@ __all__ = [
     'load_targets_table',
     'load_trexolits_table',
     'load_aliases',
-    'normalize_name',
 ]
 
 import pickle
-import re
 
 from astropy.io import ascii
 import numpy as np
 
 from ..utils import ROOT
-from .catalog_utils import *
+from . import catalog_utils as u
 
 
 def load_targets_table(database='nea_data.txt'):
@@ -73,12 +71,12 @@ def load_targets_table(database='nea_data.txt'):
             hosts.append(host)
             ra.append(float(st_ra))
             dec.append(float(st_dec))
-            ks_mag.append(to_float(st_mag))
-            teff.append(to_float(st_teff))
-            log_g.append(to_float(st_logg))
-            tr_dur.append(to_float(pl_tr_dur))
-            rprs.append(to_float(pl_rprs))
-            teq.append(to_float(pl_teq))
+            ks_mag.append(u.to_float(st_mag))
+            teff.append(u.to_float(st_teff))
+            log_g.append(u.to_float(st_logg))
+            tr_dur.append(u.to_float(pl_tr_dur))
+            rprs.append(u.to_float(pl_rprs))
+            teq.append(u.to_float(pl_teq))
 
     return planets, hosts, ra, dec, ks_mag, teff, log_g, tr_dur, rprs, teq
 
@@ -113,7 +111,7 @@ def load_trexolits_table(all_aliases=False):
     original_names = {}
     norm_targets = []
     for target in targets:
-        name = normalize_name(target)
+        name = u.normalize_name(target)
         norm_targets.append(name)
         if name not in original_names:
             original_names[name] = []
@@ -161,53 +159,6 @@ def load_trexolits_table(all_aliases=False):
     return jwst_targets, jwst_aliases, np.unique(missing), trexo_names
 
 
-def normalize_name(target):
-    """
-    Normalize target names into a 'more standard' format.
-    Mainly to resolve trexolists target names.
-    """
-    name = re.sub(r'\s+', ' ', target)
-    # It's a case issue:
-    name = name.replace('KEPLER', 'Kepler')
-    name = name.replace('TRES', 'TrES')
-    name = name.replace('WOLF-', 'Wolf ')
-    name = name.replace('HATP', 'HAT-P-')
-    name = name.replace('AU-MIC', 'AU Mic')
-    # Prefixes
-    name = name.replace('GL', 'GJ')
-    prefixes = [
-        'L', 'G', 'HD', 'GJ', 'LTT', 'LHS', 'HIP', 'WD', 'LP', '2MASS', 'PSR',
-    ]
-    for prefix in prefixes:
-        prefix_len = len(prefix)
-        if name.startswith(prefix) and not name[prefix_len].isalpha():
-            name = name.replace(f'{prefix}-', f'{prefix} ')
-            if name[prefix_len] != ' ':
-                name = f'{prefix} ' + name[prefix_len:]
-
-    prefixes = ['CD-', 'BD-', 'BD+']
-    for prefix in prefixes:
-        prefix_len = len(prefix)
-        dash_loc = name.find('-', prefix_len)
-        if name.startswith(prefix) and dash_loc > 0:
-            name = name[0:dash_loc] + ' ' + name[dash_loc+1:]
-    # Main star
-    if name.endswith('A') and not name[-2].isspace():
-        name = name[:-1] + ' A'
-    # Custom corrections:
-    if name in ['55CNC', 'RHO01-CNC']:
-        name = '55 Cnc'
-    name = name.replace('-offset', '')
-    name = name.replace('-updated', '')
-    if name.endswith('-'):
-        name = name[:-1]
-    if name == 'WD 1856':
-        name = 'WD 1856+534'
-    if 'V1298' in name:
-        name = 'V1298 Tau'
-    return name
-
-
 def load_aliases(as_hosts=False):
     """
     Load file with known aliases of NEA targets.
@@ -218,7 +169,7 @@ def load_aliases(as_hosts=False):
     def parse(name):
         if not as_hosts:
             return name
-        if is_letter(name):
+        if u.is_letter(name):
             return name[:-2]
         end = name.rindex('.')
         return name[:end]
