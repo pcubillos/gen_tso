@@ -15,6 +15,7 @@ from astropy.io import ascii
 import numpy as np
 
 from ..utils import ROOT
+from .catalog_utils import *
 
 
 def load_targets_table(database='nea_data.txt'):
@@ -214,9 +215,6 @@ def load_aliases(as_hosts=False):
     with open(f'{ROOT}data/nea_aliases.txt', 'r') as f:
         lines = f.readlines()
 
-    def is_letter(name):
-        return name[-1].islower() and name[-2] == ' '
-
     def parse(name):
         if not as_hosts:
             return name
@@ -232,13 +230,4 @@ def load_aliases(as_hosts=False):
         for alias in line[loc+1:].strip().split(','):
             aliases[parse(alias)] = name
     return aliases
-
-
-def to_float(value):
-    """
-    Cast string to None or float type.
-    """
-    if value == 'None':
-        return None
-    return float(value)
 
