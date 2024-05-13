@@ -119,14 +119,11 @@ def load_trexolits_table(all_aliases=False):
         original_names[name] += [target]
     norm_targets = np.unique(norm_targets)
 
-    # jwst targets that are in nea list:
+    # jwst targets that are in NEA catalog:
     nea_data = load_targets_table('nea_data.txt')
     tess_data = load_targets_table('tess_data.txt')
     hosts = list(nea_data[1]) + list(tess_data[1])
 
-    jwst_targets = list(norm_targets[np.in1d(norm_targets, hosts)])
-
-    # Missing targets, might be because of name aliases
     if all_aliases:
         with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
             aliases = pickle.load(handle)
@@ -135,25 +132,32 @@ def load_trexolits_table(all_aliases=False):
         aliases.update(tess_aliases)
     else:
         aliases = load_aliases(as_hosts=True)
+        for host in hosts:
+            aliases[host] = host
 
-    alias = {}
+    # As named in NEA catalogs:
+    jwst_aliases = {}
     missing = []
-    trix = norm_targets[np.in1d(norm_targets, hosts, invert=True)]
-    for target in trix:
+    for target in norm_targets:
         if target in aliases:
-            alias[target] = aliases[target]
-            jwst_targets.append(aliases[target])
-            if aliases[target] not in original_names:
-                original_names[aliases[target]] = []
-            original_names[aliases[target]] += original_names[target]
-            original_names.pop(target)
+            jwst_aliases[target] = aliases[target]
         elif target.endswith(' A') and target[:-2] in aliases:
-            alias[target] = aliases[target[:-2]]
-            jwst_targets.append(aliases[target[:-2]])
+            jwst_aliases[target] = aliases[target[:-2]]
         else:
             missing.append(target)
+    for name in list(jwst_aliases.values()):
+        jwst_aliases[name] = name
 
-    return np.unique(jwst_targets), alias, np.unique(missing), original_names
+    # TBD: Check this does not break for incomplete lists
+    trexo_names = {}
+    for name in original_names:
+        alias = jwst_aliases[name]
+        if alias not in trexo_names:
+            trexo_names[alias] = []
+        trexo_names[alias] += original_names[name]
+
+    jwst_targets = np.unique(list(jwst_aliases.values()))
+    return jwst_targets, jwst_aliases, np.unique(missing), trexo_names
 
 
 def normalize_name(target):
