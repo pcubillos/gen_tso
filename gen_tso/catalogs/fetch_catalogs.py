@@ -73,6 +73,13 @@ def is_letter(name):
     return name[-1].islower() and name[-2] == ' '
 
 
+def is_candidate(name):
+    """
+    Check if name ends with a blank + lower-case letter (it's a planet)
+    """
+    return name[-3] == '.' and name[-2:].isnumeric()
+
+
 def get_letter(name):
     """
     Extract 'letter' identifier for a planet name.
@@ -144,14 +151,9 @@ def curate_aliases():
         if alias == name:
             continue
         for prefix in prefixes:
-            #if alias.startswith(prefix) and not name.startswith(prefix):
             if alias.startswith(prefix):
-                #if name == 'HIP 45908':
-                #    print(f'{name}: {alias}')
-                if not is_letter(name):
-                    #print(name, alias)
-                    continue
-                kept_aliases[alias] = name
+                if is_letter(name) or is_candidate(name):
+                    kept_aliases[alias] = name
 
     aka = {}
     for alias, name in kept_aliases.items():
@@ -569,29 +571,21 @@ def fetch_aliases(hosts, output_file):
     >>> hosts = np.unique(nea_data[1])
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
     >>> fetch_aliases(hosts, output_file)
-
-    import pickle
-    with open(f'{ROOT}data/nea_confirmed_planets_raw.pickle', 'rb') as handle:
-        host_aliases, planet_aliases = pickle.load(handle)
     """
-    #import time
-    #ti = time.time()
     nhosts = len(hosts)
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
-    #tf = time.time()
 
     #with open(f'{ROOT}data/nea_confirmed_planets_raw.pickle', 'wb') as handle:
     #    pickle.dump([host_aliases, planet_aliases], handle, protocol=4)
 
     # Keep track of trexolists aliases to cross-check:
-    jwst_targets, jwst_aliases, missing, og = load_trexolits_table()
+    jwst_targets, jwst_aliases, missing, og = load_trexolits_table(True)
     jwst_names = []
     for star, j_aliases in og.items():
         jwst_names.append(star)
         for alias in j_aliases:
             jwst_names.append(normalize_name(alias))
     jwst_names = np.unique(jwst_names)
-
 
     # Complement with Simbad aliases:
     aliases = {}
@@ -600,14 +594,6 @@ def fetch_aliases(hosts, output_file):
         stars = np.unique(list(host_aliases[i].values()))
         hosts_aka = invert_aliases(host_aliases[i])
         for host, h_aliases in hosts_aka.items():
-            #is_in = hosts[i] in h_aliases
-            #if len(stars) > 1:
-            #    if is_in:
-            #        print(f'  >> {host}  {is_in}  {host in hosts}')
-            #    else:
-            #        print(f'     {host}  {is_in} {host in hosts}')
-            #elif not is_in:
-            #    print(f'Single not found: {host}')
             if hosts[i] in h_aliases:
                 host_name = host
                 break
@@ -643,19 +629,13 @@ def fetch_aliases(hosts, output_file):
             for planet in children_names:
                 letter = get_letter(planet)
                 p_aliases[alias+letter] = planet
-                #if not alias.startswith('2MASS'):
-                #    print(f'        {repr(alias+letter)}: {repr(planet)}')
 
         # Ensure trexolists aliases for planets are in
         for name in h_aliases.keys():
-            if name not in jwst_names:
-                continue
-            print(f'JWST names for {repr(name)}')
             for planet in children_names:
                 letter = get_letter(planet)
                 planet_name = f'{name}{letter}'
                 if planet_name not in p_aliases:
-                    print(planet_name)
                     p_aliases[planet_name] = planet
 
         aliases.update(h_aliases)
@@ -707,7 +687,7 @@ def fetch_nea_tess_candidates():
         if planet in targets:
             is_candidate[i] = False
             j += 1
-            #print(f"[{j}] '{planet}' is a confirmed target.")
+            # print(f"[{j}] '{planet}' is a confirmed target.")
             # 959 planets
             continue
         if tess_host in confirmed_hosts:
