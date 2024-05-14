@@ -20,8 +20,6 @@ import warnings
 import re
 
 import numpy as np
-import grequests
-import requests
 from astroquery.simbad import Simbad as simbad
 from astroquery.vizier import Vizier
 from astropy.table import Table
@@ -29,6 +27,7 @@ from astropy.units import arcsec
 from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import pyratbay.atmosphere as pa
+import requests
 
 # For developing
 if False:
@@ -51,6 +50,7 @@ def update_databases():
 
     # Update NEA confirmed targets and their aliases
     fetch_nea_confirmed_targets()
+    # Fetch confirmed aliases
     nea_data = load_targets_table()
     hosts = np.unique(nea_data[1])
     output_file = f'{ROOT}data/nea_aliases.pickle'
@@ -79,10 +79,9 @@ def get_children(host_aliases, planet_aliases):
         planet_aka[planet] = aka
 
     # cross_check with host aliases
-    host_names = list(host_aliases.keys())
     children = []
     for planet, aliases in planet_aka.items():
-        if np.any(np.in1d(aliases, host_names)):
+        if np.any(np.in1d(aliases, host_aliases)):
             children.append(planet)
 
     aliases = {
@@ -148,7 +147,7 @@ def curate_aliases():
     for name in to_remove:
         aka.pop(name)
 
-    with open(f'{ROOT}/data/nea_aliases.txt', 'w') as f:
+    with open(f'{ROOT}data/nea_aliases.txt', 'w') as f:
         for name,aliases in aka.items():
             str_aliases = ','.join(aliases)
             f.write(f'{name}:{str_aliases}\n')
@@ -174,6 +173,7 @@ def fetch_trexolist():
 def fetch_nea_confirmed_targets():
     """
     Fetch (web request) the entire NASA Exoplanet Archive database
+    for confirmed planets (there is another one for TESS candidates)
     """
     # Fetch all planetary system entries
     r = requests.get(
@@ -260,8 +260,10 @@ def fetch_nea_confirmed_targets():
 def fetch_nea_aliases(targets):
     """
     Fetch target aliases as known by https://exoplanetarchive.ipac.caltech.edu/
-    Note that a search of a planet or stellar target returns the
-    aliases for all bodies in that planetary system.
+
+    Note 1: a search of a planet or stellar target returns the
+        aliases for all bodies in that planetary system.
+    Note 2: there might be more than one star per system
 
     Parameters
     ----------
@@ -283,6 +285,9 @@ def fetch_nea_aliases(targets):
 
     >>> host_aliases, planet_aliases = cat.fetch_nea_aliases('WASP-999')
     """
+    # TBD: temporary location to avoid shiny error when loading tso
+    import grequests
+
     if isinstance(targets, str):
         targets = [targets]
     ntargets = len(targets)
@@ -458,20 +463,22 @@ def fetch_aliases(hosts, output_file):
     >>> nea_data = cat.load_targets_table()
     >>> hosts = np.unique(nea_data[1])
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
-    >>> fetch_aliases(hosts, output_file)
+    >>> cat.fetch_aliases(hosts, output_file)
     """
-    nhosts = len(hosts)
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
-
-    #with open(f'{ROOT}data/nea_confirmed_planets_raw.pickle', 'wb') as handle:
-    #    pickle.dump([host_aliases, planet_aliases], handle, protocol=4)
 
     # Keep track of trexolists aliases to cross-check:
     jwst_names = u.get_trexolists_targets()
+    jwst_aliases = u.get_trexolists_targets(grouped=True)
 
-    # Complement with Simbad aliases:
     aliases = {}
+    nhosts = len(hosts)
     for i in range(nhosts):
+        #if hosts[i] in jwst_names:
+        #    print(f'[{i:4}]  {hosts[i]}')
+        #else:
+        #   continue
+        #i = 24
         # Isolate host-planet(s) aliases
         stars = np.unique(list(host_aliases[i].values()))
         hosts_aka = u.invert_aliases(host_aliases[i])
@@ -480,17 +487,18 @@ def fetch_aliases(hosts, output_file):
                 host_name = host
                 break
 
-        h_aliases = {
-            alias: host
+        h_aliases = [
+            alias
             for alias,host in host_aliases[i].items()
             if host == host_name
-        }
+        ]
         if len(stars) == 1:
             p_aliases = planet_aliases[i]
         else:
             p_aliases = get_children(h_aliases, planet_aliases[i])
         children_names = np.unique(list(p_aliases.values()))
 
+        # Complement with Simbad aliases:
         s_aliases, kmag = fetch_simbad_aliases(host_name)
         new_aliases = []
         for alias in s_aliases:
@@ -504,24 +512,41 @@ def fetch_aliases(hosts, output_file):
             )
             if is_new and alias not in h_aliases:
                 new_aliases.append(alias)
+                h_aliases.append(alias)
 
-        # Add the star and planet aliases
-        for alias in new_aliases:
-            h_aliases[alias] = host_name
-            for planet in children_names:
-                letter = u.get_letter(planet)
-                p_aliases[alias+letter] = planet
+        # Add JWST host aliases:
+        in_jwst = np.in1d(h_aliases, jwst_names)
+        if np.any(in_jwst):
+            j_alias = np.array(h_aliases)[in_jwst][0]
+            for j_aliases in jwst_aliases:
+                if j_alias not in j_aliases:
+                    continue
+                h_aliases += [
+                    alias
+                    for alias in j_aliases
+                    if alias not in h_aliases
+                ]
 
-        # Ensure trexolists aliases for planets are in
-        for name in h_aliases.keys():
+        # Replicate host aliases as planet aliases:
+        new_planets = ''
+        for name in h_aliases:
             for planet in children_names:
                 letter = u.get_letter(planet)
                 planet_name = f'{name}{letter}'
-                if planet_name not in p_aliases:
+                is_in = [p.startswith(name) for p in p_aliases.keys()]
+                if not np.any(is_in):
+                    new_planets += (f'   {repr(planet_name)}: {repr(planet)}\n')
                     p_aliases[planet_name] = planet
+        #if new_planets != '':
+        #    print(f'[{i:4}]  {hosts[i]}\n{new_planets}')
 
-        aliases.update(h_aliases)
-        aliases.update(p_aliases)
+        system = {
+            'host': host_name,
+            'planets': children_names,
+            'host_aliases': h_aliases,
+            'planet_aliases': p_aliases,
+        }
+        aliases[host_name] = system
 
     with open(output_file, 'wb') as handle:
         pickle.dump(aliases, handle, protocol=4)
