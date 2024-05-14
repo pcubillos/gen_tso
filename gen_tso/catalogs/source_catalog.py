@@ -3,7 +3,7 @@
 
 __all__ = [
     'load_targets_table',
-    'load_trexolits_table',
+    'load_trexolist_table',
     'load_aliases',
 ]
 
@@ -81,7 +81,7 @@ def load_targets_table(database='nea_data.txt'):
     return planets, hosts, ra, dec, ks_mag, teff, log_g, tr_dur, rprs, teq
 
 
-def load_trexolits_table(all_aliases=False):
+def load_trexolist_table(all_aliases=False):
     """
     Get the list of targets in trexolists (as named at the NEA).
     A dictionary of name aliases contains alternative names found.
@@ -100,7 +100,7 @@ def load_trexolits_table(all_aliases=False):
     Examples
     --------
     >>> import gen_tso.catalogs as cat
-    >>> targets, aliases, missing, og = cat.load_trexolits_table(True)
+    >>> targets, aliases, missing, og = cat.load_trexolist_table(True)
     """
     trexolist_data = ascii.read(
         f'{ROOT}data/trexolists.csv',

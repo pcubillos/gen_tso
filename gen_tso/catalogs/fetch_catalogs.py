@@ -2,7 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
-    'fetch_trexolits',
+    'fetch_trexolist',
     'fetch_nea_confirmed_targets',
     'fetch_nea_tess_candidates',
     'fetch_nea_aliases',
@@ -25,7 +25,7 @@ import requests
 from astroquery.simbad import Simbad as simbad
 from astroquery.vizier import Vizier
 from astropy.table import Table
-import astropy.units as u
+from astropy.units import arcsec
 from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import pyratbay.atmosphere as pa
@@ -36,22 +36,18 @@ if False:
     import gen_tso.catalogs.catalog_utils as u
     from gen_tso.catalogs.source_catalog import (
         load_targets_table,
-        load_trexolits_table,
-        normalize_name,
     )
 
 from ..utils import ROOT
 from .source_catalog import (
     load_targets_table,
-    load_trexolits_table,
-    normalize_name,
 )
 from . import catalog_utils as u
 
 
 def update_databases():
     # Update trexolist database
-    fetch_trexolits()
+    fetch_trexolist()
 
     # Update NEA confirmed targets and their aliases
     fetch_nea_confirmed_targets()
@@ -108,11 +104,14 @@ def curate_aliases():
         tess_aliases = pickle.load(handle)
     aliases.update(tess_aliases)
 
-    jwst_hosts, jwst_aliases, missing, og = load_trexolits_table(
-        all_aliases=True,
-    )
+    jwst_names = list(u.get_trexolists_targets())
+    jwst_names += [
+        aliases[host]
+        for host in jwst_names
+        if host in aliases and aliases[host] not in jwst_names
+    ]
 
-    prefixes = list(jwst_aliases.keys())
+    prefixes = jwst_names
     prefixes += ['WASP', 'KELT', 'HAT', 'MASCARA', 'TOI', 'XO', 'TrES']
     kept_aliases = {}
     for alias,name in aliases.items():
@@ -155,17 +154,7 @@ def curate_aliases():
             f.write(f'{name}:{str_aliases}\n')
 
 
-
-def as_str(val, fmt):
-    """
-    Utility function
-    """
-    if val is None:
-        return None
-    return f'{val:{fmt}}'
-
-
-def fetch_trexolits():
+def fetch_trexolist():
     url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.csv'
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
@@ -178,77 +167,8 @@ def fetch_trexolits():
         file.write(response.content)
 
     today = date.today()
-    with open(f'{ROOT}data/last_updated_trexolits.txt', 'w') as f:
+    with open(f'{ROOT}data/last_updated_trexolist.txt', 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
-
-
-def rank_planets(entries):
-    """
-    Rank entries with the most data
-    """
-    points = [
-        (
-            (entry['st_teff'] is None) +
-            (entry['st_logg'] is None) +
-            (entry['st_met'] is None) +
-            (entry['pl_trandur'] is None) +
-            (entry['pl_rade'] is None) +
-            (entry['pl_orbsmax'] is None and entry['pl_ratdor'] is None) +
-            (entry['st_rad'] is None and entry['pl_ratror'] is None)
-        )
-        for entry in entries
-    ]
-    rank = np.argsort(np.array(points))
-    return rank
-
-
-def solve_period_sma(period, sma, mstar):
-    """
-    Solve period-sma-mstar system values.
-    """
-    if mstar is None or mstar == 0:
-        return period, sma
-    if period is None and sma is not None:
-        period = (
-            2.0*np.pi * np.sqrt((sma*pc.au)**3.0/pc.G/(mstar*pc.msun)) / pc.day
-        )
-    elif sma is None and period is not None:
-        sma = (
-            ((period*pc.day/(2.0*np.pi))**2.0*pc.G*mstar*pc.msun)**(1/3) / pc.au
-        )
-    return period, sma
-
-
-def solve_rp_rs(rp, rs, rprs):
-    if rp is None and rs is not None and rprs is not None:
-        rp = rprs * (rs*pc.rsun) / pc.rearth
-    if rs is None and rp is not None and rprs is not None:
-        rs = rp*pc.rearth / rprs / pc.rsun
-    if rprs is None and rp is not None and rs is not None:
-        rprs = rp*pc.rearth / (rs*pc.rsun)
-    return rp, rs, rprs
-
-def solve_a_rs(a, rs, ars):
-    if a is None and rs is not None and ars is not None:
-        a = ars * (rs*pc.rsun) / pc.au
-    if rs is None and a is not None and ars is not None:
-        rs = a*pc.au / ars / pc.rsun
-    if ars is None and a is not None and rs is not None:
-        ars = a*pc.au / (rs*pc.rsun)
-    return a, rs, ars
-
-
-def complete_entry(entry):
-    entry['pl_rade'], entry['st_rad'], entry['pl_ratror'] = solve_rp_rs(
-        entry['pl_rade'], entry['st_rad'], entry['pl_ratror'],
-    )
-    entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'] = solve_a_rs(
-        entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'],
-    )
-    entry['pl_orbper'], entry['pl_orbsmax'] = solve_period_sma(
-        entry['pl_orbper'], entry['pl_orbsmax'], entry['st_mass']
-    )
-    return entry
 
 
 def fetch_nea_confirmed_targets():
@@ -288,16 +208,16 @@ def fetch_nea_confirmed_targets():
         # default_flag takes priority
         def_flags = [resp[j]['default_flag'] for j in idx_duplicates]
         j = idx_duplicates[def_flags.index(1)]
-        planets[i] = complete_entry(resp[j].copy())
+        planets[i] = u.complete_entry(resp[j].copy())
         dups = [resp[k] for k in idx_duplicates if k!=j]
-        rank = rank_planets(dups)
+        rank = u.rank_planets(dups)
         # Fill the gaps if any
         for j in rank:
-            entry = complete_entry(dups[j])
+            entry = u.complete_entry(dups[j])
             for field in planet.keys():
                 if planets[i][field] is None and entry[field] is not None:
                     planets[i][field] = entry[field]
-        planets[i] = complete_entry(planets[i])
+        planets[i] = u.complete_entry(planets[i])
 
     # Save as plain text:
     with open(f'{ROOT}data/nea_data.txt', 'w') as f:
@@ -308,9 +228,9 @@ def fetch_nea_confirmed_targets():
             ks_mag = entry['sy_kmag']
             planet = entry['pl_name']
             tr_dur = entry['pl_trandur']
-            teff = as_str(entry['st_teff'], '.1f')
-            logg = as_str(entry['st_logg'], '.3f')
-            rprs = as_str(entry['pl_ratror'], '.3f')
+            teff = u.as_str(entry['st_teff'], '.1f')
+            logg = u.as_str(entry['st_logg'], '.3f')
+            rprs = u.as_str(entry['pl_ratror'], '.3f')
             missing_info = (
                 entry['st_teff'] is None or
                 entry['st_rad'] is None or
@@ -504,7 +424,7 @@ def fetch_vizier_ks(target, verbose=True):
         keywords=['Stars'],
     )
 
-    result = vizier.query_object(target, radius=0.5*u.arcsec)
+    result = vizier.query_object(target, radius=0.5*arcsec)
     n_entries = np.size(result)
     if n_entries == 0:
         print(f"Target not found: '{target}'")
@@ -547,13 +467,7 @@ def fetch_aliases(hosts, output_file):
     #    pickle.dump([host_aliases, planet_aliases], handle, protocol=4)
 
     # Keep track of trexolists aliases to cross-check:
-    jwst_targets, jwst_aliases, missing, og = load_trexolits_table(True)
-    jwst_names = []
-    for star, j_aliases in og.items():
-        jwst_names.append(star)
-        for alias in j_aliases:
-            jwst_names.append(normalize_name(alias))
-    jwst_names = np.unique(jwst_names)
+    jwst_names = u.get_trexolists_targets()
 
     # Complement with Simbad aliases:
     aliases = {}
@@ -813,11 +727,11 @@ def fetch_tess_aliases(ncpu=None):
             ksmag = f'{ks_mag[i]:.3f}' if ks_mag[i]>0.0 else 'None'
             planet = tess_planets[i]
             tr_dur = candidates['tr_dur'][i]
-            teff = as_str(candidates['teff'][i], '.1f')
-            logg = as_str(candidates['logg'][i], '.3f')
+            teff = u.as_str(candidates['teff'][i], '.1f')
+            logg = u.as_str(candidates['logg'][i], '.3f')
             depth = candidates['rprs'][i] **2.0 * pc.ppm
-            rprs = as_str(np.sqrt(depth), '.3f')
-            teq = as_str(candidates['teq'][i], '.1f')
+            rprs = u.as_str(np.sqrt(depth), '.3f')
+            teq = u.as_str(candidates['teq'][i], '.1f')
 
             if tess_hosts[i] != host:
                 host = tess_hosts[i]
