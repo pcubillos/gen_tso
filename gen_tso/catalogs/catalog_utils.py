@@ -11,6 +11,7 @@ __all__ = [
     'is_letter',
     'is_candidate',
     'get_letter',
+    'get_host',
     'select_alias',
     'invert_aliases',
     'rank_planets',
@@ -141,7 +142,7 @@ def is_candidate(name):
     """
     Check if name ends with a blank + lower-case letter (it's a planet)
     """
-    return name[-3] == '.' and name[-2:].isnumeric()
+    return len(name)>=3 and name[-3] == '.' and name[-2:].isnumeric()
 
 
 def get_letter(name):
@@ -161,6 +162,26 @@ def get_letter(name):
     if '.' in name:
         idx = name.rfind('.')
         return name[idx:]
+    return ''
+
+
+def get_host(name):
+    """
+    Extract 'letter' identifier for a planet name.
+    Valid confirmed planet names end with a lower-case letter preceded
+    by a blank.  Valid planet candidate names end with a dot followed
+    by two numbers.
+
+    Examples
+    --------
+    >>> get_letter('TOI-741.01')
+    >>> get_letter('WASP-69 b')
+    """
+    if is_letter(name):
+        return name[:-2]
+    if '.' in name:
+        idx = name.rfind('.')
+        return name[:idx]
     return ''
 
 
