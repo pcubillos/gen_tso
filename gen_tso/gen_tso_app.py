@@ -19,9 +19,11 @@ from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
+import gen_tso.catalogs.catalog_utils as u
+
 
 # Confirmed planets
-nea_data = cat.load_nea_targets_table()
+nea_data = cat.load_targets_table('nea_data.txt')
 planets = nea_data[0]
 hosts = nea_data[1]
 ra = nea_data[2]
@@ -33,18 +35,32 @@ tr_dur = nea_data[7]
 rprs = nea_data[8]
 teq = nea_data[9]
 
-# JWST targets
-jwst_hosts, jwst_aliases, missing = cat.load_trexolits_table()
+# TESS candidates
+tess_data = cat.load_targets_table('tess_data.txt')
+tess_planets = tess_data[0]
+planets += tess_planets
+hosts += tess_data[1]
+ra += tess_data[2]
+dec += tess_data[3]
+ks_mag += tess_data[4]
+teff += tess_data[5]
+log_g += tess_data[6]
+tr_dur += tess_data[7]
+rprs += tess_data[8]
+teq += tess_data[9]
 
-# TESS candidates TBD
+# JWST targets
+jwst_hosts, jwst_aliases, missing, og_list = cat.load_trexolist_table()
+jwst_hosts = list(jwst_hosts)
+host_aliases = cat.load_aliases(True)
+for alias,name in host_aliases.items():
+    if alias in jwst_hosts and name not in jwst_hosts:
+        jwst_hosts.append(name)
+    if name in jwst_hosts and alias not in jwst_hosts:
+        jwst_hosts.append(alias)
 
 aliases = cat.load_aliases()
-aka = {}
-for alias, name in aliases.items():
-    if name not in aka:
-        aka[name] = [alias]
-    else:
-        aka[name] = aka[name] + [alias]
+aka = u.invert_aliases(aliases)
 
 transit_planets = []
 non_transiting = []
@@ -61,11 +77,11 @@ for i,target in enumerate(planets):
         transit_planets.append(target)
         if target in aka:
             transit_aliases += aka[target]
-    if hosts[i] in jwst_hosts:
+
+    if hosts[i] in jwst_hosts and tr_dur[i] is not None:
         jwst_targets.append(target)
         if target in aka:
             jwst_aliases += aka[target]
-        # TBD: some jwst_hosts are not (yet) confirmed planets
 
 
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
@@ -1680,7 +1696,8 @@ def server(input, output, session):
         return (
             f'{exp_text}\n'
             f'Max. fraction of saturation: {100.0*sat_fraction:.1f}%\n'
-            f'ngroup below 80% and 100% saturation: {ngroup_80:d} / {ngroup_max:d}'
+            f'ngroup below  80% saturation: {ngroup_80:d}\n'
+            f'ngroup below 100% saturation: {ngroup_max:d}'
         )
 
 app = App(app_ui, server)
