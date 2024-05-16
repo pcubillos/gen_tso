@@ -7,8 +7,6 @@ __all__ = [
     'load_aliases',
 ]
 
-import pickle
-
 from astropy.io import ascii
 import numpy as np
 
@@ -81,7 +79,7 @@ def load_targets_table(database='nea_data.txt'):
     return planets, hosts, ra, dec, ks_mag, teff, log_g, tr_dur, rprs, teq
 
 
-def load_trexolist_table(all_aliases=False):
+def load_trexolist_table():
     """
     Get the list of targets in trexolists (as named at the NEA).
     A dictionary of name aliases contains alternative names found.
@@ -91,7 +89,7 @@ def load_trexolist_table(all_aliases=False):
     jwst_targets: List
         trexolists host names as found in the NEA database.
     aliases: Dict
-        aliases of hosts as found in the trexolists database.
+        An aliases dict that takes trexolists name to NEA name.
     missing: List
         trexolists hosts not found in the NEA database.
     original_names: Dict
@@ -100,7 +98,7 @@ def load_trexolist_table(all_aliases=False):
     Examples
     --------
     >>> import gen_tso.catalogs as cat
-    >>> targets, aliases, missing, og = cat.load_trexolist_table(True)
+    >>> targets, aliases, missing, og = cat.load_trexolist_table()
     """
     trexolist_data = ascii.read(
         f'{ROOT}data/trexolists.csv',
@@ -123,16 +121,9 @@ def load_trexolist_table(all_aliases=False):
     tess_data = load_targets_table('tess_data.txt')
     hosts = list(nea_data[1]) + list(tess_data[1])
 
-    if all_aliases:
-        with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
-            aliases = pickle.load(handle)
-        with open(f'{ROOT}data/tess_aliases.pickle', 'rb') as handle:
-            tess_aliases = pickle.load(handle)
-        aliases.update(tess_aliases)
-    else:
-        aliases = load_aliases(as_hosts=True)
-        for host in hosts:
-            aliases[host] = host
+    aliases = load_aliases(as_hosts=True)
+    for host in hosts:
+        aliases[host] = host
 
     # As named in NEA catalogs:
     jwst_aliases = {}
@@ -179,6 +170,7 @@ def load_aliases(as_hosts=False):
         loc = line.index(':')
         name = parse(line[:loc])
         for alias in line[loc+1:].strip().split(','):
-            aliases[parse(alias)] = name
+            if parse(alias) != name:
+                aliases[parse(alias)] = name
     return aliases
 
