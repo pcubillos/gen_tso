@@ -308,11 +308,11 @@ def to_float(value):
     return float(value)
 
 
-def as_str(val, fmt):
+def as_str(val, fmt, if_none=None):
     """
     Format as string
     """
     if val is None:
-        return 'None'
+        return if_none
     return f'{val:{fmt}}'
 
