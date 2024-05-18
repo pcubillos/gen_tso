@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'Catalog',
     'load_targets_table',
     'load_trexolist_table',
     'load_aliases',
@@ -12,6 +13,97 @@ import numpy as np
 
 from ..utils import ROOT
 from . import catalog_utils as u
+
+
+class Catalog():
+    """
+    Load the entire catalog.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> catalog = cat.Catalog()
+    """
+    def __init__(self):
+        # Confirmed planets and TESS candidates
+        nea_data = load_targets_table('nea_data.txt')
+        tess_data = load_targets_table('tess_data.txt')
+
+        confirmed_planets = nea_data[0]
+        tess_planets = tess_data[0]
+        self.planets = confirmed_planets + tess_planets
+
+        self.hosts = nea_data[1] + tess_data[1]
+        self.ra = nea_data[2] + tess_data[2]
+        self.dec = nea_data[3] + tess_data[3]
+        self.ks_mag = nea_data[4] + tess_data[4]
+        self.teff = nea_data[5] + tess_data[5]
+        self.log_g = nea_data[6] + tess_data[6]
+        self.tr_dur = nea_data[7] + tess_data[7]
+        self.rprs = nea_data[8] + tess_data[8]
+        self.teq = nea_data[9] + tess_data[9]
+
+        # JWST targets
+        jwst_targets, trexo_ra, trexo_dec = u.get_trexolists_targets(
+            extract='coords',
+        )
+        njwst = len(jwst_targets)
+        host_aliases = load_aliases(as_hosts=True)
+        hosts_aka = u.invert_aliases(host_aliases)
+        for i in range(njwst):
+            if jwst_targets[i] in host_aliases:
+                jwst_targets[i] = host_aliases[jwst_targets[i]]
+            # if host NEA name != planet NEA name
+            if jwst_targets[i] not in self.hosts:
+                for host in hosts_aka[jwst_targets[i]]:
+                    if host in self.hosts:
+                        jwst_targets[i] = host
+
+        self.planet_aliases = load_aliases()
+        planets_aka = u.invert_aliases(self.planet_aliases)
+
+        self.nplanets = nplanets = len(self.planets)
+        self.is_transiting = np.zeros(nplanets, bool)
+        self.is_jwst = np.zeros(nplanets, bool)
+        self.is_confirmed = np.zeros(nplanets, bool)
+        self.trexo_coords = [None for _ in self.planets]
+        self.jwst_aliases = []
+        self.transit_aliases = []
+        self.non_transit_aliases = []
+        self.confirmed_aliases = []
+        self.candidate_aliases = []
+
+        for i,target in enumerate(self.planets):
+            self.is_transiting[i] = self.tr_dur[i] is not None
+            self.is_confirmed[i] = target not in tess_planets
+            self.is_jwst[i] = (
+                self.hosts[i] in jwst_targets and
+                self.is_transiting[i]
+            )
+
+            # Now get the aliases lists:
+            if target not in planets_aka:
+                continue
+            aliases = planets_aka[target]
+
+            if self.is_jwst[i]:
+                self.jwst_aliases += aliases
+                j = list(jwst_targets).index(self.hosts[i])
+                self.trexo_coords[i] = (trexo_ra[j], trexo_dec[j])
+
+            if self.is_transiting[i]:
+                self.transit_aliases += aliases
+            else:
+                self.non_transit_aliases += aliases
+
+            if self.is_confirmed[i]:
+                self.confirmed_aliases += aliases
+            else:
+                self.candidate_aliases += aliases
+
+    def show_target(self, target):
+        target = u.normalize_name(target)
+        # TBD
 
 
 def load_targets_table(database='nea_data.txt'):
