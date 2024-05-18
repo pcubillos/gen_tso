@@ -79,7 +79,7 @@ def normalize_name(target):
     return name
 
 
-def get_trexolists_targets(grouped=False, trexo_file=None, extract='Target'):
+def get_trexolists_targets(grouped=False, trexo_file=None, extract='target'):
     """
     Get the target names from the trexolists.csv file.
 
@@ -89,6 +89,15 @@ def get_trexolists_targets(grouped=False, trexo_file=None, extract='Target'):
         If False, return a 1D list of names.
         If True, return a nested list of lists, with each item the
         set of names for a same object.
+    trexo_list: String
+        If None, extract data from default Gen TSO location.
+        Otherwise, a path to a trexolists.csv file.
+    extract: String
+        If 'target' extract only the target names.
+        If 'coords' extract the RA and dec in addition to the target names.
+        Note that these coordinates are intentionally truncated so
+        that a same object has a unique RA,dec (and thus can be used
+        to identify the same target with the trexolists filters).
     """
     if trexo_file is None:
         trexo_file = f'{ROOT}data/trexolists.csv'
@@ -103,16 +112,24 @@ def get_trexolists_targets(grouped=False, trexo_file=None, extract='Target'):
         normalize_name(target)
         for target in targets
     ]
-    if not grouped:
-        return np.unique(norm_targets)
 
-    # Use RA and dec to detect aliases for a same object
     ra = trexolist_data['R.A. 2000'].data
     dec = trexolist_data['Dec. 2000'].data
-    truncated_ra = [r[0:7] for r in ra]
-    truncated_dec = [d[0:6] for d in dec]
+    truncated_ra = np.array([r[0:7] for r in ra])
+    truncated_dec = np.array([d[0:6] for d in dec])
 
+    if not grouped:
+        unique_targets, u_idx = np.unique(norm_targets, return_index=True)
+        if extract == 'coords':
+            trexo_ra = truncated_ra[u_idx]
+            trexo_dec = truncated_dec[u_idx]
+            return unique_targets, trexo_ra, trexo_dec
+        return unique_targets
+
+    # Use RA and dec to detect aliases for a same object
     target_sets = []
+    trexo_ra = []
+    trexo_dec = []
     ntargets = len(targets)
     taken = np.zeros(ntargets, bool)
     for i in range(ntargets):
@@ -126,8 +143,12 @@ def get_trexolists_targets(grouped=False, trexo_file=None, extract='Target'):
             if truncated_ra[j]==ra and truncated_dec[j]==dec and not taken[j]:
                 hosts.append(norm_targets[j])
                 taken[j] = True
-        # print(f'{ra}  {dec}   {np.unique(hosts)}')
         target_sets.append(list(np.unique(hosts)))
+        trexo_ra.append(ra)
+        trexo_dec.append(dec)
+
+    if extract == 'coords':
+        return target_sets, trexo_ra, trexo_dec
     return target_sets
 
 
