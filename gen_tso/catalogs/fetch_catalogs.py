@@ -16,7 +16,7 @@ __all__ = [
 #import grequests
 import requests
 import multiprocessing as mp
-from datetime import date
+from datetime import datetime, timezone
 import urllib
 import pickle
 import warnings
@@ -31,18 +31,14 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import pyratbay.atmosphere as pa
 
-# For developing
+# While developing
 if False:
     from gen_tso.utils import ROOT
     import gen_tso.catalogs.catalog_utils as u
-    from gen_tso.catalogs.source_catalog import (
-        load_targets_table,
-    )
+    from gen_tso.catalogs.source_catalog import load_targets_table
 
 from ..utils import ROOT
-from .source_catalog import (
-    load_targets_table,
-)
+from .source_catalog import load_targets_table
 from . import catalog_utils as u
 
 
@@ -164,7 +160,7 @@ def fetch_trexolist():
     with open(trexolists_path, mode="wb") as file:
         file.write(response.content)
 
-    today = date.today()
+    today = datetime.now(timezone.utc)
     with open(f'{ROOT}data/last_updated_trexolist.txt', 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
@@ -250,7 +246,7 @@ def fetch_nea_confirmed_targets():
                 f.write(f">{host}: {ra} {dec} {ks_mag} {teff} {logg}\n")
             f.write(f" {planet}: {tr_dur} {rprs} {teq}\n")
 
-    today = date.today()
+    today = datetime.now(timezone.utc)
     with open(f'{ROOT}data/last_updated_nea.txt', 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
@@ -829,7 +825,7 @@ def fetch_tess_aliases(ncpu=None):
                 f.write(f">{host}: {ra} {dec} {ksmag} {teff} {logg}\n")
             f.write(f" {planet}: {tr_dur} {rprs} {teq}\n")
 
-    today = date.today()
+    today = datetime.now(timezone.utc)
     with open(f'{ROOT}data/last_updated_tess.txt', 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
