@@ -935,15 +935,15 @@ def server(input, output, session):
     @reactive.event(input.target)
     def target_label():
         target_name = input.target.get()
-        if target_name not in planets_aka:
-            aka_tooltip = None
-        else:
+        if target_name in planets_aka:
             aliases_text = ', '.join(planets_aka[target_name])
             aka_tooltip = ui.tooltip(
                 fa.icon_svg("circle-info", fill='cornflowerblue'),
                 f"Also known as: {aliases_text}",
                 placement='top',
             )
+        else:
+            aka_tooltip = None
 
         if target_name in jwst_targets:
             trexolists_tooltip = ui.tooltip(
@@ -961,6 +961,16 @@ def server(input, output, session):
                 'not a JWST target (yet)',
                 placement='top',
             )
+
+        if target_name in candidate_planets:
+            candidate_tooltip = ui.tooltip(
+                fa.icon_svg("triangle-exclamation", fill='darkorange'),
+                ui.markdown("This is a *candidate* planet"),
+                placement='top',
+            )
+        else:
+            candidate_tooltip = None
+
         return ui.span(
             'Known target? ',
             ui.tooltip(
@@ -974,6 +984,7 @@ def server(input, output, session):
             ),
             trexolists_tooltip,
             aka_tooltip,
+            candidate_tooltip,
         )
 
     @reactive.Effect
@@ -992,8 +1003,10 @@ def server(input, output, session):
             return
 
         index = catalog.planets.index(target_name)
-        ui.update_text('teff', value=f'{catalog.teff[index]:.1f}')
-        ui.update_text('logg', value=f'{catalog.log_g[index]:.2f}')
+        teff = u.as_str(catalog.teff[index], '.1f', '')
+        log_g = u.as_str(catalog.log_g[index], '.2f', '')
+        ui.update_text('teff', value=teff)
+        ui.update_text('logg', value=log_g)
         ui.update_select('magnitude_band', selected='Ks mag')
         ui.update_text('magnitude', value=f'{catalog.ks_mag[index]:.3f}')
         t_dur = catalog.tr_dur[index]
@@ -1203,7 +1216,11 @@ def server(input, output, session):
         else:
             index = catalog.planets.index(target_name)
             teq_planet = catalog.teq[index]
-            rprs_square = catalog.rprs[index]**2.0
+            if catalog.rprs[index] is None:
+                rprs_square = 0.0
+            else:
+                rprs_square = catalog.rprs[index]**2.0
+        rprs_square_percent = np.round(100*rprs_square, decimals=4)
 
         layout_kwargs = dict(
             width=1/2,
@@ -1221,7 +1238,7 @@ def server(input, output, session):
                 ui.input_numeric(
                     id="depth",
                     label="",
-                    value=np.round(100*rprs_square, decimals=4),
+                    value=rprs_square_percent,
                     step=0.1,
                 ),
                 **layout_kwargs,
@@ -1232,7 +1249,7 @@ def server(input, output, session):
                 ui.input_numeric(
                     id="depth",
                     label="",
-                    value=np.round(100*rprs_square, decimals=4),
+                    value=rprs_square_percent,
                     step=0.1,
                 ),
                 ui.p("Temp (K):"),
