@@ -105,7 +105,7 @@ for location in loading_folders:
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
-trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
+trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
 css_file = f'{ROOT}data/style.css'
 
@@ -946,10 +946,13 @@ def server(input, output, session):
             aka_tooltip = None
 
         if target_name in jwst_targets:
+            idx = catalog.planets.index(target_name)
+            ra, dec = catalog.trexo_coords[idx]
+            url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("circle-info", fill='goldenrod'),
-                    href=f'{trexolits_url}',
+                    href=url,
                     target="_blank",
                 ),
                 "This target's host is on TrExoLiSTS",
