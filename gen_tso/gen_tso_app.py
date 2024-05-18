@@ -22,68 +22,16 @@ from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
 import gen_tso.catalogs.catalog_utils as u
 
 
-# Confirmed planets
-nea_data = cat.load_targets_table('nea_data.txt')
-planets = nea_data[0]
-hosts = nea_data[1]
-ra = nea_data[2]
-dec = nea_data[3]
-ks_mag = nea_data[4]
-teff = nea_data[5]
-log_g = nea_data[6]
-tr_dur = nea_data[7]
-rprs = nea_data[8]
-teq = nea_data[9]
+# Catalog of known exoplanets (and candidate planets)
+catalog = cat.Catalog()
+planets_array = np.array(catalog.planets)
+jwst_targets = list(planets_array[catalog.is_jwst])
+transit_planets = list(planets_array[catalog.is_transiting])
+non_transit_planets = list(planets_array[~catalog.is_transiting])
+candidate_planets = list(planets_array[~catalog.is_confirmed])
+planets_aka = u.invert_aliases(catalog.planet_aliases)
 
-# TESS candidates
-tess_data = cat.load_targets_table('tess_data.txt')
-tess_planets = tess_data[0]
-planets += tess_planets
-hosts += tess_data[1]
-ra += tess_data[2]
-dec += tess_data[3]
-ks_mag += tess_data[4]
-teff += tess_data[5]
-log_g += tess_data[6]
-tr_dur += tess_data[7]
-rprs += tess_data[8]
-teq += tess_data[9]
-
-# JWST targets
-jwst_hosts, jwst_aliases, missing, og_list = cat.load_trexolist_table()
-jwst_hosts = list(jwst_hosts)
-host_aliases = cat.load_aliases(True)
-for alias,name in host_aliases.items():
-    if alias in jwst_hosts and name not in jwst_hosts:
-        jwst_hosts.append(name)
-    if name in jwst_hosts and alias not in jwst_hosts:
-        jwst_hosts.append(alias)
-
-aliases = cat.load_aliases()
-aka = u.invert_aliases(aliases)
-
-transit_planets = []
-non_transiting = []
-jwst_targets = []
-transit_aliases = []
-non_transiting_aliases = []
-jwst_aliases = []
-for i,target in enumerate(planets):
-    if tr_dur[i] is None:
-        non_transiting.append(target)
-        if target in aka:
-            non_transiting_aliases += aka[target]
-    else:
-        transit_planets.append(target)
-        if target in aka:
-            transit_aliases += aka[target]
-
-    if hosts[i] in jwst_hosts and tr_dur[i] is not None:
-        jwst_targets.append(target)
-        if target in aka:
-            jwst_aliases += aka[target]
-
-
+# Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
 k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
@@ -247,7 +195,7 @@ app_ui = ui.page_fluid(
                 ui.input_selectize(
                     id='target',
                     label='',
-                    choices=planets,
+                    choices=catalog.planets,
                     selected='WASP-80 b',
                     multiple=False,
                 ),
@@ -957,15 +905,24 @@ def server(input, output, session):
     @reactive.event(input.target_filter)
     def _():
         targets = []
+        aliases = []
         if 'jwst' in input.target_filter.get():
-            targets += [p for p in jwst_targets if p not in targets]
-            targets += [p for p in jwst_aliases if p not in targets]
+            targets += jwst_targets
+            aliases += catalog.jwst_aliases
         if 'transit' in input.target_filter.get():
-            targets += [p for p in transit_planets if p not in targets]
-            targets += [p for p in transit_aliases if p not in targets]
+            targets += transit_planets
+            aliases += catalog.transit_aliases
         if 'non_transit' in input.target_filter.get():
-            targets += [p for p in non_transiting if p not in targets]
-            targets += [p for p in non_transiting_aliases if p not in targets]
+            targets += non_transit_planets
+            aliases += catalog.non_transit_aliases
+        if 'tess' in input.target_filter.get():
+            targets += candidate_planets
+            aliases += catalog.candidate_aliases
+
+        # Remove duplicates, sort, and join:
+        targets = list(np.unique(targets))
+        aliases = list(np.unique(aliases))
+        targets += [alias for alias in aliases if alias not in targets]
 
         # Preserve current target if possible:
         current_target = input.target.get()
@@ -978,10 +935,10 @@ def server(input, output, session):
     @reactive.event(input.target)
     def target_label():
         target_name = input.target.get()
-        if target_name not in aka:
+        if target_name not in planets_aka:
             aka_tooltip = None
         else:
-            aliases_text = ', '.join(aka[target_name])
+            aliases_text = ', '.join(planets_aka[target_name])
             aka_tooltip = ui.tooltip(
                 fa.icon_svg("circle-info", fill='cornflowerblue'),
                 f"Also known as: {aliases_text}",
@@ -1024,25 +981,27 @@ def server(input, output, session):
     def _():
         """Set known-target properties"""
         target_name = input.target.get()
-        if target_name in aliases:
-            ui.update_selectize('target', selected=aliases[target_name])
+        if target_name in catalog.planet_aliases:
+            ui.update_selectize(
+                'target',
+                selected=catalog.planet_aliases[target_name],
+            )
             return
 
-        if target_name not in planets:
+        if target_name not in catalog.planets:
             return
 
-        index = planets.index(target_name)
-        ui.update_text('teff', value=f'{teff[index]:.1f}')
-        ui.update_text('logg', value=f'{log_g[index]:.2f}')
+        index = catalog.planets.index(target_name)
+        ui.update_text('teff', value=f'{catalog.teff[index]:.1f}')
+        ui.update_text('logg', value=f'{catalog.log_g[index]:.2f}')
         ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{ks_mag[index]:.3f}')
-        t_dur = tr_dur[index]
+        ui.update_text('magnitude', value=f'{catalog.ks_mag[index]:.3f}')
+        t_dur = catalog.tr_dur[index]
         tr_duration = '' if t_dur is None else f'{t_dur:.3f}'
         ui.update_text('t_dur', value=tr_duration)
 
-        index = planets.index(target_name)
-        ra_planet = ra[index]
-        dec_planet = dec[index]
+        ra_planet = catalog.ra[index]
+        dec_planet = catalog.dec[index]
         sky_view_src.set(
             f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
             '&fov=0.2&sci=true'
@@ -1238,13 +1197,13 @@ def server(input, output, session):
         model_type = input.planet_model_type.get()
 
         target_name = input.target.get()
-        if target_name not in planets:
+        if target_name not in catalog.planets:
             rprs_square = 1.0
             teq_planet = 1000.0
         else:
-            index = planets.index(target_name)
-            teq_planet = teq[index]
-            rprs_square = rprs[index]**2.0
+            index = catalog.planets.index(target_name)
+            teq_planet = catalog.teq[index]
+            rprs_square = catalog.rprs[index]**2.0
 
         layout_kwargs = dict(
             width=1/2,
