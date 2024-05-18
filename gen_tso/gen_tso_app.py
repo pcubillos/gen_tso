@@ -72,7 +72,7 @@ filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
 tso_labels = {}
-tso_labels['Current'] = {'current': 'current'}
+#tso_labels['Current'] = {'current': 'current'}
 tso_labels['Transit'] = {}
 tso_labels['Eclipse'] = {}
 
@@ -146,16 +146,42 @@ app_ui = ui.page_fluid(
         ),
         ui.card(
             # current setup and TSO runs
-            ui.input_select(
-                id="display_tso_run",
-                label=ui.tooltip(
-                    "Display TSO run:",
-                    "TSO runs will show here after a 'Run Pandeia' call",
-                    placement='right',
+            ui.layout_columns(
+                # Left
+                ui.input_select(
+                    id="display_tso_run",
+                    label=ui.tooltip(
+                        "Display TSO run:",
+                        "TSO runs will show here after a 'Run Pandeia' call",
+                        placement='right',
+                    ),
+                    choices=tso_labels,
+                    selected=[''],
+                    #width='450px',
                 ),
-                choices=tso_labels,
-                selected=['current'],
-                width='450px',
+                # TBD: Set disabled based on existing TSOs
+                ui.layout_column_wrap(
+                    ui.input_action_button(
+                        id="save",
+                        label="Save TSO",
+                        class_="btn btn-outline-success btn-sm",
+                        disabled=False,
+                        width='110px',
+                    ),
+                    ui.input_action_button(
+                        id="delete",
+                        label="Delete TSO",
+                        class_='btn btn-outline-danger btn-sm',
+                        disabled=False,
+                        width='110px',
+                    ),
+                    width=1,
+                    gap='5px',
+                    class_="px-0 py-0 mx-0 my-0",
+                ),
+                col_widths=(9,3),
+                fill=True,
+                fillable=True,
             ),
             ui.input_action_button(
                 id="run_pandeia",
