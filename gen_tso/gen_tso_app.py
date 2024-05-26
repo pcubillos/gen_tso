@@ -4,6 +4,8 @@
 from collections.abc import Iterable
 import os
 import sys
+import pickle
+from pathlib import Path
 
 import numpy as np
 import scipy.interpolate as si
@@ -89,6 +91,7 @@ loading_folders = []
 if len(sys.argv) == 2:
     loading_folders.append(os.path.realpath(sys.argv[1]))
 loading_folders.append(f'{ROOT}data/models')
+current_dir = os.path.realpath(os.getcwd())
 
 for location in loading_folders:
     t_models, e_models, sed_models = collect_spectra(location)
@@ -162,14 +165,14 @@ app_ui = ui.page_fluid(
                 # TBD: Set disabled based on existing TSOs
                 ui.layout_column_wrap(
                     ui.input_action_button(
-                        id="save",
+                        id="save_button",
                         label="Save TSO",
                         class_="btn btn-outline-success btn-sm",
                         disabled=False,
                         width='110px',
                     ),
                     ui.input_action_button(
-                        id="delete",
+                        id="delete_button",
                         label="Delete TSO",
                         class_='btn btn-outline-danger btn-sm',
                         disabled=False,
@@ -939,10 +942,10 @@ def server(input, output, session):
         )
         if mode != 'target_acq':
             # The planet
-            tso_runs[tso_label][t_dur] = transit_dur
-            tso_runs[tso_label][obs_dur] = obs_dur
-            tso_runs[tso_label][depth_model_name] = depth_label
-            tso_runs[tso_label][depth_model] = depth_model
+            tso_runs[tso_label]['t_dur'] = transit_dur
+            tso_runs[tso_label]['obs_dur'] = obs_dur
+            tso_runs[tso_label]['depth_model_name'] = depth_label
+            tso_runs[tso_label]['depth_model'] = depth_model
 
         # TBD: set right behavior
         warnings_flag.set(True)
@@ -950,6 +953,71 @@ def server(input, output, session):
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
+    @reactive.effect
+    @reactive.event(input.save_button)
+    def _():
+        # Make a filename from current TSO
+        tso_label = input.display_tso_run.get()
+        tso = tso_runs[tso_label]
+        inst = tso['inst']
+        filename = f'tso_{inst}.pickle'
+
+        m = ui.modal(
+            ui.input_text(
+                id='tso_save_file',
+                label='Save TSO run to file:',
+                value=filename,
+                placeholder=tso_label,
+                width='100%',
+            ),
+            ui.HTML(f"Located in current folder:<br>'{current_dir}/'<br>"),
+            # TBD: I wish this could be used to browse a folder :(
+            #ui.input_file(
+            #    id="save_file_x",
+            #    label="Into this folder:",
+            #    button_label="Browse",
+            #    multiple=True,
+            #    width='100%',
+            #),
+            ui.input_action_button(
+                id='tso_save_button',
+                label='Save to file',
+            ),
+            title="Download TSO run",
+            easy_close=True,
+            size='l',
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    @reactive.event(input.tso_save_button)
+    def _():
+        tso_label = input.display_tso_run.get()
+        tso_run = tso_runs[tso_label]
+
+        filename = input.tso_save_file.get()
+        if filename.strip() == '':
+            filename = 'tso_run.pickle'
+        savefile = Path(f'{current_dir}/{filename}')
+        if savefile.suffix == '':
+            savefile = savefile.parent / f'{savefile.name}.pickle'
+        if savefile.exists():
+            stem = str(savefile.parent / savefile.stem)
+            extension = savefile.suffix
+            i = 1
+            savefile = Path(f'{stem}{i}{extension}')
+            while savefile.exists():
+                i += 1
+                savefile = Path(f'{stem}{i}{extension}')
+
+        with open(savefile, 'wb') as handle:
+            pickle.dump(tso_run, handle, protocol=4)
+        ui.modal_remove()
+        ui.notification_show(
+            f"TSO model saved to file: '{savefile}'",
+            type="message",
+            duration=5,
+        )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
@@ -1238,7 +1306,7 @@ def server(input, output, session):
     def warnings_label():
         if not warnings_flag.get():
             return "Warnings"
-        return ui.HTML(f'<div style="color:red;">Warnings</div>')
+        return ui.HTML('<div style="color:red;">Warnings</div>')
 
     @reactive.Effect
     @reactive.event(
