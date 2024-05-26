@@ -1,3 +1,6 @@
+interlinks:
+  fast: true
+
 quartodoc:
   style: pkgdown
   dir: api

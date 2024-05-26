@@ -37,6 +37,9 @@ dependencies = [
 [project.scripts]
 tso = "gen_tso.__main__:main"
 
+[tool.setuptools]
+packages = ["gen_tso"]
+
 [tool.setuptools.dynamic]
 version = {attr = "gen_tso.version.__version__"}
 
