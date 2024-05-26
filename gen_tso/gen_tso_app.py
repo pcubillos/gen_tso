@@ -19,55 +19,19 @@ from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
-
-# Confirmed planets
-nea_data = cat.load_nea_targets_table()
-planets = nea_data[0]
-hosts = nea_data[1]
-ra = nea_data[2]
-dec = nea_data[3]
-ks_mag = nea_data[4]
-teff = nea_data[5]
-log_g = nea_data[6]
-tr_dur = nea_data[7]
-rprs = nea_data[8]
-teq = nea_data[9]
-
-# JWST targets
-jwst_hosts, jwst_aliases, missing = cat.load_trexolits_table()
-
-# TESS candidates TBD
-
-aliases = cat.load_aliases()
-aka = {}
-for alias, name in aliases.items():
-    if name not in aka:
-        aka[name] = [alias]
-    else:
-        aka[name] = aka[name] + [alias]
-
-transit_planets = []
-non_transiting = []
-jwst_targets = []
-transit_aliases = []
-non_transiting_aliases = []
-jwst_aliases = []
-for i,target in enumerate(planets):
-    if tr_dur[i] is None:
-        non_transiting.append(target)
-        if target in aka:
-            non_transiting_aliases += aka[target]
-    else:
-        transit_planets.append(target)
-        if target in aka:
-            transit_aliases += aka[target]
-    if hosts[i] in jwst_hosts:
-        jwst_targets.append(target)
-        if target in aka:
-            jwst_aliases += aka[target]
-        # TBD: some jwst_hosts are not (yet) confirmed planets
+import gen_tso.catalogs.catalog_utils as u
 
 
+# Catalog of known exoplanets (and candidate planets)
+catalog = cat.Catalog()
+planets_array = np.array(catalog.planets)
+jwst_targets = list(planets_array[catalog.is_jwst])
+transit_planets = list(planets_array[catalog.is_transiting])
+non_transit_planets = list(planets_array[~catalog.is_transiting])
+candidate_planets = list(planets_array[~catalog.is_confirmed])
+planets_aka = u.invert_aliases(catalog.planet_aliases)
+
+# Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
 k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
@@ -108,7 +72,7 @@ filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
 tso_labels = {}
-tso_labels['Current'] = {'current': 'current'}
+#tso_labels['Current'] = {'current': 'current'}
 tso_labels['Transit'] = {}
 tso_labels['Eclipse'] = {}
 
@@ -141,7 +105,7 @@ for location in loading_folders:
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
-trexolits_url='https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
+trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 
 css_file = f'{ROOT}data/style.css'
 
@@ -182,16 +146,42 @@ app_ui = ui.page_fluid(
         ),
         ui.card(
             # current setup and TSO runs
-            ui.input_select(
-                id="display_tso_run",
-                label=ui.tooltip(
-                    "Display TSO run:",
-                    "TSO runs will show here after a 'Run Pandeia' call",
-                    placement='right',
+            ui.layout_columns(
+                # Left
+                ui.input_select(
+                    id="display_tso_run",
+                    label=ui.tooltip(
+                        "Display TSO run:",
+                        "TSO runs will show here after a 'Run Pandeia' call",
+                        placement='right',
+                    ),
+                    choices=tso_labels,
+                    selected=[''],
+                    #width='450px',
                 ),
-                choices=tso_labels,
-                selected=['current'],
-                width='450px',
+                # TBD: Set disabled based on existing TSOs
+                ui.layout_column_wrap(
+                    ui.input_action_button(
+                        id="save",
+                        label="Save TSO",
+                        class_="btn btn-outline-success btn-sm",
+                        disabled=False,
+                        width='110px',
+                    ),
+                    ui.input_action_button(
+                        id="delete",
+                        label="Delete TSO",
+                        class_='btn btn-outline-danger btn-sm',
+                        disabled=False,
+                        width='110px',
+                    ),
+                    width=1,
+                    gap='5px',
+                    class_="px-0 py-0 mx-0 my-0",
+                ),
+                col_widths=(9,3),
+                fill=True,
+                fillable=True,
             ),
             ui.input_action_button(
                 id="run_pandeia",
@@ -231,7 +221,7 @@ app_ui = ui.page_fluid(
                 ui.input_selectize(
                     id='target',
                     label='',
-                    choices=planets,
+                    choices=catalog.planets,
                     selected='WASP-80 b',
                     multiple=False,
                 ),
@@ -941,15 +931,24 @@ def server(input, output, session):
     @reactive.event(input.target_filter)
     def _():
         targets = []
+        aliases = []
         if 'jwst' in input.target_filter.get():
-            targets += [p for p in jwst_targets if p not in targets]
-            targets += [p for p in jwst_aliases if p not in targets]
+            targets += jwst_targets
+            aliases += catalog.jwst_aliases
         if 'transit' in input.target_filter.get():
-            targets += [p for p in transit_planets if p not in targets]
-            targets += [p for p in transit_aliases if p not in targets]
+            targets += transit_planets
+            aliases += catalog.transit_aliases
         if 'non_transit' in input.target_filter.get():
-            targets += [p for p in non_transiting if p not in targets]
-            targets += [p for p in non_transiting_aliases if p not in targets]
+            targets += non_transit_planets
+            aliases += catalog.non_transit_aliases
+        if 'tess' in input.target_filter.get():
+            targets += candidate_planets
+            aliases += catalog.candidate_aliases
+
+        # Remove duplicates, sort, and join:
+        targets = list(np.unique(targets))
+        aliases = list(np.unique(aliases))
+        targets += [alias for alias in aliases if alias not in targets]
 
         # Preserve current target if possible:
         current_target = input.target.get()
@@ -962,21 +961,24 @@ def server(input, output, session):
     @reactive.event(input.target)
     def target_label():
         target_name = input.target.get()
-        if target_name not in aka:
-            aka_tooltip = None
-        else:
-            aliases_text = ', '.join(aka[target_name])
+        if target_name in planets_aka:
+            aliases_text = ', '.join(planets_aka[target_name])
             aka_tooltip = ui.tooltip(
                 fa.icon_svg("circle-info", fill='cornflowerblue'),
                 f"Also known as: {aliases_text}",
                 placement='top',
             )
+        else:
+            aka_tooltip = None
 
         if target_name in jwst_targets:
+            idx = catalog.planets.index(target_name)
+            ra, dec = catalog.trexo_coords[idx]
+            url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("circle-info", fill='goldenrod'),
-                    href=f'{trexolits_url}',
+                    href=url,
                     target="_blank",
                 ),
                 "This target's host is on TrExoLiSTS",
@@ -988,6 +990,16 @@ def server(input, output, session):
                 'not a JWST target (yet)',
                 placement='top',
             )
+
+        if target_name in candidate_planets:
+            candidate_tooltip = ui.tooltip(
+                fa.icon_svg("triangle-exclamation", fill='darkorange'),
+                ui.markdown("This is a *candidate* planet"),
+                placement='top',
+            )
+        else:
+            candidate_tooltip = None
+
         return ui.span(
             'Known target? ',
             ui.tooltip(
@@ -1001,6 +1013,7 @@ def server(input, output, session):
             ),
             trexolists_tooltip,
             aka_tooltip,
+            candidate_tooltip,
         )
 
     @reactive.Effect
@@ -1008,25 +1021,29 @@ def server(input, output, session):
     def _():
         """Set known-target properties"""
         target_name = input.target.get()
-        if target_name in aliases:
-            ui.update_selectize('target', selected=aliases[target_name])
+        if target_name in catalog.planet_aliases:
+            ui.update_selectize(
+                'target',
+                selected=catalog.planet_aliases[target_name],
+            )
             return
 
-        if target_name not in planets:
+        if target_name not in catalog.planets:
             return
 
-        index = planets.index(target_name)
-        ui.update_text('teff', value=f'{teff[index]:.1f}')
-        ui.update_text('logg', value=f'{log_g[index]:.2f}')
+        index = catalog.planets.index(target_name)
+        teff = u.as_str(catalog.teff[index], '.1f', '')
+        log_g = u.as_str(catalog.log_g[index], '.2f', '')
+        ui.update_text('teff', value=teff)
+        ui.update_text('logg', value=log_g)
         ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{ks_mag[index]:.3f}')
-        t_dur = tr_dur[index]
+        ui.update_text('magnitude', value=f'{catalog.ks_mag[index]:.3f}')
+        t_dur = catalog.tr_dur[index]
         tr_duration = '' if t_dur is None else f'{t_dur:.3f}'
         ui.update_text('t_dur', value=tr_duration)
 
-        index = planets.index(target_name)
-        ra_planet = ra[index]
-        dec_planet = dec[index]
+        ra_planet = catalog.ra[index]
+        dec_planet = catalog.dec[index]
         sky_view_src.set(
             f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
             '&fov=0.2&sci=true'
@@ -1222,13 +1239,17 @@ def server(input, output, session):
         model_type = input.planet_model_type.get()
 
         target_name = input.target.get()
-        if target_name not in planets:
+        if target_name not in catalog.planets:
             rprs_square = 1.0
             teq_planet = 1000.0
         else:
-            index = planets.index(target_name)
-            teq_planet = teq[index]
-            rprs_square = rprs[index]**2.0
+            index = catalog.planets.index(target_name)
+            teq_planet = catalog.teq[index]
+            if catalog.rprs[index] is None:
+                rprs_square = 0.0
+            else:
+                rprs_square = catalog.rprs[index]**2.0
+        rprs_square_percent = np.round(100*rprs_square, decimals=4)
 
         layout_kwargs = dict(
             width=1/2,
@@ -1246,7 +1267,7 @@ def server(input, output, session):
                 ui.input_numeric(
                     id="depth",
                     label="",
-                    value=np.round(100*rprs_square, decimals=4),
+                    value=rprs_square_percent,
                     step=0.1,
                 ),
                 **layout_kwargs,
@@ -1257,7 +1278,7 @@ def server(input, output, session):
                 ui.input_numeric(
                     id="depth",
                     label="",
-                    value=np.round(100*rprs_square, decimals=4),
+                    value=rprs_square_percent,
                     step=0.1,
                 ),
                 ui.p("Temp (K):"),
@@ -1680,7 +1701,8 @@ def server(input, output, session):
         return (
             f'{exp_text}\n'
             f'Max. fraction of saturation: {100.0*sat_fraction:.1f}%\n'
-            f'ngroup below 80% and 100% saturation: {ngroup_80:d} / {ngroup_max:d}'
+            f'ngroup below  80% saturation: {ngroup_80:d}\n'
+            f'ngroup below 100% saturation: {ngroup_max:d}'
         )
 
 app = App(app_ui, server)

@@ -2,8 +2,12 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 from .source_catalog import *
-from .source_catalog import __all__
+from .fetch_catalogs import *
 
+__all__ = (
+    source_catalog.__all__
+    + fetch_catalogs.__all__
+)
 
 # Clean up top-level namespace--delete everything that isn't in __all__
 # or is a magic attribute, and that isn't a submodule of this package

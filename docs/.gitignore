@@ -1,0 +1,7 @@
+/.quarto/
+_site
+_variables.yml
+api/
+objects.txt
+objects.inv
+objects.json

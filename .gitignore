@@ -2,6 +2,7 @@
 *.swp
 *.DS_Store
 *~
+gen_tso/data/last_updated*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
