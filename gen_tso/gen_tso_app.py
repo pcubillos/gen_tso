@@ -72,9 +72,9 @@ filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
 tso_labels = {}
-#tso_labels['Current'] = {'current': 'current'}
 tso_labels['Transit'] = {}
 tso_labels['Eclipse'] = {}
+tso_labels['Acquisition'] = {}
 
 cache_saturation = {}
 spectrum_choices = {
@@ -544,11 +544,15 @@ app_ui = ui.page_fluid(
                 ),
                 id="tab",
             ),
-            ui.card(
-                ui.card_header(
+            ui.navset_card_tab(
+                ui.nav_panel(
                     "Results",
+                    ui.output_text_verbatim(id="exp_time")
                 ),
-                ui.output_text_verbatim(id="exp_time")
+                ui.nav_panel(
+                    ui.output_ui('warnings_label'),
+                    ui.output_text_verbatim(id="warnings")
+                ),
             ),
             col_widths=[12, 12],
             fill=False,
@@ -716,6 +720,7 @@ def server(input, output, session):
     saturation_label = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
+    warnings_flag = reactive.Value(False)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -846,6 +851,8 @@ def server(input, output, session):
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
             aperture = input.disperser.get()
+            disperser = None
+
 
         obs_geometry = input.geometry.get()
         transit_dur = float(input.t_dur.get())
@@ -855,34 +862,50 @@ def server(input, output, session):
         )
         # TBD: if exp_time << obs_dur, raise warning
 
-        depth_label, wl, depth = parse_depth_model(input)
-        if depth_label is None:
-            ui.notification_show(
-                f"No {obs_geometry.lower()} depth model to simulate",
-                type="error",
-                duration=5,
-            )
-            return
-        if depth_label not in spectra:
-            spectrum_choices[obs_geometry.lower()].append(depth_label)
-            spectra[depth_label] = {'wl': wl, 'depth': depth}
-        depth_model = [wl, depth]
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        #print(
+        #    repr(inst), repr(mode), repr(disperser), repr(filter),
+        #    repr(subarray), repr(readout), repr(aperture),
+        #)
 
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        print(sed_type, sed_model, norm_band, repr(norm_mag))
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-        tso = pando.tso_calculation(
-            obs_geometry.lower(), transit_dur, exp_time, depth_model,
-            ngroup, disperser, filter, subarray, readout, aperture,
+
+        if mode == 'target_acq':
+            nint = 1
+            tso = pando.perform_calculation(
+                ngroup, nint, disperser, filter, subarray, readout, aperture,
+            )
+            obs_geometry = 'Acquisition'
+            depth_label = ''
+        else:
+            depth_label, wl, depth = parse_depth_model(input)
+            if depth_label is None:
+                ui.notification_show(
+                    f"No {obs_geometry.lower()} depth model to simulate",
+                    type="error",
+                    duration=5,
+                )
+                return
+            if depth_label not in spectra:
+                spectrum_choices[obs_geometry.lower()].append(depth_label)
+                spectra[depth_label] = {'wl': wl, 'depth': depth}
+            depth_model = [wl, depth]
+
+            tso = pando.tso_calculation(
+                obs_geometry.lower(), transit_dur, exp_time, depth_model,
+                ngroup, disperser, filter, subarray, readout, aperture,
+            )
+
+        detector_label = jwst.detector_label(
+            inst, mode, disperser, filter, subarray, readout,
         )
 
         ui.notification_show(
             "TSO model simulated!",
             type="message",
             duration=2,
-        )
-        detector_label = jwst.detector_label(
-            mode, disperser, filter, subarray, readout,
         )
         group_ints = f'({ngroup} G, {nint} I)'
         pretty_label = (
@@ -902,12 +925,7 @@ def server(input, output, session):
             sed_model=sed_model,
             norm_band=norm_band,
             norm_mag=norm_mag,
-            # The planet
             obs_type=obs_geometry,
-            t_dur=transit_dur,
-            obs_dur=obs_dur,
-            depth_model_name=depth_label,
-            depth_model=depth_model,
             # The instrumental setting
             aperture=aperture,
             disperser=disperser,
@@ -919,7 +937,15 @@ def server(input, output, session):
             tso=tso,
             #pandeia_results=pandeia_results,
         )
+        if mode != 'target_acq':
+            # The planet
+            tso_runs[tso_label][t_dur] = transit_dur
+            tso_runs[tso_label][obs_dur] = obs_dur
+            tso_runs[tso_label][depth_model_name] = depth_label
+            tso_runs[tso_label][depth_model] = depth_model
 
+        # TBD: set right behavior
+        warnings_flag.set(True)
         print(inst, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
@@ -1208,6 +1234,12 @@ def server(input, output, session):
         obs_geometry = input.geometry.get()
         return f"{obs_geometry} depth"
 
+    @render.ui
+    def warnings_label():
+        if not warnings_flag.get():
+            return "Warnings"
+        return ui.HTML(f'<div style="color:red;">Warnings</div>')
+
     @reactive.Effect
     @reactive.event(
         input.t_dur, input.settling_time, input.baseline_time,
@@ -1468,10 +1500,6 @@ def server(input, output, session):
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
-        #print(
-        #    repr(inst), repr(mode), repr(disperser), repr(filter),
-        #    repr(subarray), repr(readout), repr(aperture),
-        #)
 
         if mode == 'bots':
             disperser, filter = filter.split('/')
