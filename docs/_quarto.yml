@@ -13,7 +13,6 @@ format:
   html:
     theme:
       light: cosmo
-    #css: styles.css
     toc: true
     toc-location: left
 
