@@ -28,7 +28,7 @@ to the top folder of the data (the directory containing the VERSION_PSF file).
 
 Then, you need to download these three reference stellar and calibration files, for example with these commands:
 
-```bash
+```{.bash filename=run.sh}
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_kurucz-1993-atlas_multi_v2_synphot4.tar
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_pheonix-models_multi_v3_synphot5.tar
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_everything_multi_v15_sed.tar
