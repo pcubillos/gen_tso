@@ -34,6 +34,7 @@ clean:  ## Remove build artefacts
 	rm -rf api/
 	rm -rf _site/
 	rm -rf _inv/
+	rm -f _variables.yml
 	rm -f objects.txt
 	rm -f objects.inv
 
