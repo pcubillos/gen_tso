@@ -31,7 +31,7 @@ clean:  ## Remove build artefacts
 	rm -rf .quarto
 	rm -rf tutorials/*.ipynb
 	rm -rf examples/*.ipynb
-	rm -rf reference/
+	rm -rf api/
 	rm -rf _site/
 	rm -rf _inv/
 	rm -f objects.txt
