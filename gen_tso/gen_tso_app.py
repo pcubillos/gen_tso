@@ -6,6 +6,7 @@ import os
 import sys
 import pickle
 from pathlib import Path
+import textwrap
 
 import numpy as np
 import scipy.interpolate as si
@@ -186,9 +187,10 @@ app_ui = ui.page_fluid(
                 fill=True,
                 fillable=True,
             ),
-            ui.input_action_button(
+            ui.input_task_button(
                 id="run_pandeia",
                 label="Run Pandeia",
+                label_busy="processing...",
             ),
         ),
         col_widths=[6,6],
@@ -723,7 +725,7 @@ def server(input, output, session):
     saturation_label = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
-    warnings_flag = reactive.Value(False)
+    warning_text = reactive.Value('')
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -946,9 +948,17 @@ def server(input, output, session):
             tso_runs[tso_label]['obs_dur'] = obs_dur
             tso_runs[tso_label]['depth_model_name'] = depth_label
             tso_runs[tso_label]['depth_model'] = depth_model
+            # Take report with more flux in it:
+            rep_label = 'report_out' if obs_geometry=='Transit' else 'report_in'
+            report = tso[rep_label]
+        else:
+            report = tso
 
-        # TBD: set right behavior
-        warnings_flag.set(True)
+        if len(report['warnings']) > 0:
+            warning_text.set(report['warnings'])
+        else:
+            warning_text.set('')
+
         print(inst, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
@@ -1303,10 +1313,13 @@ def server(input, output, session):
         return f"{obs_geometry} depth"
 
     @render.ui
+    @reactive.event(warning_text)
     def warnings_label():
-        if not warnings_flag.get():
+        warnings = warning_text.get()
+        if warnings == '':
             return "Warnings"
-        return ui.HTML('<div style="color:red;">Warnings</div>')
+        n_warn = len(warnings)
+        return ui.HTML(f'<div style="color:red;">Warnings ({n_warn})</div>')
 
     @reactive.Effect
     @reactive.event(
@@ -1800,6 +1813,22 @@ def server(input, output, session):
             f'ngroup below  80% saturation: {ngroup_80:d}\n'
             f'ngroup below 100% saturation: {ngroup_max:d}'
         )
+
+    @render.text
+    @reactive.event(warning_text)
+    def warnings():
+        warnings = warning_text.get()
+        if warnings == '':
+            return 'No warnings'
+        text = ''
+        for warn_label, warn_text in warnings.items():
+            warn = textwrap.fill(
+                f'- {warn_text}',
+                subsequent_indent='  ',
+                width=60,
+            )
+            text += warn + '\n\n'
+        return text
 
 app = App(app_ui, server)
 
