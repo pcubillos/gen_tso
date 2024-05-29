@@ -552,7 +552,14 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Results",
-                    ui.output_text_verbatim(id="exp_time")
+                    cs.custom_card(
+                        ui.span(
+                            ui.output_ui(id="exp_time"),
+                            style="font-family: monospace; font-size:medium;",
+                        ),
+                        body_args=dict(padding='8px'),
+                        style="background: #F2F2F2!important; border-radius: 3px;",
+                    ),
                 ),
                 ui.nav_panel(
                     ui.output_ui('warnings_label'),
@@ -1769,7 +1776,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
-    @render.text
+    @render.ui
     def exp_time():
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
@@ -1784,7 +1791,7 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
         if ngroup is None or detector is None or sed_label is None:
-            return ' '
+            return ui.HTML(' ')
 
         ngroup = int(ngroup)
         sat_label = make_saturation_label(
@@ -1795,7 +1802,9 @@ def server(input, output, session):
             inst, subarray, readout, ngroup, int(nint),
         )
         exposure_hours = exp_time / 3600.0
-        exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
+        exp_text = ui.HTML(
+            f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
+        )
 
         saturation_label.get()  # enforce calc_saturation renders exp_time
         if sat_label not in cache_saturation:
@@ -1807,11 +1816,29 @@ def server(input, output, session):
         sat_fraction = pixel_rate * sat_time / full_well
         ngroup_80 = int(0.8*ngroup/sat_fraction)
         ngroup_max = int(ngroup/sat_fraction)
-        return (
-            f'{exp_text}\n'
-            f'Max. fraction of saturation: {100.0*sat_fraction:.1f}%\n'
-            f'ngroup below  80% saturation: {ngroup_80:d}\n'
-            f'ngroup below 100% saturation: {ngroup_max:d}'
+        saturation = f'{100.0*sat_fraction:.1f}%'
+        ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80:d}'
+        ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max:d}'
+
+        if sat_fraction >= 1.0:
+            saturation = f'<span class="danger">{saturation}</span>'
+        elif sat_fraction > 0.81:
+            saturation = f'<span class="warning">{saturation}</span>'
+
+        if ngroup_80 < 2:
+            ngroup_80_sat = f'<span class="danger">{ngroup_80_sat}</span>'
+        elif ngroup_80 == 2:
+            ngroup_80_sat = f'<span class="warning">{ngroup_80_sat}</span>'
+
+        if ngroup_max < 2:
+            ngroup_max_sat = f'<span class="danger">{ngroup_max_sat}</span>'
+        elif ngroup_max == 2:
+            ngroup_max_sat = f'<span class="warning">{ngroup_max_sat}</span>'
+        return ui.HTML(
+            f'{exp_text}<br>'
+            f'Max. fraction of saturation: {saturation}<br>'
+            f'{ngroup_80_sat}<br>'
+            f'{ngroup_max_sat}<br>'
         )
 
     @render.text

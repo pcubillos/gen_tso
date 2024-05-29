@@ -10,3 +10,14 @@
     background-color:#ffc60a;
     border-color:#eeba0b;
 }
+
+.warning {
+    color: #ffa500;
+    font-weight: bold;
+}
+
+.danger {
+    color: red;
+    font-weight: bold;
+}
+
