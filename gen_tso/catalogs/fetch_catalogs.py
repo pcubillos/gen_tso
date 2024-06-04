@@ -34,7 +34,6 @@ import pyratbay.constants as pc
 if False:
     from gen_tso.utils import ROOT
     import gen_tso.catalogs.utils as u
-    from gen_tso.catalogs.source_catalog import load_targets_table
     from gen_tso.catalogs import target as tar
     from gen_tso.catalogs.target import Target
 
@@ -94,8 +93,8 @@ def update_databases():
     # Update NEA confirmed targets and their aliases
     fetch_nea_confirmed_targets()
     # Fetch confirmed aliases
-    nea_data = load_targets_table()
-    hosts = np.unique(nea_data[1])
+    targets = load_targets()
+    hosts = np.unique([target.host for target in targets])
     output_file = f'{ROOT}data/nea_aliases.pickle'
     fetch_aliases(hosts, output_file)
 
@@ -526,8 +525,8 @@ def fetch_aliases(hosts, output_file=None):
     >>> from gen_tso.utils import ROOT
 
     >>> # Confirmed targets
-    >>> nea_data = cat.load_targets_table()
-    >>> hosts = np.unique(nea_data[1])
+    >>> targets = cat.load_targets()
+    >>> hosts = np.unique([target.host for target in targets])
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
     >>> cat.fetch_aliases(hosts, output_file)
     """

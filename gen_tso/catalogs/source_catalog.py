@@ -2,17 +2,44 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'find_target',
     'Catalog',
-    'load_targets_table',
+    'load_targets',
     'load_trexolist_table',
     'load_aliases',
 ]
 
 from astropy.io import ascii
 import numpy as np
+from prompt_toolkit import prompt
+from prompt_toolkit.completion import WordCompleter
 
 from ..utils import ROOT
-from . import catalog_utils as u
+from . import utils as u
+
+
+def find_target(targets=None):
+    """
+    Interactive prompt with tab-completion to search for targets.
+    """
+    if targets is None:
+        targets = load_targets('nea_data.txt')
+    confirmed_planets = [target.planet for target in targets]
+
+    completer = WordCompleter(
+        confirmed_planets,
+        sentence=True,
+        match_middle=True,
+    )
+    planet = prompt(
+        'Enter Planet name: ',
+        completer=completer,
+        complete_while_typing=False,
+    )
+    if planet in confirmed_planets:
+        target = targets[confirmed_planets.index(planet)]
+
+    return target
 
 
 class Catalog():
@@ -106,7 +133,7 @@ class Catalog():
         # TBD
 
 
-def load_targets_table(database='nea_data.txt'):
+def load_targets(database='nea_data.txt'):
     """
     Unpack star and planet properties from plain text file.
 
@@ -117,58 +144,46 @@ def load_targets_table(database='nea_data.txt'):
 
     Returns
     -------
-    planets: 1D string array
-    hosts: 1D string array
-    ra: 1D float array
-    dec: 1D float array
-    ks_mag: 1D float array
-    teff: 1D float array
-    log_g: 1D float array
-    tr_dur: 1D float array
-    rprs: 1D float array
-    teq: 1D float array
+    targets: List of Target
 
     Examples
     --------
     >>> import source_catalog as cat
     >>> nea_data = cat.load_nea_targets_table()
     """
+    # database = 'new_nea_data.txt'
     with open(f'{ROOT}data/{database}', 'r') as f:
         lines = f.readlines()
 
-    planets = []
-    hosts = []
-    ra = []
-    dec = []
-    ks_mag = []
-    teff = []
-    log_g = []
-    tr_dur = []
-    rprs = []
-    teq = []
-
+    lines = [
+        line for line in lines
+        if not line.strip().startswith('#')
+    ]
+    targets = []
     for line in lines:
         if line.startswith('>'):
             name_len = line.find(':')
             host = line[1:name_len]
-            st_ra, st_dec, st_mag, st_teff, st_logg = line[name_len+1:].split()
+            star_vals = np.array(line[name_len+1:].split(), float)
+            ra, dec, ks_mag, rstar, mstar, teff, logg, metal = star_vals
         elif line.startswith(' '):
             name_len = line.find(':')
             planet = line[1:name_len].strip()
-            pl_tr_dur, pl_rprs, pl_teq = line[name_len+1:].split()
+            planet_vals = np.array(line[name_len+1:].split(), float)
+            transit_dur, rplanet, mplanet, sma, period, teq = planet_vals
 
-            planets.append(planet)
-            hosts.append(host)
-            ra.append(float(st_ra))
-            dec.append(float(st_dec))
-            ks_mag.append(u.to_float(st_mag))
-            teff.append(u.to_float(st_teff))
-            log_g.append(u.to_float(st_logg))
-            tr_dur.append(u.to_float(pl_tr_dur))
-            rprs.append(u.to_float(pl_rprs))
-            teq.append(u.to_float(pl_teq))
+            target = Target(
+                host=host,
+                mstar=mstar, rstar=rstar, teff=teff, logg_star=logg,
+                metal_star=metal,
+                ks_mag=ks_mag, ra=ra, dec=dec,
+                planet=planet,
+                mplanet=mplanet, rplanet=rplanet,
+                period=period, sma=sma, transit_dur=transit_dur,
+            )
+            targets.append(target)
 
-    return planets, hosts, ra, dec, ks_mag, teff, log_g, tr_dur, rprs, teq
+    return targets
 
 
 def load_trexolist_table():
@@ -209,8 +224,8 @@ def load_trexolist_table():
     norm_targets = np.unique(norm_targets)
 
     # jwst targets that are in NEA catalog:
-    nea_data = load_targets_table('nea_data.txt')
-    tess_data = load_targets_table('tess_data.txt')
+    nea_targets = load_targets_table('nea_data.txt')
+    tess_targets = load_targets_table('tess_data.txt')
     hosts = list(nea_data[1]) + list(tess_data[1])
 
     aliases = load_aliases(as_hosts=True)

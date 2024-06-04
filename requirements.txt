@@ -9,4 +9,4 @@ plotly
 shinywidgets>=0.3.0
 pyratbay>=1.1.6
 faicons
-
+prompt_toolkit>=3.0.0
