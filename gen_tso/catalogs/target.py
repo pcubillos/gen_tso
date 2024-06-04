@@ -9,7 +9,7 @@ import numpy as np
 import pyratbay.constants as pc
 import pyratbay.atmosphere as pa
 
-from . import catalog_utils as u
+from . import utils as u
 
 
 class Target():
@@ -411,7 +411,7 @@ def rank_planets(target, alt_targets):
             rank[i] = np.sum(~alt_miss & missing)
         if np.all(rank==0):
             break
-        
+
         # loop by rank
         i_rank = np.argsort(-rank)[0]
         alt = alt_targets[i_rank]
@@ -423,7 +423,7 @@ def rank_planets(target, alt_targets):
             )
             if update:
                 setattr(target, prop, getattr(alt, prop))
-                target._complete_values(False)
+                target._complete_values()
     return t
 
 
