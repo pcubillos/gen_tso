@@ -14,11 +14,6 @@ __all__ = [
     'get_host',
     'select_alias',
     'invert_aliases',
-    'rank_planets',
-    'solve_period_sma',
-    'solve_rp_rs',
-    'solve_a_rs',
-    'complete_entry',
     'to_float',
     'as_str',
 ]
@@ -188,15 +183,15 @@ def get_letter(name):
 
 def get_host(name):
     """
-    Extract 'letter' identifier for a planet name.
+    Extract host name from a given planet name.
     Valid confirmed planet names end with a lower-case letter preceded
     by a blank.  Valid planet candidate names end with a dot followed
     by two numbers.
 
     Examples
     --------
-    >>> get_letter('TOI-741.01')
-    >>> get_letter('WASP-69 b')
+    >>> get_host('TOI-741.01')
+    >>> get_host('WASP-69 b')
     """
     if is_letter(name):
         return name[:-2]
@@ -229,76 +224,6 @@ def invert_aliases(aliases):
     return aka
 
 
-def rank_planets(entries):
-    """
-    Rank entries with the most data
-    """
-    points = [
-        (
-            (entry['st_teff'] is None) +
-            (entry['st_logg'] is None) +
-            (entry['st_met'] is None) +
-            (entry['pl_trandur'] is None) +
-            (entry['pl_rade'] is None) +
-            (entry['pl_orbsmax'] is None and entry['pl_ratdor'] is None) +
-            (entry['st_rad'] is None and entry['pl_ratror'] is None)
-        )
-        for entry in entries
-    ]
-    rank = np.argsort(np.array(points))
-    return rank
-
-
-def solve_period_sma(period, sma, mstar):
-    """
-    Solve period-sma-mstar system values.
-    """
-    if mstar is None or mstar == 0:
-        return period, sma
-    if period is None and sma is not None:
-        period = (
-            2.0*np.pi * np.sqrt((sma*pc.au)**3.0/pc.G/(mstar*pc.msun)) / pc.day
-        )
-    elif sma is None and period is not None:
-        sma = (
-            ((period*pc.day/(2.0*np.pi))**2.0*pc.G*mstar*pc.msun)**(1/3) / pc.au
-        )
-    return period, sma
-
-
-def solve_rp_rs(rp, rs, rprs):
-    if rp is None and rs is not None and rprs is not None:
-        rp = rprs * (rs*pc.rsun) / pc.rearth
-    if rs is None and rp is not None and rprs is not None:
-        rs = rp*pc.rearth / rprs / pc.rsun
-    if rprs is None and rp is not None and rs is not None:
-        rprs = rp*pc.rearth / (rs*pc.rsun)
-    return rp, rs, rprs
-
-
-def solve_a_rs(a, rs, ars):
-    if a is None and rs is not None and ars is not None:
-        a = ars * (rs*pc.rsun) / pc.au
-    if rs is None and a is not None and ars is not None:
-        rs = a*pc.au / ars / pc.rsun
-    if ars is None and a is not None and rs is not None:
-        ars = a*pc.au / (rs*pc.rsun)
-    return a, rs, ars
-
-
-def complete_entry(entry):
-    entry['pl_rade'], entry['st_rad'], entry['pl_ratror'] = solve_rp_rs(
-        entry['pl_rade'], entry['st_rad'], entry['pl_ratror'],
-    )
-    entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'] = solve_a_rs(
-        entry['pl_orbsmax'], entry['st_rad'], entry['pl_ratdor'],
-    )
-    entry['pl_orbper'], entry['pl_orbsmax'] = solve_period_sma(
-        entry['pl_orbper'], entry['pl_orbsmax'], entry['st_mass']
-    )
-    return entry
-
-
 def to_float(value):
     """
     Cast string to None or float type.
@@ -312,7 +237,7 @@ def as_str(val, fmt, if_none=None):
     """
     Format as string
     """
-    if val is None:
+    if val is None or np.isnan(val):
         return if_none
     return f'{val:{fmt}}'
 

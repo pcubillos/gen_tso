@@ -22,7 +22,7 @@ from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
-import gen_tso.catalogs.catalog_utils as u
+import gen_tso.catalogs.utils as u
 
 
 # Catalog of known exoplanets (and candidate planets)
