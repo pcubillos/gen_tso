@@ -3,10 +3,12 @@
 
 from .source_catalog import *
 from .fetch_catalogs import *
+from .target import *
 
 __all__ = (
     source_catalog.__all__
     + fetch_catalogs.__all__
+    + target.__all__
 )
 
 # Clean up top-level namespace--delete everything that isn't in __all__
