@@ -4,7 +4,7 @@
 __all__ = [
     'find_target',
     'Catalog',
-    'load_trexolist',
+    'load_trexolists',
     'load_targets',
     'load_aliases',
 ]
@@ -16,30 +16,43 @@ from prompt_toolkit.completion import WordCompleter
 
 from ..utils import ROOT
 from . import utils as u
+from .target import Target
 
 
 def find_target(targets=None):
     """
     Interactive prompt with tab-completion to search for targets.
+
+    Parameters
+    ----------
+    targets: list of Target objects
     """
     if targets is None:
-        targets = load_targets('nea_data.txt')
-    confirmed_planets = [target.planet for target in targets]
+        targets = load_targets('nea_data.txt', is_confirmed=True)
+    planets = [target.planet for target in targets]
+    aliases = []
+    for target in targets:
+        aliases += target.aliases
+    planets += list(aliases)
 
     completer = WordCompleter(
-        confirmed_planets,
+        planets,
         sentence=True,
         match_middle=True,
     )
-    planet = prompt(
+    name = prompt(
         'Enter Planet name: ',
         completer=completer,
         complete_while_typing=False,
     )
-    if planet in confirmed_planets:
-        target = targets[confirmed_planets.index(planet)]
+    if name in aliases:
+        for target in targets:
+            if name in target.aliases:
+                return target
+    if name in planets:
+        return targets[planets.index(name)]
 
-    return target
+    return None
 
 
 class Catalog():
@@ -53,87 +66,105 @@ class Catalog():
     """
     def __init__(self):
         # Confirmed planets and TESS candidates
-        nea_data = load_targets_table('nea_data.txt')
-        tess_data = load_targets_table('tess_data.txt')
+        nea_targets = load_targets('nea_data.txt', is_confirmed=True)
+        tess_targets = load_targets('tess_data.txt', is_confirmed=False)
+        self.targets = nea_targets + tess_targets
 
-        confirmed_planets = nea_data[0]
-        tess_planets = tess_data[0]
-        self.planets = confirmed_planets + tess_planets
-
-        self.hosts = nea_data[1] + tess_data[1]
-        self.ra = nea_data[2] + tess_data[2]
-        self.dec = nea_data[3] + tess_data[3]
-        self.ks_mag = nea_data[4] + tess_data[4]
-        self.teff = nea_data[5] + tess_data[5]
-        self.log_g = nea_data[6] + tess_data[6]
-        self.tr_dur = nea_data[7] + tess_data[7]
-        self.rprs = nea_data[8] + tess_data[8]
-        self.teq = nea_data[9] + tess_data[9]
+        self.planets = (
+            [target.planet for target in nea_targets] +
+            [target.planet for target in tess_targets]
+        )
 
         # JWST targets
-        jwst_targets, trexo_ra, trexo_dec = load_trexolists(
-            extract='coords',
-        )
-        njwst = len(jwst_targets)
+        jwst_hosts, trexo_ra, trexo_dec = load_trexolists(extract='coords')
+        njwst = len(jwst_hosts)
         host_aliases = load_aliases(as_hosts=True)
-        hosts_aka = u.invert_aliases(host_aliases)
+        #hosts = [target.host for target in self.targets]
+        #hosts_aka = u.invert_aliases(host_aliases)
         for i in range(njwst):
-            if jwst_targets[i] in host_aliases:
-                jwst_targets[i] = host_aliases[jwst_targets[i]]
+            if jwst_hosts[i] in host_aliases:
+                jwst_hosts[i] = host_aliases[jwst_hosts[i]]
             # if host NEA name != planet NEA name
-            if jwst_targets[i] not in self.hosts:
-                for host in hosts_aka[jwst_targets[i]]:
-                    if host in self.hosts:
-                        jwst_targets[i] = host
+            #if jwst_hosts[i] not in hosts:
+            #    print(jwst_hosts[i])
+            #    for host in hosts_aka[jwst_hosts[i]]:
+            #        if host in self.hosts:
+            #            jwst_hosts[i] = host
 
-        self.planet_aliases = load_aliases()
-        planets_aka = u.invert_aliases(self.planet_aliases)
+        planet_aliases = load_aliases()
+        planets_aka = u.invert_aliases(planet_aliases)
 
-        self.nplanets = nplanets = len(self.planets)
-        self.is_transiting = np.zeros(nplanets, bool)
-        self.is_jwst = np.zeros(nplanets, bool)
-        self.is_confirmed = np.zeros(nplanets, bool)
-        self.trexo_coords = [None for _ in self.planets]
-        self.jwst_aliases = []
-        self.transit_aliases = []
-        self.non_transit_aliases = []
-        self.confirmed_aliases = []
-        self.candidate_aliases = []
+        for target in self.targets:
+            target.is_jwst = target.host in jwst_hosts and target.is_transiting
+            if target.is_jwst:
+                j = list(jwst_hosts).index(target.host)
+                target.trexo_ra_dec = (trexo_ra[j], trexo_dec[j])
 
-        for i,target in enumerate(self.planets):
-            self.is_transiting[i] = self.tr_dur[i] is not None
-            self.is_confirmed[i] = target not in tess_planets
-            self.is_jwst[i] = (
-                self.hosts[i] in jwst_targets and
-                self.is_transiting[i]
-            )
+            if target.planet in planets_aka:
+                target.aliases = planets_aka[target.planet]
 
-            # Now get the aliases lists:
-            if target not in planets_aka:
-                continue
-            aliases = planets_aka[target]
-
-            if self.is_jwst[i]:
-                self.jwst_aliases += aliases
-                j = list(jwst_targets).index(self.hosts[i])
-                self.trexo_coords[i] = (trexo_ra[j], trexo_dec[j])
-
-            if self.is_transiting[i]:
-                self.transit_aliases += aliases
-            else:
-                self.non_transit_aliases += aliases
-
-            if self.is_confirmed[i]:
-                self.confirmed_aliases += aliases
-            else:
-                self.candidate_aliases += aliases
-
-    def show_target(self, target):
-        target = u.normalize_name(target)
-        # TBD
+        self._transit_mask = [target.is_transiting for target in self.targets]
+        self._jwst_mask = [target.is_jwst for target in self.targets]
+        self._confirmed_mask = [target.is_confirmed for target in self.targets]
 
 
-def load_targets(database='nea_data.txt'):
+    def get_target(
+            self, name=None,
+            is_transit=True, is_jwst=None, is_confirmed=True,
+        ):
+        """
+        Search by name for a planet in the catalog.
+
+        Parameters
+        ----------
+        name: String
+            If not None, name of the planet to search.
+            If None, an interactive prompt will open to search for the planet
+        is_transit: Bool
+            If True/False restrict search to transiting/non-transiting planets
+            If None, consider all targets.
+        is_jwst: Bool
+            If True/False restrict search to planet of/not JWST hosts
+            If None, consider all targets.
+        is_confirmed: Bool
+            If True/False restrict search to confirmed/candidate planets
+            If None, consider all targets.
+
+        Returns
+        -------
+        target: a Target object
+            Target with the system properties of the searched planet.
+            If no target was found on the catalog, return None.
+        """
+        mask = np.ones(len(self.targets), bool)
+        if is_transit is not None:
+            mask &= np.array(self._transit_mask) == is_transit
+        if is_jwst is not None:
+            mask &= np.array(self._jwst_mask) == is_jwst
+        if is_confirmed is not None:
+            mask &= np.array(self._confirmed_mask) == is_confirmed
+
+        targets = [target for target,flag in zip(self.targets,mask) if flag]
+
+        if name is None:
+            return find_target(targets)
+
+        target = u.normalize_name(name)
+        for target in targets:
+            if name == target.planet or name in target.aliases:
+                return target
+
+    def show_target(
+            self, name=None,
+            is_transit=True, is_jwst=None, is_confirmed=True,
+        ):
+        target = self.get_target(name, is_transit, is_jwst, is_confirmed)
+        if target is None:
+            return
+        print(target)
+
+
+def load_targets(database='nea_data.txt', is_confirmed=np.nan):
     """
     Unpack star and planet properties from plain text file.
 
@@ -180,6 +211,7 @@ def load_targets(database='nea_data.txt'):
                 planet=planet,
                 mplanet=mplanet, rplanet=rplanet,
                 period=period, sma=sma, transit_dur=transit_dur,
+                is_confirmed=is_confirmed,
             )
             targets.append(target)
 
@@ -216,7 +248,7 @@ def load_trexolists(grouped=False, trexo_file=None, extract='target'):
 
     targets = trexolist_data['Target'].data
     norm_targets = [
-        normalize_name(target)
+        u.normalize_name(target)
         for target in targets
     ]
 
@@ -259,82 +291,11 @@ def load_trexolists(grouped=False, trexo_file=None, extract='target'):
     return target_sets
 
 
-def load_trexolist_table():
-    """
-    Get the list of targets in trexolists (as named at the NEA).
-    A dictionary of name aliases contains alternative names found.
-
-    Returns
-    -------
-    jwst_targets: List
-        trexolists host names as found in the NEA database.
-    aliases: Dict
-        An aliases dict that takes trexolists name to NEA name.
-    missing: List
-        trexolists hosts not found in the NEA database.
-    original_names: Dict
-        Names of targets as listed in the trexolists database.
-
-    Examples
-    --------
-    >>> import gen_tso.catalogs as cat
-    >>> targets, aliases, missing, og = cat.load_trexolist_table()
-    """
-    trexolist_data = ascii.read(
-        f'{ROOT}data/trexolists.csv',
-        format='csv', guess=False, fast_reader=False, comment='#',
-    )
-    targets = np.unique(trexolist_data['Target'].data)
-
-    original_names = {}
-    norm_targets = []
-    for target in targets:
-        name = u.normalize_name(target)
-        norm_targets.append(name)
-        if name not in original_names:
-            original_names[name] = []
-        original_names[name] += [target]
-    norm_targets = np.unique(norm_targets)
-
-    # jwst targets that are in NEA catalog:
-    nea_targets = load_targets_table('nea_data.txt')
-    tess_targets = load_targets_table('tess_data.txt')
-    hosts = list(nea_data[1]) + list(tess_data[1])
-
-    aliases = load_aliases(as_hosts=True)
-    for host in hosts:
-        aliases[host] = host
-
-    # As named in NEA catalogs:
-    jwst_aliases = {}
-    missing = []
-    for target in norm_targets:
-        if target in aliases:
-            jwst_aliases[target] = aliases[target]
-        elif target.endswith(' A') and target[:-2] in aliases:
-            jwst_aliases[target] = aliases[target[:-2]]
-        else:
-            missing.append(target)
-    for name in list(jwst_aliases.values()):
-        jwst_aliases[name] = name
-
-    # TBD: Check this does not break for incomplete lists
-    trexo_names = {}
-    for name in original_names:
-        alias = jwst_aliases[name]
-        if alias not in trexo_names:
-            trexo_names[alias] = []
-        trexo_names[alias] += original_names[name]
-
-    jwst_targets = np.unique(list(jwst_aliases.values()))
-    return jwst_targets, jwst_aliases, np.unique(missing), trexo_names
-
-
 def load_aliases(as_hosts=False):
     """
     Load file with known aliases of NEA targets.
     """
-    with open(f'{ROOT}data/nea_aliases.txt', 'r') as f:
+    with open(f'{ROOT}data/target_aliases.txt', 'r') as f:
         lines = f.readlines()
 
     def parse(name):
