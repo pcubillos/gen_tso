@@ -70,11 +70,6 @@ class Catalog():
         tess_targets = load_targets('tess_data.txt', is_confirmed=False)
         self.targets = nea_targets + tess_targets
 
-        self.planets = (
-            [target.planet for target in nea_targets] +
-            [target.planet for target in tess_targets]
-        )
-
         # JWST targets
         jwst_hosts, trexo_ra, trexo_dec = load_trexolists(extract='coords')
         njwst = len(jwst_hosts)

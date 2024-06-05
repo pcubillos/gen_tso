@@ -27,12 +27,12 @@ import gen_tso.catalogs.utils as u
 
 # Catalog of known exoplanets (and candidate planets)
 catalog = cat.Catalog()
-planets_array = np.array(catalog.planets)
-jwst_targets = list(planets_array[catalog.is_jwst])
-transit_planets = list(planets_array[catalog.is_transiting])
-non_transit_planets = list(planets_array[~catalog.is_transiting])
-candidate_planets = list(planets_array[~catalog.is_confirmed])
-planets_aka = u.invert_aliases(catalog.planet_aliases)
+nplanets = len(catalog.targets)
+planets = [target.planet for target in catalog.targets]
+is_jwst = np.array([target.is_jwst for target in catalog.targets])
+is_transit = np.array([target.is_transiting for target in catalog.targets])
+is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
+
 
 # Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
@@ -226,7 +226,7 @@ app_ui = ui.page_fluid(
                 ui.input_selectize(
                     id='target',
                     label='',
-                    choices=catalog.planets,
+                    choices=[target.planet for target in catalog.targets],
                     selected='WASP-80 b',
                     multiple=False,
                 ),
@@ -1041,50 +1041,58 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.target_filter)
     def _():
-        targets = []
-        aliases = []
+        mask = np.zeros(nplanets, bool)
         if 'jwst' in input.target_filter.get():
-            targets += jwst_targets
-            aliases += catalog.jwst_aliases
+            mask |= is_jwst
         if 'transit' in input.target_filter.get():
-            targets += transit_planets
-            aliases += catalog.transit_aliases
+            mask |= is_transit
         if 'non_transit' in input.target_filter.get():
-            targets += non_transit_planets
-            aliases += catalog.non_transit_aliases
+            mask |= ~is_transit
         if 'tess' in input.target_filter.get():
-            targets += candidate_planets
-            aliases += catalog.candidate_aliases
+            mask |= ~is_confirmed
 
-        # Remove duplicates, sort, and join:
-        targets = list(np.unique(targets))
-        aliases = list(np.unique(aliases))
-        targets += [alias for alias in aliases if alias not in targets]
+        targets = [
+            target.planet for target,flag in zip(catalog.targets,mask)
+            if flag
+        ]
+        for i,target in enumerate(catalog.targets):
+            if mask[i]:
+                targets += target.aliases
 
         # Preserve current target if possible:
-        current_target = input.target.get()
-        if current_target not in targets:
-            current_target = None
-        ui.update_selectize('target', choices=targets, selected=current_target)
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        planet = '' if target is None else target.planet
+        ui.update_selectize('target', choices=targets, selected=planet)
 
 
     @render.ui
     @reactive.event(input.target)
     def target_label():
-        target_name = input.target.get()
-        if target_name in planets_aka:
-            aliases_text = ', '.join(planets_aka[target_name])
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            aliases = []
+            is_jwst = False
+            is_confirmed = True
+        else:
+            aliases = target.aliases
+            name = target.planet
+            is_jwst = target.is_jwst
+            is_confirmed = target.is_confirmed
+
+        if len(aliases) == 0:
+            aka_tooltip = None
+        else:
+            aliases_text = ', '.join(aliases)
             aka_tooltip = ui.tooltip(
                 fa.icon_svg("circle-info", fill='cornflowerblue'),
                 f"Also known as: {aliases_text}",
                 placement='top',
             )
-        else:
-            aka_tooltip = None
 
-        if target_name in jwst_targets:
-            idx = catalog.planets.index(target_name)
-            ra, dec = catalog.trexo_coords[idx]
+        if is_jwst:
+            ra, dec = target.trexo_ra_dec
             url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
                 ui.tags.a(
@@ -1102,21 +1110,21 @@ def server(input, output, session):
                 placement='top',
             )
 
-        if target_name in candidate_planets:
+        if is_confirmed:
+            candidate_tooltip = None
+        else:
             candidate_tooltip = ui.tooltip(
                 fa.icon_svg("triangle-exclamation", fill='darkorange'),
                 ui.markdown("This is a *candidate* planet"),
                 placement='top',
             )
-        else:
-            candidate_tooltip = None
 
         return ui.span(
             'Known target? ',
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("circle-info", fill='black'),
-                    href=f'{nasa_url}/{input.target.get()}',
+                    href=f'{nasa_url}/{name}',
                     target="_blank",
                 ),
                 'See this target on the NASA Exoplanet Archive',
@@ -1131,32 +1139,25 @@ def server(input, output, session):
     @reactive.event(input.target)
     def _():
         """Set known-target properties"""
-        target_name = input.target.get()
-        if target_name in catalog.planet_aliases:
-            ui.update_selectize(
-                'target',
-                selected=catalog.planet_aliases[target_name],
-            )
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
             return
+        if name in target.aliases:
+            ui.update_selectize('target', selected=target.planet)
 
-        if target_name not in catalog.planets:
-            return
+        teff = u.as_str(target.teff, '.1f', '')
+        log_g = u.as_str(target.logg_star, '.2f', '')
+        t_dur = u.as_str(target.transit_dur, '.3f', '')
 
-        index = catalog.planets.index(target_name)
-        teff = u.as_str(catalog.teff[index], '.1f', '')
-        log_g = u.as_str(catalog.log_g[index], '.2f', '')
         ui.update_text('teff', value=teff)
         ui.update_text('logg', value=log_g)
         ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{catalog.ks_mag[index]:.3f}')
-        t_dur = catalog.tr_dur[index]
-        tr_duration = '' if t_dur is None else f'{t_dur:.3f}'
-        ui.update_text('t_dur', value=tr_duration)
+        ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
+        ui.update_text('t_dur', value=t_dur)
 
-        ra_planet = catalog.ra[index]
-        dec_planet = catalog.dec[index]
         sky_view_src.set(
-            f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
+            f'https://sky.esa.int/esasky/?target={target.ra}%20{target.dec}'
             '&fov=0.2&sci=true'
         )
 
@@ -1358,17 +1359,16 @@ def server(input, output, session):
         obs_geometry = input.geometry.get()
         model_type = input.planet_model_type.get()
 
-        target_name = input.target.get()
-        if target_name not in catalog.planets:
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
             rprs_square = 1.0
             teq_planet = 1000.0
         else:
-            index = catalog.planets.index(target_name)
-            teq_planet = catalog.teq[index]
-            if catalog.rprs[index] is None:
+            teq_planet = target.eq_temp
+            rprs_square = target.rprs**2.0
+            if np.isnan(rprs_square):
                 rprs_square = 0.0
-            else:
-                rprs_square = catalog.rprs[index]**2.0
         rprs_square_percent = np.round(100*rprs_square, decimals=4)
 
         layout_kwargs = dict(

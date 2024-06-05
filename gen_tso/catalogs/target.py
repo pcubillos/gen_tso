@@ -13,6 +13,9 @@ from . import utils as u
 
 
 class Target():
+    """
+    A handy exoplanet target object.
+    """
     def __init__(
         self, entry=None,
         host=None, mstar=np.nan, rstar=np.nan, teff=np.nan, logg_star=np.nan,
