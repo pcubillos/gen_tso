@@ -19,8 +19,10 @@ class Target():
         metal_star=np.nan, ks_mag=np.nan, ra=np.nan, dec=np.nan,
         planet=None, mplanet=np.nan, rplanet=np.nan, period=np.nan, sma=np.nan,
         transit_dur=np.nan, ars=np.nan, rprs=np.nan, eq_temp=np.nan,
-        is_confirmed=np.nan, aliases=[],
+        is_confirmed=np.nan, is_min_mass=False, aliases=[],
     ):
+        # Turn on if planet mass is RV's minimum mass: M*sin(i)
+        self.is_min_mass = False
         if entry is None:
             if host is None or planet is None:
                 raise ValueError('Must at least specify planet and host names')
@@ -43,6 +45,7 @@ class Target():
             self.rprs = rprs
             self.eq_temp = eq_temp
             self.transit_dur = transit_dur
+            self.is_min_mass = is_min_mass
 
         else:
             self.host = entry['hostname']
@@ -57,6 +60,9 @@ class Target():
 
             self.planet = entry['pl_name']
             self.mplanet = entry['pl_masse']
+            if np.isnan(entry['pl_masse']) and np.isfinite(entry['pl_msinie']):
+                self.mplanet = entry['pl_msinie']
+                self.is_min_mass = True
             self.rplanet = entry['pl_rade']
             self.sma = entry['pl_orbsmax']
             self.period = entry['pl_orbper']
@@ -169,6 +175,7 @@ class Target():
         t14 = u.as_str(self.transit_dur, '.3f', '---')
         eq_temp = u.as_str(self.eq_temp, '.1f', '---')
 
+        mplanet_label = 'M*sin(i)' if self.is_min_mass else 'mplanet'
         report = (
             f"planet = {self.planet}\n"
             f"host = {self.host}\n\n"
@@ -182,7 +189,7 @@ class Target():
             f"dec = {dec} deg\n\n"
 
             f"rplanet = {rplanet} r_earth\n"
-            f"mplanet = {mplanet} m_earth\n"
+            f"{mplanet_label} = {mplanet} m_earth\n"
             f"T14 = {t14} h\n"
             f"sma = {sma} AU\n"
             f"period = {period} d\n"

@@ -12,8 +12,8 @@ __all__ = [
     'fetch_tess_aliases',
 ]
 
-# TBD: Figure a way to circumvent the grequests conflict  with shiny
-#import grequests
+# TBD: Figure a way to circumvent the grequests conflict with shiny
+import grequests
 import requests
 import multiprocessing as mp
 from datetime import datetime, timezone
@@ -29,14 +29,6 @@ from astropy.table import Table
 from astropy.units import arcsec, deg
 from bs4 import BeautifulSoup
 import pyratbay.constants as pc
-
-# While developing
-if False:
-    from gen_tso.utils import ROOT
-    import gen_tso.catalogs.utils as u
-    from gen_tso.catalogs import target as tar
-    from gen_tso.catalogs.target import Target
-    from gen_tso.catalogs.catalogs import load_targets, load_trexolists
 
 from ..utils import ROOT
 from .catalogs import load_targets, load_trexolists
@@ -55,7 +47,7 @@ def save_catalog(targets, catalog_file):
             '# > host: RA(deg) dec(deg) Ks_mag '
             'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
             '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
-            'semi-major_axis(AU) period(d) t_eq(K)\n'
+            'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
         )
         host = ''
         for target in targets:
@@ -74,7 +66,7 @@ def save_catalog(targets, catalog_file):
             sma = f'{target.sma:.4f}'
             period = f'{target.period:.5f}'
             teq = f'{target.eq_temp:.1f}'
-
+            is_min_mass = int(target.is_min_mass)
             if target.host != host:
                 host = target.host
                 f.write(
@@ -83,11 +75,17 @@ def save_catalog(targets, catalog_file):
                 )
             f.write(
                 f" {planet}: {transit_dur} {rplanet} {mplanet} "
-                f"{sma} {period} {teq}\n",
+                f"{sma} {period} {teq} {is_min_mass}\n",
             )
 
 
 def update_databases():
+    """
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> cat.fetch_trexolist()
+    """
     # Update trexolist database
     fetch_trexolist()
 
@@ -127,6 +125,7 @@ def format_nea_entry(entry):
         entry['pl_ratdor'] = np.nan
         entry['pl_ratror'] = np.sqrt(entry.pop('pl_trandep')*pc.ppm)
         entry['pl_trandur'] = entry.pop('pl_trandurh')
+        entry['pl_msinie'] = np.nan
     else:
         entry['pl_eqt'] = np.nan
 
@@ -229,6 +228,12 @@ def curate_aliases():
 
 
 def fetch_trexolist():
+    """
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> cat.fetch_trexolist()
+    """
     url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.csv'
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
@@ -530,7 +535,7 @@ def fetch_aliases(hosts, output_file=None):
     >>> targets = cat.load_targets()
     >>> hosts = np.unique([target.host for target in targets])
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
-    >>> cat.fetch_aliases(hosts, output_file)
+    >>> aliases = cat.fetch_aliases(hosts, output_file)
     """
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
