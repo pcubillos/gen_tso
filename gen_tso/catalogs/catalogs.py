@@ -148,7 +148,7 @@ def load_targets(database='nea_data.txt'):
 
     Examples
     --------
-    >>> import source_catalog as cat
+    >>> import gen_tso.catalogs as cat
     >>> nea_data = cat.load_nea_targets_table()
     """
     # database = 'new_nea_data.txt'

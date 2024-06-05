@@ -38,7 +38,7 @@ if False:
     from gen_tso.catalogs.target import Target
 
 from ..utils import ROOT
-from .source_catalog import load_targets
+from .catalogs import load_targets
 from . import utils as u
 from . import target as tar
 from .target import Target
@@ -188,18 +188,19 @@ def curate_aliases():
 
     prefixes = jwst_names
     prefixes += ['WASP', 'KELT', 'HAT', 'MASCARA', 'TOI', 'XO', 'TrES']
-    kept_aliases = {}
+    keep_aliases = {}
     for host,system in aliases.items():
         for alias,planet in system['planet_aliases'].items():
             for prefix in prefixes:
                 if alias.startswith(prefix) and alias != planet:
-                    kept_aliases[alias] = planet
+                    keep_aliases[alias] = planet
 
 
-    aka = u.invert_aliases(kept_aliases)
+    aka = u.invert_aliases(keep_aliases)
     to_remove = []
     for name, aliases in aka.items():
-        # Remove candidate if lettered-name exist:
+        # Keep lettered aliases
+        # Keep candidate aliases if lettered alias does not exist
         lettered = [
             u.get_host(alias)
             for alias in aliases
@@ -220,7 +221,7 @@ def curate_aliases():
     for name in to_remove:
         aka.pop(name)
 
-    with open(f'{ROOT}data/nea_aliases.txt', 'w') as f:
+    with open(f'{ROOT}data/target_aliases.txt', 'w') as f:
         for name,aliases in aka.items():
             str_aliases = ','.join(aliases)
             f.write(f'{name}:{str_aliases}\n')
