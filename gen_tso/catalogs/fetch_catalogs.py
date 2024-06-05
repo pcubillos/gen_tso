@@ -36,9 +36,10 @@ if False:
     import gen_tso.catalogs.utils as u
     from gen_tso.catalogs import target as tar
     from gen_tso.catalogs.target import Target
+    from gen_tso.catalogs.catalogs import load_targets, load_trexolists
 
 from ..utils import ROOT
-from .catalogs import load_targets
+from .catalogs import load_targets, load_trexolists
 from . import utils as u
 from . import target as tar
 from .target import Target
@@ -179,7 +180,7 @@ def curate_aliases():
         tess_aliases = pickle.load(handle)
     aliases.update(tess_aliases)
 
-    jwst_names = list(u.get_trexolists_targets())
+    jwst_names = list(load_trexolists())
     # Ensure to match against NEA host names for jwst targets
     for host,system in aliases.items():
         is_in = np.in1d(system['host_aliases'], jwst_names)
@@ -534,8 +535,8 @@ def fetch_aliases(hosts, output_file=None):
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
     # Keep track of trexolists aliases to cross-check:
-    jwst_names = u.get_trexolists_targets()
-    jwst_aliases = u.get_trexolists_targets(grouped=True)
+    jwst_names = load_trexolists()
+    jwst_aliases = load_trexolists(grouped=True)
 
     aliases = {}
     nhosts = len(hosts)

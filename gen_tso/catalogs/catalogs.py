@@ -4,8 +4,8 @@
 __all__ = [
     'find_target',
     'Catalog',
+    'load_trexolist',
     'load_targets',
-    'load_trexolist_table',
     'load_aliases',
 ]
 
@@ -71,7 +71,7 @@ class Catalog():
         self.teq = nea_data[9] + tess_data[9]
 
         # JWST targets
-        jwst_targets, trexo_ra, trexo_dec = u.get_trexolists_targets(
+        jwst_targets, trexo_ra, trexo_dec = load_trexolists(
             extract='coords',
         )
         njwst = len(jwst_targets)
@@ -184,6 +184,79 @@ def load_targets(database='nea_data.txt'):
             targets.append(target)
 
     return targets
+
+
+def load_trexolists(grouped=False, trexo_file=None, extract='target'):
+    """
+    Get the target names from the trexolists.csv file.
+
+    Parameters
+    ----------
+    grouped: Bool
+        If False, return a 1D list of names.
+        If True, return a nested list of lists, with each item the
+        set of names for a same object.
+    trexo_list: String
+        If None, extract data from default Gen TSO location.
+        Otherwise, a path to a trexolists.csv file.
+    extract: String
+        If 'target' extract only the target names.
+        If 'coords' extract the RA and dec in addition to the target names.
+        Note that these coordinates are intentionally truncated so
+        that a same object has a unique RA,dec (and thus can be used
+        to identify the same target with the trexolists filters).
+    """
+    if trexo_file is None:
+        trexo_file = f'{ROOT}data/trexolists.csv'
+
+    trexolist_data = ascii.read(
+        trexo_file,
+        format='csv', guess=False, fast_reader=False, comment='#',
+    )
+
+    targets = trexolist_data['Target'].data
+    norm_targets = [
+        normalize_name(target)
+        for target in targets
+    ]
+
+    ra = trexolist_data['R.A. 2000'].data
+    dec = trexolist_data['Dec. 2000'].data
+    truncated_ra = np.array([r[0:7] for r in ra])
+    truncated_dec = np.array([d[0:6] for d in dec])
+
+    if not grouped:
+        unique_targets, u_idx = np.unique(norm_targets, return_index=True)
+        if extract == 'coords':
+            trexo_ra = truncated_ra[u_idx]
+            trexo_dec = truncated_dec[u_idx]
+            return unique_targets, trexo_ra, trexo_dec
+        return unique_targets
+
+    # Use RA and dec to detect aliases for a same object
+    target_sets = []
+    trexo_ra = []
+    trexo_dec = []
+    ntargets = len(targets)
+    taken = np.zeros(ntargets, bool)
+    for i in range(ntargets):
+        if taken[i]:
+            continue
+        ra = truncated_ra[i]
+        dec = truncated_dec[i]
+        taken[i] = True
+        hosts = [norm_targets[i]]
+        for j in range(i,ntargets):
+            if truncated_ra[j]==ra and truncated_dec[j]==dec and not taken[j]:
+                hosts.append(norm_targets[j])
+                taken[j] = True
+        target_sets.append(list(np.unique(hosts)))
+        trexo_ra.append(ra)
+        trexo_dec.append(dec)
+
+    if extract == 'coords':
+        return target_sets, trexo_ra, trexo_dec
+    return target_sets
 
 
 def load_trexolist_table():
