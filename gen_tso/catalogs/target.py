@@ -19,6 +19,7 @@ class Target():
         metal_star=np.nan, ks_mag=np.nan, ra=np.nan, dec=np.nan,
         planet=None, mplanet=np.nan, rplanet=np.nan, period=np.nan, sma=np.nan,
         transit_dur=np.nan, ars=np.nan, rprs=np.nan, eq_temp=np.nan,
+        is_confirmed=np.nan, aliases=[],
     ):
         if entry is None:
             if host is None or planet is None:
@@ -64,6 +65,9 @@ class Target():
             self.transit_dur = entry['pl_trandur']
             self.eq_temp = entry['pl_eqt']
 
+        self.is_transiting = np.isfinite(self.transit_dur)
+        self.is_confirmed = is_confirmed
+        self.aliases = aliases
         self._complete_values()
 
     def _complete_values(self):
@@ -165,14 +169,14 @@ class Target():
         t14 = u.as_str(self.transit_dur, '.3f', '---')
         eq_temp = u.as_str(self.eq_temp, '.1f', '---')
 
-        return (
+        report = (
             f"planet = {self.planet}\n"
             f"host = {self.host}\n\n"
             f"rstar = {rstar} r_sun\n"
             f"mstar = {mstar} m_sun\n"
             f"teff = {teff} K\n"
             f"log_g = {logg}\n"
-            f"metal = {metal}\n"
+            f"metallicity = {metal}\n"
             f"Ks_mag = {ks_mag}\n"
             f"RA = {ra} deg\n"
             f"dec = {dec} deg\n\n"
@@ -183,9 +187,18 @@ class Target():
             f"sma = {sma} AU\n"
             f"period = {period} d\n"
             f"eq_temp = {eq_temp} K\n"
-            f"rprs = {rprs}\n"
-            f"ars = {ars}\n"
+            f"rplanet/rstar = {rprs}\n"
+            f"a/rstar = {ars}\n"
         )
+        report += f'\nis transiting = {self.is_transiting}\n'
+        if hasattr(self, 'is_jwst'):
+            report += f'is JWST host = {self.is_jwst}\n'
+        if np.isfinite(self.is_confirmed):
+            status = 'confirmed' if self.is_confirmed else 'candidate'
+            report += f'status = {status} planet\n'
+        if len(self.aliases) > 0:
+            report += f'aliases: {self.aliases}'
+        return report
 
 
 def format_nea_entry(entry):
