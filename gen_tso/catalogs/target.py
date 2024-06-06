@@ -158,6 +158,62 @@ class Target():
         # Now complement all other values
         self._complete_values()
 
+    def machine_readable_text(self):
+        is_jwst = ''
+        if hasattr(self, 'is_jwst'):
+            is_jwst = f'is_jwst_host = {self.is_jwst}\n'
+        status = 'confirmed' if self.is_confirmed else 'candidate'
+        mplanet_label = 'm_sini' if self.is_min_mass else 'mplanet'
+
+        rstar = u.as_str(self.rstar, '.3f', 'np.nan')
+        mstar = u.as_str(self.mstar, '.3f', 'np.nan')
+        teff = u.as_str(self.teff, '.1f', 'np.nan')
+        log_g = u.as_str(self.logg_star, '.2f', 'np.nan')
+        metal = u.as_str(self.metal_star, '.2f', 'np.nan')
+        ks_mag = u.as_str(self.ks_mag, '.2f', 'np.nan')
+        ra = u.as_str(self.ra, '.4f', 'np.nan')
+        dec = u.as_str(self.dec, '.4f', 'np.nan')
+
+        rplanet = u.as_str(self.rplanet, '.3f', 'np.nan')
+        mplanet = u.as_str(self.mplanet, '.3f', 'np.nan')
+        rprs = u.as_str(self.rprs, '.3f', 'np.nan')
+        a_rstar = u.as_str(self.ars, '.3f', 'np.nan')
+        sma = u.as_str(self.sma, '.3f', 'np.nan')
+        period = u.as_str(self.period, '.3f', 'np.nan')
+        transit_dur = u.as_str(self.transit_dur, '.3f', 'np.nan')
+        eq_temp = u.as_str(self.eq_temp, '.1f', 'np.nan')
+
+        report = (
+            f"host = {repr(self.host)}\n"
+            f"planet = {repr(self.planet)}\n"
+            f'aliases = {self.aliases}\n\n'
+
+            f"rstar = {rstar}  # r_sun\n"
+            f"mstar = {mstar}  # m_sun\n"
+            f"teff = {teff} # K\n"
+            f"log_g = {log_g}\n"
+            f"metallicity = {metal}\n"
+            f"ks_mag = {ks_mag}\n"
+            f"ra = {ra}  # deg\n"
+            f"dec = {dec}  # deg\n\n"
+
+            f"rplanet = {rplanet}  # r_earth\n"
+            f"{mplanet_label} = {mplanet}  # m_earth\n"
+            f"transit_dur = {transit_dur}  # h\n"
+            f"sma = {sma}  # AU\n"
+            f"period = {period}  # d\n"
+            f"eq_temp = {eq_temp}  # K\n"
+            f"rprs = {rprs}\n"
+            f"a_rstar = {a_rstar}\n"
+
+            f'\nis_transiting = {self.is_transiting}\n'
+            f'{is_jwst}'
+            f'status = {repr(status)}\n'
+        )
+        return report
+
+
+
 
     def __str__(self):
         rstar = u.as_str(self.rstar, '.3f', '---')
@@ -193,7 +249,7 @@ class Target():
 
             f"rplanet = {rplanet} r_earth\n"
             f"{mplanet_label} = {mplanet} m_earth\n"
-            f"T14 = {t14} h\n"
+            f"transit_dur = {t14} h\n"
             f"sma = {sma} AU\n"
             f"period = {period} d\n"
             f"eq_temp = {eq_temp} K\n"

@@ -15,6 +15,7 @@ __all__ = [
     'bin_spectrum',
     'read_spectrum_file',
     'collect_spectra',
+    'pretty_print_target',
 ]
 
 import operator
@@ -23,8 +24,10 @@ import os
 import numpy as np
 from pyratbay.tools import u
 from pyratbay.spectrum import PassBand
+from shiny import ui
 
 ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
+from .catalogs.utils import as_str
 
 
 class Tophat(PassBand):
@@ -389,4 +392,65 @@ def collect_spectra(folder, on_fail=None):
             sed_spectra[label] = {'wl': wl, 'depth': model}
 
     return transit_spectra, eclipse_spectra, sed_spectra
+
+
+def pretty_print_target(target):
+    """
+    Print a target's info to HTML text.
+    Must look pretty.
+    """
+    rplanet = as_str(target.rplanet, '.3f', '---')
+    mplanet = as_str(target.mplanet, '.3f', '---')
+    sma = as_str(target.sma, '.3f', '---')
+    rprs = as_str(target.rprs, '.3f', '---')
+    ars = as_str(target.ars, '.3f', '---')
+    period = as_str(target.period, '.3f', '---')
+    t_dur = as_str(target.transit_dur, '.3f', '---')
+    eq_temp = as_str(target.eq_temp, '.1f', '---')
+
+    rstar = as_str(target.rstar, '.3f', '---')
+    mstar = as_str(target.mstar, '.3f', '---')
+    logg = as_str(target.logg_star, '.2f', '---')
+    metal = as_str(target.metal_star, '.2f', '---')
+    teff = as_str(target.teff, '.1f', '---')
+    ks_mag = as_str(target.ks_mag, '.2f', '---')
+
+    status = 'confirmed' if target.is_confirmed else 'candidate'
+    mplanet_label = 'M*sin(i)' if target.is_min_mass else 'mplanet'
+    if len(target.aliases) > 0:
+        aliases = f'aliases = {target.aliases}'
+    else:
+        aliases = ''
+
+    planet_info = ui.HTML(
+        f'planet = {target.planet} <br>'
+        f'is_transiting = {target.is_transiting}<br>'
+        f'status = {status} planet<br><br>'
+        f"rplanet = {rplanet} r_earth<br>"
+        f"{mplanet_label} = {mplanet} m_earth<br>"
+        f"semi-major axis = {sma} AU<br>"
+        f"period = {period} d<br>"
+        f"equilibrium temp = {eq_temp} K<br>"
+        f"transit_dur (T14) = {t_dur} h<br>"
+        f"rplanet/rstar = {rprs}<br>"
+        f"a/rstar = {ars}<br>"
+    )
+
+    star_info = ui.HTML(
+        f'host = {target.host}<br>'
+        f'is JWST host = {target.is_jwst}<br>'
+        f'<br><br>'
+        f"rstar = {rstar} r_sun<br>"
+        f"mstar = {mstar} m_sun<br>"
+        f"log_g = {logg}<br>"
+        f"metallicity = {metal}<br>"
+        f"effective temp = {teff} K<br>"
+        f"Ks_mag = {ks_mag}<br>"
+        f"RA = {target.ra:.3f} deg<br>"
+        f"dec = {target.dec:.3f} deg<br>"
+    )
+
+    return planet_info, star_info, aliases
+
+
 

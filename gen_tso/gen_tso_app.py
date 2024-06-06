@@ -21,14 +21,15 @@ from gen_tso import catalogs as cat
 from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
-from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
+from gen_tso.utils import (
+    ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
+)
 import gen_tso.catalogs.utils as u
 
 
 # Catalog of known exoplanets (and candidate planets)
 catalog = cat.Catalog()
 nplanets = len(catalog.targets)
-planets = [target.planet for target in catalog.targets]
 is_jwst = np.array([target.is_jwst for target in catalog.targets])
 is_transit = np.array([target.is_transiting for target in catalog.targets])
 is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
@@ -733,6 +734,7 @@ def server(input, output, session):
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
     warning_text = reactive.Value('')
+    machine_readable_info = reactive.Value(False)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -1066,32 +1068,98 @@ def server(input, output, session):
         ui.update_selectize('target', choices=targets, selected=planet)
 
 
+    @reactive.effect
+    @reactive.event(input.show_info)
+    def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        planet_info, star_info, aliases = pretty_print_target(target)
+        machine_readable_info.set(False)
+
+        info = ui.layout_columns(
+            ui.span(planet_info, style="font-family: monospace;"),
+            ui.span(star_info, style="font-family: monospace;"),
+            width=1/2,
+        )
+
+        m = ui.modal(
+            info,
+            ui.HTML(aliases),
+            title=ui.markdown(f'System parameters for: **{target.planet}**'),
+            size='l',
+            easy_close=True,
+            footer=ui.input_action_button(
+                id="re_text",
+                label="as machine readable",
+                class_='btn btn-sm',
+            ),
+        )
+        ui.modal_show(m)
+
+
+    @reactive.Effect
+    @reactive.event(input.re_text)
+    def _():
+        mri = machine_readable_info.get()
+        machine_readable_info.set(~mri)
+
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if machine_readable_info.get():
+            info = ui.span(
+                ui.HTML(target.machine_readable_text().replace('\n','<br>')),
+                style="font-family: monospace; font-size:medium;",
+            )
+            button_label = 'as pretty text'
+        else:
+            planet_info, star_info, aliases = pretty_print_target(target)
+            info = ui.layout_columns(
+                ui.span(planet_info, style="font-family: monospace;"),
+                ui.span(star_info, style="font-family: monospace;"),
+                width=1/2,
+            )
+            info = [info, ui.HTML(aliases)]
+            button_label = 'as machine readable'
+
+        ui.modal_remove()
+        m = ui.modal(
+            info,
+            title=ui.markdown(f'System parameters for: **{target.planet}**'),
+            size='l',
+            easy_close=True,
+            footer=ui.input_action_button(
+                id="re_text",
+                label=button_label,
+                class_='btn btn-sm',
+            ),
+        )
+        ui.modal_show(m)
+
+
     @render.ui
     @reactive.event(input.target)
     def target_label():
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
-            aliases = []
-            is_jwst = False
-            is_confirmed = True
-        else:
-            aliases = target.aliases
-            name = target.planet
-            is_jwst = target.is_jwst
-            is_confirmed = target.is_confirmed
+            return ui.span('Known target?')
 
-        if len(aliases) == 0:
-            aka_tooltip = None
+        if len(target.aliases) > 0:
+            aliases = ', '.join(target.aliases)
+            info_label = f"Also known as: {aliases}"
         else:
-            aliases_text = ', '.join(aliases)
-            aka_tooltip = ui.tooltip(
-                fa.icon_svg("circle-info", fill='cornflowerblue'),
-                f"Also known as: {aliases_text}",
-                placement='top',
-            )
+            info_label = 'System info'
+        info_tooltip = ui.tooltip(
+            ui.input_action_link(
+                id='show_info',
+                label='',
+                icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
+            ),
+            info_label,
+            placement='top',
+        )
 
-        if is_jwst:
+        if target.is_jwst:
             ra, dec = target.trexo_ra_dec
             url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
@@ -1110,7 +1178,7 @@ def server(input, output, session):
                 placement='top',
             )
 
-        if is_confirmed:
+        if target.is_confirmed:
             candidate_tooltip = None
         else:
             candidate_tooltip = ui.tooltip(
@@ -1121,17 +1189,17 @@ def server(input, output, session):
 
         return ui.span(
             'Known target? ',
+            info_tooltip,
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("circle-info", fill='black'),
-                    href=f'{nasa_url}/{name}',
+                    href=f'{nasa_url}/{target.planet}',
                     target="_blank",
                 ),
                 'See this target on the NASA Exoplanet Archive',
                 placement='top',
             ),
             trexolists_tooltip,
-            aka_tooltip,
             candidate_tooltip,
         )
 

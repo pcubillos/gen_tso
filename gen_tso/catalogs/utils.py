@@ -155,7 +155,7 @@ def to_float(value):
     return float(value)
 
 
-def as_str(val, fmt, if_none=None):
+def as_str(val, fmt='', if_none=None):
     """
     Format as string
     """
