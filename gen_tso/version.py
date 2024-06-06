@@ -4,8 +4,8 @@
 
 # Pyrat-Bay version:
 TSO_VER = 0  # Major version
-TSO_MIN = 1  # Minor version
-TSO_REV = '1'  # Revision
+TSO_MIN = 2  # Minor version
+TSO_REV = '0'  # Revision
 
 
 __version__ = f'{TSO_VER}.{TSO_MIN}.{TSO_REV}'

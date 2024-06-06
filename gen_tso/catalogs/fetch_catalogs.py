@@ -12,8 +12,8 @@ __all__ = [
     'fetch_tess_aliases',
 ]
 
-# TBD: Figure a way to circumvent the grequests conflict  with shiny
-#import grequests
+# TBD: Figure a way to circumvent the grequests conflict with shiny
+import grequests
 import requests
 import multiprocessing as mp
 from datetime import datetime, timezone
@@ -29,28 +29,71 @@ from astropy.table import Table
 from astropy.units import arcsec, deg
 from bs4 import BeautifulSoup
 import pyratbay.constants as pc
-import pyratbay.atmosphere as pa
-
-# While developing
-if False:
-    from gen_tso.utils import ROOT
-    import gen_tso.catalogs.catalog_utils as u
-    from gen_tso.catalogs.source_catalog import load_targets_table
 
 from ..utils import ROOT
-from .source_catalog import load_targets_table
-from . import catalog_utils as u
+from .catalogs import load_targets, load_trexolists
+from . import utils as u
+from . import target as tar
+from .target import Target
+
+
+def save_catalog(targets, catalog_file):
+    """
+    save_catalog(targets, catalog_file)
+    """
+    # Save as plain text:
+    with open(catalog_file, 'w') as f:
+        f.write(
+            '# > host: RA(deg) dec(deg) Ks_mag '
+            'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
+            '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
+            'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
+        )
+        host = ''
+        for target in targets:
+            planet = target.planet
+            ra = f'{target.ra:.7f}'
+            dec = f'{target.dec:.7f}'
+            ks_mag = f'{target.ks_mag:.3f}'
+            teff = f'{target.teff:.1f}'
+            rstar = f'{target.rstar:.3f}'
+            mstar = f'{target.mstar:.3f}'
+            logg = f'{target.logg_star:.2f}'
+            metal = f'{target.metal_star:.2f}'
+            rplanet = f'{target.rplanet:.3f}'
+            mplanet = f'{target.mplanet:.3f}'
+            transit_dur = f'{target.transit_dur:.3f}'
+            sma = f'{target.sma:.4f}'
+            period = f'{target.period:.5f}'
+            teq = f'{target.eq_temp:.1f}'
+            is_min_mass = int(target.is_min_mass)
+            if target.host != host:
+                host = target.host
+                f.write(
+                    f">{host}: {ra} {dec} {ks_mag} "
+                    f"{rstar} {mstar} {teff} {logg} {metal}\n",
+                )
+            f.write(
+                f" {planet}: {transit_dur} {rplanet} {mplanet} "
+                f"{sma} {period} {teq} {is_min_mass}\n",
+            )
 
 
 def update_databases():
+    """
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> cat.fetch_trexolist()
+    """
     # Update trexolist database
     fetch_trexolist()
 
     # Update NEA confirmed targets and their aliases
     fetch_nea_confirmed_targets()
     # Fetch confirmed aliases
-    nea_data = load_targets_table()
-    hosts = np.unique(nea_data[1])
+    targets = load_targets()
+    hosts = np.unique([target.host for target in targets])
     output_file = f'{ROOT}data/nea_aliases.pickle'
     fetch_aliases(hosts, output_file)
 
@@ -60,6 +103,41 @@ def update_databases():
 
     # Update aliases list
     curate_aliases()
+
+
+def format_nea_entry(entry):
+    """
+    Have TOI entries the same keys as PS entries.
+    Turn None values into np.nan.
+    Calculate stellar mass from logg-rstar for TESS candidates
+    """
+    if 'toi' in entry.keys():
+        entry['hostname'] = f"TOI-{entry['toipfx']}"
+        entry['st_met'] = np.nan
+        entry['sy_kmag'] = np.nan
+        logg = entry['st_logg'] if entry['st_logg'] is not None else np.nan
+        rstar = entry['st_rad'] if entry['st_rad'] is not None else np.nan
+        entry['st_mass'] = 10**logg * (rstar*pc.rsun)**2 / pc.G / pc.msun
+
+        entry['pl_name'] = f"TOI-{entry['toi']}"
+        entry['pl_masse'] = np.nan
+        entry['pl_orbsmax'] = np.nan
+        entry['pl_ratdor'] = np.nan
+        entry['pl_ratror'] = np.sqrt(entry.pop('pl_trandep')*pc.ppm)
+        entry['pl_trandur'] = entry.pop('pl_trandurh')
+        entry['pl_msinie'] = np.nan
+    else:
+        entry['pl_eqt'] = np.nan
+
+    # Patch
+    if entry['st_mass'] == 0.0:
+        entry['st_mass'] = np.nan
+
+    # Replace None with np.nan
+    for key in entry.keys():
+        if entry[key] is None:
+            entry[key] = np.nan
+    return entry
 
 
 def get_children(host_aliases, planet_aliases):
@@ -101,7 +179,7 @@ def curate_aliases():
         tess_aliases = pickle.load(handle)
     aliases.update(tess_aliases)
 
-    jwst_names = list(u.get_trexolists_targets())
+    jwst_names = list(load_trexolists())
     # Ensure to match against NEA host names for jwst targets
     for host,system in aliases.items():
         is_in = np.in1d(system['host_aliases'], jwst_names)
@@ -110,18 +188,19 @@ def curate_aliases():
 
     prefixes = jwst_names
     prefixes += ['WASP', 'KELT', 'HAT', 'MASCARA', 'TOI', 'XO', 'TrES']
-    kept_aliases = {}
+    keep_aliases = {}
     for host,system in aliases.items():
         for alias,planet in system['planet_aliases'].items():
             for prefix in prefixes:
                 if alias.startswith(prefix) and alias != planet:
-                    kept_aliases[alias] = planet
+                    keep_aliases[alias] = planet
 
 
-    aka = u.invert_aliases(kept_aliases)
+    aka = u.invert_aliases(keep_aliases)
     to_remove = []
     for name, aliases in aka.items():
-        # Remove candidate if lettered-name exist:
+        # Keep lettered aliases
+        # Keep candidate aliases if lettered alias does not exist
         lettered = [
             u.get_host(alias)
             for alias in aliases
@@ -142,13 +221,19 @@ def curate_aliases():
     for name in to_remove:
         aka.pop(name)
 
-    with open(f'{ROOT}data/nea_aliases.txt', 'w') as f:
+    with open(f'{ROOT}data/target_aliases.txt', 'w') as f:
         for name,aliases in aka.items():
             str_aliases = ','.join(aliases)
             f.write(f'{name}:{str_aliases}\n')
 
 
 def fetch_trexolist():
+    """
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> cat.fetch_trexolist()
+    """
     url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.csv'
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
@@ -174,82 +259,71 @@ def fetch_nea_confirmed_targets():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+hostname,pl_name,default_flag,sy_kmag,sy_pnum,disc_facility,"
-        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,"
-        "pl_trandur,pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_ratdor,pl_ratror+"
+        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,"
+        "pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_msinie,pl_ratdor,pl_ratror+"
         "from+ps+"
         "&format=json"
     )
     if not r.ok:
         raise ValueError("Something's not OK")
+    resp = [format_nea_entry(entry) for entry in r.json()]
 
-    resp = r.json()
-    host_entries = [entry['hostname'] for entry in resp]
-    hosts, counts = np.unique(host_entries, return_counts=True)
-
+    hosts = np.unique([entry['hostname'] for entry in resp])
+    default_flags = np.array([entry['default_flag'] for entry in resp])
     planet_entries = np.array([entry['pl_name'] for entry in resp])
     planet_names, idx, counts = np.unique(
         planet_entries,
         return_index=True,
         return_counts=True,
     )
-    nplanets = len(planet_names)
 
+    targets = []
+    fillers = []
     # Make list of unique entries
-    planets = [resp[i].copy() for i in idx]
-    for i in range(nplanets):
-        planet = planets[i]
-        name = planet['pl_name']
-        idx_duplicates = np.where(planet_entries==name)[0]
-        # default_flag takes priority
-        def_flags = [resp[j]['default_flag'] for j in idx_duplicates]
-        j = idx_duplicates[def_flags.index(1)]
-        planets[i] = u.complete_entry(resp[j].copy())
-        dups = [resp[k] for k in idx_duplicates if k!=j]
-        rank = u.rank_planets(dups)
-        # Fill the gaps if any
-        for j in rank:
-            entry = u.complete_entry(dups[j])
-            for field in planet.keys():
-                if planets[i][field] is None and entry[field] is not None:
-                    planets[i][field] = entry[field]
-        planets[i] = u.complete_entry(planets[i])
+    # Group by host such that planets share same host-star values
+    for host in hosts:
+        children, counts = np.unique(
+            [entry['pl_name'] for entry in resp if entry['hostname']==host],
+            return_counts=True,
+        )
+        planets = []
+        n_dups = []
+        for name in children:
+            idx_entry = np.where(planet_entries==name)[0]
+            entries = [Target(resp[i]) for i in idx_entry]
+            j = np.where(default_flags[idx_entry])[0][0]
+            target = entries.pop(j)
+            tar.rank_planets(target, entries)
+            planets.append(target)
+            n_dups.append(len(idx_entry))
+        # Solve stellar parameters
+        star = tar.solve_host(planets, n_dups)
 
-    # Save as plain text:
-    with open(f'{ROOT}data/nea_data.txt', 'w') as f:
-        host = ''
-        for entry in planets:
-            ra = entry['ra']
-            dec = entry['dec']
-            ks_mag = entry['sy_kmag']
-            planet = entry['pl_name']
-            tr_dur = entry['pl_trandur']
-            teff = u.as_str(entry['st_teff'], '.1f')
-            logg = u.as_str(entry['st_logg'], '.3f')
-            rprs = u.as_str(entry['pl_ratror'], '.3f')
-            missing_info = (
-                entry['st_teff'] is None or
-                entry['st_rad'] is None or
-                entry['pl_orbsmax'] is None
-            )
-            if missing_info:
-                teq = 'None'
-            else:
-                teq, _ = pa.equilibrium_temp(
-                    entry['st_teff'],
-                    entry['st_rad']*pc.rsun,
-                    entry['pl_orbsmax']*pc.au,
-                )
-                teq = f'{teq:.1f}'
+        # Now, re-do each planet, but using the single host properties
+        for name in children:
+            idx_entry = np.where(planet_entries==name)[0]
+            entries = [Target(resp[i]) for i in idx_entry]
+            # Update with star props
+            for i in range(len(entries)):
+                entries[i].copy_star(star)
+            j = np.where(default_flags[idx_entry])[0][0]
+            target = entries.pop(j)
+            t = tar.rank_planets(target, entries)
+            fillers.append(t)
+            targets.append(target)
 
-            if entry['hostname'] != host:
-                host = entry['hostname']
-                f.write(f">{host}: {ra} {dec} {ks_mag} {teff} {logg}\n")
-            f.write(f" {planet}: {tr_dur} {rprs} {teq}\n")
+    catalog_file = f'{ROOT}data/nea_data.txt'
+    save_catalog(targets, catalog_file)
 
     today = datetime.now(timezone.utc)
     with open(f'{ROOT}data/last_updated_nea.txt', 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
+    # Some stats
+    # np.unique(fillers, return_counts=True)
+    # (array([0, 1, 2]), array([4418, 1202,   18]))
+    # (array([0, 1, 2]), array([3145, 2466,   27]))
+    # (array([0, 1, 2]), array([4528, 1093,   17]))
 
 
 def fetch_nea_aliases(targets):
@@ -363,14 +437,17 @@ def fetch_simbad_aliases(target, verbose=True):
     simbad.remove_votable_fields('coordinates')
     simbad.add_votable_fields("otype", "otypes", "ids")
     simbad.add_votable_fields("flux(K)")
+    #simbad.add_votable_fields("fe_h")
 
+    host_alias = []
+    kmag = np.nan
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         simbad_info = simbad.query_object(target)
     if simbad_info is None:
         if verbose:
             print(f'no Simbad entry for target {repr(target)}')
-        return [], None
+        return host_alias, kmag
 
     object_type = simbad_info['OTYPE'].value.data[0]
     if 'Planet' in object_type:
@@ -382,19 +459,20 @@ def fetch_simbad_aliases(target, verbose=True):
         else:
             target_id = simbad_info['MAIN_ID'].value.data[0]
             print(f'Wait, what?:  {repr(target)}  {repr(target_id)}')
-            return [], None
+            return host_alias, kmag
         # go after star
         simbad_info = simbad.query_object(host)
         if simbad_info is None:
             if verbose:
                 print(f'Simbad host {repr(host)} not found')
-            return [], None
+            return host_alias, kmag
 
     host_info = simbad_info['IDS'].value.data[0]
     host_alias = host_info.split('|')
     kmag = simbad_info['FLUX_K'].value.data[0]
+    # fetch metallicity?
     if not np.isfinite(kmag):
-        kmag = None
+        kmag = np.nan
     return host_alias, kmag
 
 
@@ -427,7 +505,7 @@ def fetch_vizier_ks(target, verbose=True):
     n_entries = np.size(result)
     if n_entries == 0:
         print(f"Target not found: '{target}'")
-        return None
+        return np.nan
 
     data = result[catalog].as_array().data
     if n_entries == 1:
@@ -439,8 +517,8 @@ def fetch_vizier_ks(target, verbose=True):
                return row[3]
     elif n_entries > 1:
         print(f"Target could not be uniquely identified: '{target}'")
-        return None
-    return None
+        return np.nan
+    return np.nan
 
 
 def fetch_aliases(hosts, output_file=None):
@@ -454,16 +532,16 @@ def fetch_aliases(hosts, output_file=None):
     >>> from gen_tso.utils import ROOT
 
     >>> # Confirmed targets
-    >>> nea_data = cat.load_targets_table()
-    >>> hosts = np.unique(nea_data[1])
+    >>> targets = cat.load_targets()
+    >>> hosts = np.unique([target.host for target in targets])
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
-    >>> cat.fetch_aliases(hosts, output_file)
+    >>> aliases = cat.fetch_aliases(hosts, output_file)
     """
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
     # Keep track of trexolists aliases to cross-check:
-    jwst_names = u.get_trexolists_targets()
-    jwst_aliases = u.get_trexolists_targets(grouped=True)
+    jwst_names = load_trexolists()
+    jwst_aliases = load_trexolists(grouped=True)
 
     aliases = {}
     nhosts = len(hosts)
@@ -595,24 +673,22 @@ def fetch_nea_tess_candidates():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+toi,toipfx,pl_trandurh,pl_trandep,pl_rade,pl_eqt,ra,dec,"
-        "st_tmag,st_teff,st_logg,st_rad,tfopwg_disp+"
+        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp+"
         "from+toi+"
         "&format=json"
     )
     if not r.ok:
         raise ValueError("Something's not OK")
 
-    resp = r.json()
-    tess_hosts = [f"TOI-{entry['toipfx']}" for entry in resp]
-    tess_planets = [f"TOI-{entry['toi']}" for entry in resp]
-    status = [entry['tfopwg_disp'] for entry in resp]
-    ntess = len(tess_planets)
+    entries = [format_nea_entry(entry) for entry in r.json()]
+    ntess = len(entries)
+    status = [entry['tfopwg_disp'] for entry in entries]
 
     # Discard confirmed planets:
-    nea_data = load_targets_table()
-    targets = nea_data[0]
-    confirmed_hosts = nea_data[1]
-    ks_mag = nea_data[4]
+    database = 'nea_data.txt'
+    targets = load_targets(database)
+    confirmed_targets = [target.planet for target in targets]
+    confirmed_hosts = [target.host for target in targets]
 
     # Unpack known aliases:
     with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
@@ -626,58 +702,34 @@ def fetch_nea_tess_candidates():
 
     j, k, l = 0, 0, 0
     is_candidate = np.ones(ntess, bool)
-    tess_mag = np.zeros(ntess)
-    for i, planet in enumerate(tess_planets):
+    tess_targets = []
+    for i in range(ntess):
+        target = Target(entries[i])
         # Update names if possible:
-        tess_host = tess_hosts[i]
-        if tess_host in host_aliases:
-            tess_host = tess_hosts[i] = host_aliases[tess_host]
-        if planet in planet_aliases:
-            planet = tess_planets[i] = planet_aliases[planet]
+        if target.host in host_aliases:
+            target.host = host_aliases[target.host]
+        if target.planet in planet_aliases:
+            target.planet = planet_aliases[target.planet]
 
-        if planet in targets:
+        if target.planet in confirmed_targets:
             is_candidate[i] = False
             j += 1
-            # print(f"[{j}] '{planet}' is a confirmed target.")
-            # 961 planets
             continue
-        if tess_host in confirmed_hosts:
+        if target.host in confirmed_hosts:
+            # Update with star props
             k += 1
-            target_idx = confirmed_hosts.index(tess_host)
-            tess_mag[i] = ks_mag[target_idx]
-            # print(f"[{k}] '{planet}' orbits known star: '{tess_host}' (ks={tess_mag[i]})")
-            # 19 hosts
+            idx = confirmed_hosts.index(target.host)
+            star = targets[idx]
+            target.copy_star(star)
         if status[i] in ['FA', 'FP']:
             is_candidate[i] = False
             l += 1
+            continue
+        tess_targets.append(target)
 
-
-    # Save raw data:
-    tess_planets = np.array(tess_planets)
-    tess_hosts = np.array(tess_hosts)
-    ra = np.array([entry['ra'] for entry in resp])
-    dec = np.array([entry['dec'] for entry in resp])
-    teff = np.array([entry['st_teff'] for entry in resp])
-    logg = np.array([entry['st_logg'] for entry in resp])
-    tr_dur = np.array([entry['pl_trandurh'] for entry in resp])
-    rprs = np.array([np.sqrt(entry['pl_trandep']) for entry in resp])
-    teq = np.array([entry['pl_eqt'] for entry in resp])
-
-    candidates = dict(
-        planets=tess_planets[is_candidate],
-        hosts=tess_hosts[is_candidate],
-        ra=ra[is_candidate],
-        dec=dec[is_candidate],
-        teff=teff[is_candidate],
-        logg=logg[is_candidate],
-        tr_dur=tr_dur[is_candidate],
-        rprs=rprs[is_candidate],
-        teq=teq[is_candidate],
-        ks_mag=tess_mag[is_candidate],
-    )
-    with open(f'{ROOT}data/nea_tess_candidates_raw.pickle', 'wb') as handle:
-        pickle.dump(candidates, handle, protocol=4)
-
+    # Save temporary data (still need to hunt for Ks mags):
+    catalog_file = f'{ROOT}data/tess_candidates_tmp.txt'
+    save_catalog(tess_targets, catalog_file)
 
 
 def fetch_tess_aliases(ncpu=None):
@@ -691,23 +743,19 @@ def fetch_tess_aliases(ncpu=None):
     with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
         nea_aliases = pickle.load(handle)
     # Candidates
-    with open(f'{ROOT}data/nea_tess_candidates_raw.pickle', 'rb') as handle:
-        candidates = pickle.load(handle)
-    tess_planets = candidates['planets']
-    tess_hosts = candidates['hosts']
-    ks_mag = candidates['ks_mag']
-    ntess = len(tess_planets)
+    candidates = load_targets('tess_candidates_tmp.txt')
+    ntess = len(candidates)
 
     # Get the tess aliases
     hosts = np.unique([
-        host for host in tess_hosts
-        if host not in nea_aliases
+        target.host for target in candidates
+        if target.host not in nea_aliases
     ])
     tess_aliases_file = f'{ROOT}data/tess_aliases.pickle'
     tess_aliases = fetch_aliases(hosts, tess_aliases_file)
 
 
-    # Unpack known aliases:
+    # Now I also have tess aliases:
     planet_aliases = {}
     host_aliases = {}
     for host, system in nea_aliases.items():
@@ -723,36 +771,34 @@ def fetch_tess_aliases(ncpu=None):
     # First idea, search in simbad using best known alias to get Ks magnitude
     catalogs = ['2MASS', 'Gaia DR3', 'Gaia DR2', 'TOI']
     k = 0
-    for i,planet in enumerate(tess_planets):
-        tess_host = tess_hosts[i]
-        if tess_host in host_aliases and tess_host != host_aliases[tess_host]:
-            tess_host = tess_hosts[i] = host_aliases[tess_host]
-        if planet in planet_aliases and planet != planet_aliases[planet]:
-            planet = tess_planets[i] = planet_aliases[planet]
+    for i in range(ntess):
+        target = candidates[i]
+        target.host = host_aliases[target.host]
+        target.planet = planet_aliases[target.planet]
 
-        if ks_mag[i] > 0:
+        if np.isfinite(target.ks_mag):
             continue
 
-        name = u.select_alias(aka[tess_host], catalogs)
+        name = u.select_alias(aka[target.host], catalogs)
         if i%500 == 0:
-            print(f"~~ [{i}] Searching for '{tess_host}' / '{name}' ~~")
+            print(f"~~ [{i}] Searching for '{target.host}' / '{name}' ~~")
         aliases, kmag = fetch_simbad_aliases(name, verbose=False)
-        if kmag is not None:
+        if np.isfinite(kmag):
             k += 1
-            ks_mag[i] = kmag
+            target.ks_mag = kmag
 
     # Plan B, batch search in vizier catalog:
-    two_mass_hosts = np.array([
-        u.select_alias(aka[host], catalogs, host)
-        for host in tess_hosts
+    hosts = np.array([
+        u.select_alias(aka[target.host], catalogs, target.host)
+        for target in candidates
     ])
-    mask = [
-        host.startswith('2M') and ks_mag[i]==0
-        for i,host in enumerate(two_mass_hosts)
+    missing_targets = [
+        target for i,target in enumerate(candidates)
+        if np.isnan(target.ks_mag)
+        if hosts[i].startswith('2MASS')
     ]
-    two_mass_hosts = two_mass_hosts[mask]
-    ra = candidates['ra'][mask]
-    dec = candidates['dec'][mask]
+    ra = np.array([target.ra for target in missing_targets]) * deg
+    dec = np.array([target.dec for target in missing_targets]) * deg
 
     catalog = 'II/246/out'
     vizier = Vizier(
@@ -760,70 +806,50 @@ def fetch_tess_aliases(ncpu=None):
         columns=['RAJ2000', 'DEJ2000', '2MASS', 'Kmag'],
     )
     two_mass_targets = Table(
-        [ra*deg, dec*deg],
+        [ra, dec],
         names=('_RAJ2000', '_DEJ2000'),
     )
     results = vizier.query_region(two_mass_targets, radius=5.0*arcsec)
-
     data = results[catalog].as_array().data
-    vizier_names = [d[3] for d in data]
-    for i, tess_host in enumerate(tess_hosts):
-        host_alias = u.select_alias(aka[tess_host], catalogs)
-        if host_alias in two_mass_hosts:
-            idx = vizier_names.index(host_alias[-16:])
-            ks_mag[i] = data[idx][4]
+    vizier_names = [f'2MASS J{d[3]}' for d in data]
+    vizier_ks_mag = [d[4] for d in data]
 
+    for target in candidates:
+        host = u.select_alias(aka[target.host], catalogs)
+        if host in vizier_names:
+            idx = vizier_names.index(host)
+            target.ks_mag = vizier_ks_mag[idx]
 
     # Plan C, search in vizier catalog one by one:
-    missing_hosts = [host for host,ks in zip(tess_hosts,ks_mag) if ks==0.0]
-    missing_hosts = np.unique(missing_hosts)
-    missing_hosts = [
-        u.select_alias(aka[host], catalogs)
-        for host in missing_hosts
-    ]
+    missing_hosts = np.unique([
+        u.select_alias(aka[target.host], catalogs)
+        for target in candidates
+        if np.isnan(target.ks_mag)
+    ])
     with mp.get_context('fork').Pool(ncpu) as pool:
         vizier_ks = pool.map(fetch_vizier_ks, missing_hosts)
 
-    for i, tess_host in enumerate(tess_hosts):
-        alias_host = u.select_alias(aka[tess_host], catalogs)
-        if alias_host in missing_hosts:
-            idx = list(missing_hosts).index(alias_host)
-            if vizier_ks[idx] is not None:
-                ks_mag[i] = vizier_ks[idx]
+    for target in candidates:
+        host = u.select_alias(aka[target.host], catalogs)
+        if host in missing_hosts:
+            idx = list(missing_hosts).index(host)
+            target.ks_mag = vizier_ks[idx]
 
     # Last resort, scrap from the NEA pages
-    missing_hosts = [host for host,ks in zip(tess_hosts,ks_mag) if ks==0.0]
-    missing_hosts = np.unique(missing_hosts)
-
+    missing_hosts = np.unique([
+        target.host for target in candidates
+        if np.isnan(target.ks_mag)
+    ])
     with mp.get_context('fork').Pool(ncpu) as pool:
         scrap_ks = pool.map(scrap_nea_kmag, missing_hosts)
-    for i,planet in enumerate(tess_planets):
-        tess_host = tess_hosts[i]
-        if tess_host in missing_hosts:
-            idx = list(missing_hosts).index(tess_host)
-            if scrap_ks[idx] is not None:
-                ks_mag[i] = scrap_ks[idx]
-
+    for target in candidates:
+        if target.host in missing_hosts:
+            idx = list(missing_hosts).index(target.host)
+            target.ks_mag = scrap_ks[idx]
 
     # Save as plain text:
-    with open(f'{ROOT}data/tess_data.txt', 'w') as f:
-        host = ''
-        for i in range(ntess):
-            ra = candidates['ra'][i]
-            dec = candidates['dec'][i]
-            ksmag = f'{ks_mag[i]:.3f}' if ks_mag[i]>0.0 else 'None'
-            planet = tess_planets[i]
-            tr_dur = candidates['tr_dur'][i]
-            teff = u.as_str(candidates['teff'][i], '.1f')
-            logg = u.as_str(candidates['logg'][i], '.3f')
-            depth = candidates['rprs'][i] **2.0 * pc.ppm
-            rprs = u.as_str(np.sqrt(depth), '.3f')
-            teq = u.as_str(candidates['teq'][i], '.1f')
-
-            if tess_hosts[i] != host:
-                host = tess_hosts[i]
-                f.write(f">{host}: {ra} {dec} {ksmag} {teff} {logg}\n")
-            f.write(f" {planet}: {tr_dur} {rprs} {teq}\n")
+    catalog_file = f'{ROOT}data/tess_data.txt'
+    save_catalog(candidates, catalog_file)
 
     today = datetime.now(timezone.utc)
     with open(f'{ROOT}data/last_updated_tess.txt', 'w') as f:
@@ -839,14 +865,13 @@ def scrap_nea_kmag(target):
     response = requests.get(
         url=f'https://exoplanetarchive.ipac.caltech.edu/overview/{target}',
     )
+    kmag = np.nan
     if not response.ok:
         print(f'ERROR {target}')
-        return None
+        return kmag
 
     soup = BeautifulSoup(response.content, 'html.parser')
     pm = '±'
-
-    kmag = None
     for dd in soup.find_all('dd'):
         texts = dd.get_text().split()
         if 'mKs' in texts:

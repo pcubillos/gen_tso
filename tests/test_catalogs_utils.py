@@ -1,7 +1,7 @@
 import pathlib
 import numpy as np
 from gen_tso.utils import ROOT
-import gen_tso.catalogs.catalog_utils as u
+import gen_tso.catalogs.utils as u
 
 # Path to tests folder
 ROOT = pathlib.Path(ROOT).parent.joinpath('tests')

@@ -4,6 +4,9 @@
 from collections.abc import Iterable
 import os
 import sys
+import pickle
+from pathlib import Path
+import textwrap
 
 import numpy as np
 import scipy.interpolate as si
@@ -18,18 +21,19 @@ from gen_tso import catalogs as cat
 from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
-from gen_tso.utils import ROOT, collect_spectra, read_spectrum_file
-import gen_tso.catalogs.catalog_utils as u
+from gen_tso.utils import (
+    ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
+)
+import gen_tso.catalogs.utils as u
 
 
 # Catalog of known exoplanets (and candidate planets)
 catalog = cat.Catalog()
-planets_array = np.array(catalog.planets)
-jwst_targets = list(planets_array[catalog.is_jwst])
-transit_planets = list(planets_array[catalog.is_transiting])
-non_transit_planets = list(planets_array[~catalog.is_transiting])
-candidate_planets = list(planets_array[~catalog.is_confirmed])
-planets_aka = u.invert_aliases(catalog.planet_aliases)
+nplanets = len(catalog.targets)
+is_jwst = np.array([target.is_jwst for target in catalog.targets])
+is_transit = np.array([target.is_transiting for target in catalog.targets])
+is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
+
 
 # Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
@@ -89,6 +93,7 @@ loading_folders = []
 if len(sys.argv) == 2:
     loading_folders.append(os.path.realpath(sys.argv[1]))
 loading_folders.append(f'{ROOT}data/models')
+current_dir = os.path.realpath(os.getcwd())
 
 for location in loading_folders:
     t_models, e_models, sed_models = collect_spectra(location)
@@ -162,14 +167,14 @@ app_ui = ui.page_fluid(
                 # TBD: Set disabled based on existing TSOs
                 ui.layout_column_wrap(
                     ui.input_action_button(
-                        id="save",
+                        id="save_button",
                         label="Save TSO",
                         class_="btn btn-outline-success btn-sm",
                         disabled=False,
                         width='110px',
                     ),
                     ui.input_action_button(
-                        id="delete",
+                        id="delete_button",
                         label="Delete TSO",
                         class_='btn btn-outline-danger btn-sm',
                         disabled=False,
@@ -183,9 +188,10 @@ app_ui = ui.page_fluid(
                 fill=True,
                 fillable=True,
             ),
-            ui.input_action_button(
+            ui.input_task_button(
                 id="run_pandeia",
                 label="Run Pandeia",
+                label_busy="processing...",
             ),
         ),
         col_widths=[6,6],
@@ -221,7 +227,7 @@ app_ui = ui.page_fluid(
                 ui.input_selectize(
                     id='target',
                     label='',
-                    choices=catalog.planets,
+                    choices=[target.planet for target in catalog.targets],
                     selected='WASP-80 b',
                     multiple=False,
                 ),
@@ -547,7 +553,14 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Results",
-                    ui.output_text_verbatim(id="exp_time")
+                    cs.custom_card(
+                        ui.span(
+                            ui.output_ui(id="exp_time"),
+                            style="font-family: monospace; font-size:medium;",
+                        ),
+                        body_args=dict(padding='8px'),
+                        style="background: #F2F2F2!important; border-radius: 3px;",
+                    ),
                 ),
                 ui.nav_panel(
                     ui.output_ui('warnings_label'),
@@ -720,7 +733,8 @@ def server(input, output, session):
     saturation_label = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
-    warnings_flag = reactive.Value(False)
+    warning_text = reactive.Value('')
+    machine_readable_info = reactive.Value(False)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -939,67 +953,214 @@ def server(input, output, session):
         )
         if mode != 'target_acq':
             # The planet
-            tso_runs[tso_label][t_dur] = transit_dur
-            tso_runs[tso_label][obs_dur] = obs_dur
-            tso_runs[tso_label][depth_model_name] = depth_label
-            tso_runs[tso_label][depth_model] = depth_model
+            tso_runs[tso_label]['t_dur'] = transit_dur
+            tso_runs[tso_label]['obs_dur'] = obs_dur
+            tso_runs[tso_label]['depth_model_name'] = depth_label
+            tso_runs[tso_label]['depth_model'] = depth_model
+            # Take report with more flux in it:
+            rep_label = 'report_out' if obs_geometry=='Transit' else 'report_in'
+            report = tso[rep_label]
+        else:
+            report = tso
 
-        # TBD: set right behavior
-        warnings_flag.set(True)
+        if len(report['warnings']) > 0:
+            warning_text.set(report['warnings'])
+        else:
+            warning_text.set('')
+
         print(inst, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
+    @reactive.effect
+    @reactive.event(input.save_button)
+    def _():
+        # Make a filename from current TSO
+        tso_label = input.display_tso_run.get()
+        tso = tso_runs[tso_label]
+        inst = tso['inst']
+        filename = f'tso_{inst}.pickle'
+
+        m = ui.modal(
+            ui.input_text(
+                id='tso_save_file',
+                label='Save TSO run to file:',
+                value=filename,
+                placeholder=tso_label,
+                width='100%',
+            ),
+            ui.HTML(f"Located in current folder:<br>'{current_dir}/'<br>"),
+            # TBD: I wish this could be used to browse a folder :(
+            #ui.input_file(
+            #    id="save_file_x",
+            #    label="Into this folder:",
+            #    button_label="Browse",
+            #    multiple=True,
+            #    width='100%',
+            #),
+            ui.input_action_button(
+                id='tso_save_button',
+                label='Save to file',
+            ),
+            title="Download TSO run",
+            easy_close=True,
+            size='l',
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    @reactive.event(input.tso_save_button)
+    def _():
+        tso_label = input.display_tso_run.get()
+        tso_run = tso_runs[tso_label]
+
+        filename = input.tso_save_file.get()
+        if filename.strip() == '':
+            filename = 'tso_run.pickle'
+        savefile = Path(f'{current_dir}/{filename}')
+        if savefile.suffix == '':
+            savefile = savefile.parent / f'{savefile.name}.pickle'
+        if savefile.exists():
+            stem = str(savefile.parent / savefile.stem)
+            extension = savefile.suffix
+            i = 1
+            savefile = Path(f'{stem}{i}{extension}')
+            while savefile.exists():
+                i += 1
+                savefile = Path(f'{stem}{i}{extension}')
+
+        with open(savefile, 'wb') as handle:
+            pickle.dump(tso_run, handle, protocol=4)
+        ui.modal_remove()
+        ui.notification_show(
+            f"TSO model saved to file: '{savefile}'",
+            type="message",
+            duration=5,
+        )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
     @reactive.Effect
     @reactive.event(input.target_filter)
     def _():
-        targets = []
-        aliases = []
+        mask = np.zeros(nplanets, bool)
         if 'jwst' in input.target_filter.get():
-            targets += jwst_targets
-            aliases += catalog.jwst_aliases
+            mask |= is_jwst
         if 'transit' in input.target_filter.get():
-            targets += transit_planets
-            aliases += catalog.transit_aliases
+            mask |= is_transit
         if 'non_transit' in input.target_filter.get():
-            targets += non_transit_planets
-            aliases += catalog.non_transit_aliases
+            mask |= ~is_transit
         if 'tess' in input.target_filter.get():
-            targets += candidate_planets
-            aliases += catalog.candidate_aliases
+            mask |= ~is_confirmed
 
-        # Remove duplicates, sort, and join:
-        targets = list(np.unique(targets))
-        aliases = list(np.unique(aliases))
-        targets += [alias for alias in aliases if alias not in targets]
+        targets = [
+            target.planet for target,flag in zip(catalog.targets,mask)
+            if flag
+        ]
+        for i,target in enumerate(catalog.targets):
+            if mask[i]:
+                targets += target.aliases
 
         # Preserve current target if possible:
-        current_target = input.target.get()
-        if current_target not in targets:
-            current_target = None
-        ui.update_selectize('target', choices=targets, selected=current_target)
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        planet = '' if target is None else target.planet
+        ui.update_selectize('target', choices=targets, selected=planet)
+
+
+    @reactive.effect
+    @reactive.event(input.show_info)
+    def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        planet_info, star_info, aliases = pretty_print_target(target)
+        machine_readable_info.set(False)
+
+        info = ui.layout_columns(
+            ui.span(planet_info, style="font-family: monospace;"),
+            ui.span(star_info, style="font-family: monospace;"),
+            width=1/2,
+        )
+
+        m = ui.modal(
+            info,
+            ui.HTML(aliases),
+            title=ui.markdown(f'System parameters for: **{target.planet}**'),
+            size='l',
+            easy_close=True,
+            footer=ui.input_action_button(
+                id="re_text",
+                label="as machine readable",
+                class_='btn btn-sm',
+            ),
+        )
+        ui.modal_show(m)
+
+
+    @reactive.Effect
+    @reactive.event(input.re_text)
+    def _():
+        mri = machine_readable_info.get()
+        machine_readable_info.set(~mri)
+
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if machine_readable_info.get():
+            info = ui.span(
+                ui.HTML(target.machine_readable_text().replace('\n','<br>')),
+                style="font-family: monospace; font-size:medium;",
+            )
+            button_label = 'as pretty text'
+        else:
+            planet_info, star_info, aliases = pretty_print_target(target)
+            info = ui.layout_columns(
+                ui.span(planet_info, style="font-family: monospace;"),
+                ui.span(star_info, style="font-family: monospace;"),
+                width=1/2,
+            )
+            info = [info, ui.HTML(aliases)]
+            button_label = 'as machine readable'
+
+        ui.modal_remove()
+        m = ui.modal(
+            info,
+            title=ui.markdown(f'System parameters for: **{target.planet}**'),
+            size='l',
+            easy_close=True,
+            footer=ui.input_action_button(
+                id="re_text",
+                label=button_label,
+                class_='btn btn-sm',
+            ),
+        )
+        ui.modal_show(m)
 
 
     @render.ui
     @reactive.event(input.target)
     def target_label():
-        target_name = input.target.get()
-        if target_name in planets_aka:
-            aliases_text = ', '.join(planets_aka[target_name])
-            aka_tooltip = ui.tooltip(
-                fa.icon_svg("circle-info", fill='cornflowerblue'),
-                f"Also known as: {aliases_text}",
-                placement='top',
-            )
-        else:
-            aka_tooltip = None
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return ui.span('Known target?')
 
-        if target_name in jwst_targets:
-            idx = catalog.planets.index(target_name)
-            ra, dec = catalog.trexo_coords[idx]
+        if len(target.aliases) > 0:
+            aliases = ', '.join(target.aliases)
+            info_label = f"Also known as: {aliases}"
+        else:
+            info_label = 'System info'
+        info_tooltip = ui.tooltip(
+            ui.input_action_link(
+                id='show_info',
+                label='',
+                icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
+            ),
+            info_label,
+            placement='top',
+        )
+
+        if target.is_jwst:
+            ra, dec = target.trexo_ra_dec
             url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
                 ui.tags.a(
@@ -1017,28 +1178,28 @@ def server(input, output, session):
                 placement='top',
             )
 
-        if target_name in candidate_planets:
+        if target.is_confirmed:
+            candidate_tooltip = None
+        else:
             candidate_tooltip = ui.tooltip(
                 fa.icon_svg("triangle-exclamation", fill='darkorange'),
                 ui.markdown("This is a *candidate* planet"),
                 placement='top',
             )
-        else:
-            candidate_tooltip = None
 
         return ui.span(
             'Known target? ',
+            info_tooltip,
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("circle-info", fill='black'),
-                    href=f'{nasa_url}/{input.target.get()}',
+                    href=f'{nasa_url}/{target.planet}',
                     target="_blank",
                 ),
                 'See this target on the NASA Exoplanet Archive',
                 placement='top',
             ),
             trexolists_tooltip,
-            aka_tooltip,
             candidate_tooltip,
         )
 
@@ -1046,32 +1207,25 @@ def server(input, output, session):
     @reactive.event(input.target)
     def _():
         """Set known-target properties"""
-        target_name = input.target.get()
-        if target_name in catalog.planet_aliases:
-            ui.update_selectize(
-                'target',
-                selected=catalog.planet_aliases[target_name],
-            )
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
             return
+        if name in target.aliases:
+            ui.update_selectize('target', selected=target.planet)
 
-        if target_name not in catalog.planets:
-            return
+        teff = u.as_str(target.teff, '.1f', '')
+        log_g = u.as_str(target.logg_star, '.2f', '')
+        t_dur = u.as_str(target.transit_dur, '.3f', '')
 
-        index = catalog.planets.index(target_name)
-        teff = u.as_str(catalog.teff[index], '.1f', '')
-        log_g = u.as_str(catalog.log_g[index], '.2f', '')
         ui.update_text('teff', value=teff)
         ui.update_text('logg', value=log_g)
         ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{catalog.ks_mag[index]:.3f}')
-        t_dur = catalog.tr_dur[index]
-        tr_duration = '' if t_dur is None else f'{t_dur:.3f}'
-        ui.update_text('t_dur', value=tr_duration)
+        ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
+        ui.update_text('t_dur', value=t_dur)
 
-        ra_planet = catalog.ra[index]
-        dec_planet = catalog.dec[index]
         sky_view_src.set(
-            f'https://sky.esa.int/esasky/?target={ra_planet}%20{dec_planet}'
+            f'https://sky.esa.int/esasky/?target={target.ra}%20{target.dec}'
             '&fov=0.2&sci=true'
         )
 
@@ -1235,10 +1389,13 @@ def server(input, output, session):
         return f"{obs_geometry} depth"
 
     @render.ui
+    @reactive.event(warning_text)
     def warnings_label():
-        if not warnings_flag.get():
+        warnings = warning_text.get()
+        if warnings == '':
             return "Warnings"
-        return ui.HTML(f'<div style="color:red;">Warnings</div>')
+        n_warn = len(warnings)
+        return ui.HTML(f'<div style="color:red;">Warnings ({n_warn})</div>')
 
     @reactive.Effect
     @reactive.event(
@@ -1270,17 +1427,16 @@ def server(input, output, session):
         obs_geometry = input.geometry.get()
         model_type = input.planet_model_type.get()
 
-        target_name = input.target.get()
-        if target_name not in catalog.planets:
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
             rprs_square = 1.0
             teq_planet = 1000.0
         else:
-            index = catalog.planets.index(target_name)
-            teq_planet = catalog.teq[index]
-            if catalog.rprs[index] is None:
+            teq_planet = target.eq_temp
+            rprs_square = target.rprs**2.0
+            if np.isnan(rprs_square):
                 rprs_square = 0.0
-            else:
-                rprs_square = catalog.rprs[index]**2.0
         rprs_square_percent = np.round(100*rprs_square, decimals=4)
 
         layout_kwargs = dict(
@@ -1688,7 +1844,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
-    @render.text
+    @render.ui
     def exp_time():
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
@@ -1703,7 +1859,7 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
         if ngroup is None or detector is None or sed_label is None:
-            return ' '
+            return ui.HTML(' ')
 
         ngroup = int(ngroup)
         sat_label = make_saturation_label(
@@ -1714,7 +1870,9 @@ def server(input, output, session):
             inst, subarray, readout, ngroup, int(nint),
         )
         exposure_hours = exp_time / 3600.0
-        exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
+        exp_text = ui.HTML(
+            f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
+        )
 
         saturation_label.get()  # enforce calc_saturation renders exp_time
         if sat_label not in cache_saturation:
@@ -1726,12 +1884,46 @@ def server(input, output, session):
         sat_fraction = pixel_rate * sat_time / full_well
         ngroup_80 = int(0.8*ngroup/sat_fraction)
         ngroup_max = int(ngroup/sat_fraction)
-        return (
-            f'{exp_text}\n'
-            f'Max. fraction of saturation: {100.0*sat_fraction:.1f}%\n'
-            f'ngroup below  80% saturation: {ngroup_80:d}\n'
-            f'ngroup below 100% saturation: {ngroup_max:d}'
+        saturation = f'{100.0*sat_fraction:.1f}%'
+        ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80:d}'
+        ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max:d}'
+
+        if sat_fraction >= 1.0:
+            saturation = f'<span class="danger">{saturation}</span>'
+        elif sat_fraction > 0.81:
+            saturation = f'<span class="warning">{saturation}</span>'
+
+        if ngroup_80 < 2:
+            ngroup_80_sat = f'<span class="danger">{ngroup_80_sat}</span>'
+        elif ngroup_80 == 2:
+            ngroup_80_sat = f'<span class="warning">{ngroup_80_sat}</span>'
+
+        if ngroup_max < 2:
+            ngroup_max_sat = f'<span class="danger">{ngroup_max_sat}</span>'
+        elif ngroup_max == 2:
+            ngroup_max_sat = f'<span class="warning">{ngroup_max_sat}</span>'
+        return ui.HTML(
+            f'{exp_text}<br>'
+            f'Max. fraction of saturation: {saturation}<br>'
+            f'{ngroup_80_sat}<br>'
+            f'{ngroup_max_sat}<br>'
         )
+
+    @render.text
+    @reactive.event(warning_text)
+    def warnings():
+        warnings = warning_text.get()
+        if warnings == '':
+            return 'No warnings'
+        text = ''
+        for warn_label, warn_text in warnings.items():
+            warn = textwrap.fill(
+                f'- {warn_text}',
+                subsequent_indent='  ',
+                width=60,
+            )
+            text += warn + '\n\n'
+        return text
 
 app = App(app_ui, server)
 

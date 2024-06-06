@@ -454,7 +454,7 @@ def filter_throughputs():
         if inst not in throughputs[obs_type]:
             throughputs[obs_type][inst] = {}
 
-        t_file = f'{ROOT}data/throughputs_{inst}_{mode}.pickle'
+        t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
             data = pickle.load(handle)
 
@@ -595,11 +595,13 @@ def generate_all_instruments():
     return detectors
 
 
-def detector_label(mode, disperser, filter, subarray, readout):
+def detector_label(inst, mode, disperser, filter, subarray, readout):
     """
     Generate a pretty and (as succinct as possible) label for the
     detector configuration.
     """
+    if mode == 'target_acq':
+        return inst_names[inst]
     if mode == 'mrs_ts':
         return 'MIRI MRS'
     if mode == 'lrsslitless':

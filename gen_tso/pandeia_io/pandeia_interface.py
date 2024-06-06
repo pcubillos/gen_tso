@@ -573,7 +573,7 @@ def simulate_tso(
 
     Examples
     --------
-    >>> import pandeia_interface as jwst
+    >>> import gen_tso.pandeia_io as jwst
     >>> import matplotlib.pyplot as plt
 
     >>> scene = jwst.make_scene(

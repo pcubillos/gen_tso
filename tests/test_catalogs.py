@@ -25,7 +25,7 @@ def test_fetch_aliases_oddballs():
     # import requests
     # import urllib
     # from gen_tso.utils import ROOT
-    # import gen_tso.catalogs.catalog_utils as u
+    # import gen_tso.catalogs.utils as u
     # from gen_tso.catalogs import *
 
 
