@@ -11,8 +11,7 @@ __all__ = [
 
 from astropy.io import ascii
 import numpy as np
-from prompt_toolkit import prompt
-from prompt_toolkit.completion import WordCompleter
+import prompt_toolkit as ptk
 
 from ..utils import ROOT
 from . import utils as u
@@ -26,6 +25,11 @@ def find_target(targets=None):
     Parameters
     ----------
     targets: list of Target objects
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> cat.find_target()
     """
     if targets is None:
         targets = load_targets('nea_data.txt', is_confirmed=True)
@@ -35,13 +39,16 @@ def find_target(targets=None):
         aliases += target.aliases
     planets += list(aliases)
 
-    completer = WordCompleter(
+    completer = ptk.completion.WordCompleter(
         planets,
         sentence=True,
         match_middle=True,
     )
-    name = prompt(
-        'Enter Planet name: ',
+    session = ptk.PromptSession(
+        history=ptk.history.FileHistory(f'{ROOT}/data/history_targets')
+    )
+    name = session.prompt(
+        "(Press 'tab' for autocomplete)\nEnter Planet name: ",
         completer=completer,
         complete_while_typing=False,
     )
