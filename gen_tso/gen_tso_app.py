@@ -90,8 +90,9 @@ spectra = {}
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
-if len(sys.argv) == 2:
-    loading_folders.append(os.path.realpath(sys.argv[1]))
+argv = [arg for arg in sys.argv if arg != '--debug']
+if len(argv) == 2:
+    loading_folders.append(os.path.realpath(argv[1]))
 loading_folders.append(f'{ROOT}data/models')
 current_dir = os.path.realpath(os.getcwd())
 

@@ -12,8 +12,10 @@ __all__ = [
     'fetch_tess_aliases',
 ]
 
-# TBD: Figure a way to circumvent the grequests conflict with shiny
-import grequests
+import sys
+# Skip importing grequests when launching the app because it breaks shiny
+if 'bin/tso' not in sys.argv[0]:
+    import grequests
 import requests
 import multiprocessing as mp
 from datetime import datetime, timezone
