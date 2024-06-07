@@ -3,7 +3,7 @@ pandeia.engine>=3.0.0
 numpy>=1.17
 scipy
 requests>=2.19.1
-grequests=0.7.0
+grequests>=0.7.0
 astroquery
 pandas
 plotly
