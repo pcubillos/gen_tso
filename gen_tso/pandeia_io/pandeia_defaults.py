@@ -578,6 +578,49 @@ def generate_all_instruments():
         )
         detectors.append(det)
 
+    # Photometry observing modes
+    photo_insts = get_configs(obs_type='photometry')
+    # TBD: enable when the front-end app is ready to take these in
+    if False:
+        for inst in photo_insts:
+            mode = inst['mode']
+            # Use pupil in place of 'disperser'
+            dispersers = inst['apertures']
+            filters = inst['filters']
+            subarrays = inst['subarrays']
+            readouts = inst['readouts']
+            apertures = inst['apertures']
+
+            disperser_label = 'Pupil'
+            filter_label = 'Filter'
+            default_indices = 0, 0, 0, 0
+            constraints = {}
+
+            if mode == 'lw_ts':
+                # Constraints for filter depends on pupil
+                pupil_constraints = {'lw': []}
+                for filter,filter_name in inst['filters'].items():
+                    if filter in inst['filter_constraints']:
+                        dispersers[filter] = filter_name
+                        pupil_constraints[filter] = [inst['filter_constraints'][filter]]
+                    else:
+                        pupil_constraints['lw'].append(filter)
+                constraints['filters'] = {'dispersers': pupil_constraints}
+            if mode == 'sw_ts':
+                # Constraints for filter depends on pupil
+                pupil_constraints = {'sw': []}
+                for filter,filter_name in inst['filters'].items():
+                    print(filter, filter_name)
+                    if filter in inst['filter_constraints']:
+                        dispersers[filter] = filter_name
+                        pupil_constraints[filter] = [inst['filter_constraints'][filter]]
+                    else:
+                        pupil_constraints['sw'].append(filter)
+                constraints['filters'] = {'dispersers': pupil_constraints}
+            if mode == 'imaging_ts':
+                disperser_label = ''
+                dispersers = {'':''}
+
     # Acquisition observing modes
     acq_insts = get_configs(obs_type='acquisition')
     for inst in acq_insts:
