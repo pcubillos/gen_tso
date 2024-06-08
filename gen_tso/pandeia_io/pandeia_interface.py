@@ -12,6 +12,7 @@ __all__ = [
     'make_scene',
     'set_depth_scene',
     'simulate_tso',
+    'print_pandeia_report',
     'PandeiaCalculation',
 ]
 
@@ -750,6 +751,108 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
+def print_pandeia_report(report, as_html=False):
+    r"""
+    Get a string summarizing a pandeia's perform_calculation scalar output.
+    Skip saturation values (which are covered in another function).
+
+    Parameters
+    ----------
+    report: Dictionary
+        A pandeia's perform_calculation() 'scalar' output.
+    as_html: Bool
+        If True, replace '\n' linebreaks with HTML's <br>
+        so that it formats well when printed as HTML.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> inst = 'nircam'
+    >>> readout = 'rapid'
+    >>> pando = jwst.PandeiaCalculation(inst, 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> result = pando.perform_calculation(
+    >>>     ngroup=92, nint=683, readout='rapid', filter='f444w',
+    >>> )
+    >>> report = jwst.print_pandeia_report(result['scalar'])
+    >>> print(report)
+    Signal-to-noise ratio         5998.2
+    Extracted flux                2106.2  e-/s
+    Standard deviation of flux       0.4  e-/s
+    Brightest pixel rate          1396.6  e-/s
+
+    Fraction of time collecting flux   0.98
+    Total exposure time                21638.7  s
+    Single exposure time               21638.7  s
+    First--last dt per exposure        21638.7  s
+    Reset--last dt per integration     21169.9  s
+
+    Reference wavelength   4.36  microns
+    Area of extraction aperture        4.76  pixels
+    Area of background measurement     6.35  pixels
+    Background surface brightness      0.26  MJy/sr
+    Total sky flux in background aperture    4.45  e-/s
+    Total flux in background aperture       65.97  e-/s
+    Background flux fraction from scene    0.93
+    Number of cosmic rays      0.0073  events/pixel/read
+    """
+    dt_fmt = '8.1f' if report['total_exposure_time'] > 100 else '6.3f'
+
+    snr = f"{report['sn']:9.1f}"
+    flux = f"{report['extracted_flux']:9.1f}"
+    flux_std = f"{report['extracted_noise']:9.1f}"
+    pixel_rate = f"{report['brightest_pixel']:9.1f}"
+
+    duty_cycle = f"{report['duty_cycle']:4.2f}"
+    total_time = f"{report['total_exposure_time']:{dt_fmt}}"
+    exp_time = f"{report['all_dithers_time']:{dt_fmt}}"
+    dt_exposure = f"{report['exposure_time']:{dt_fmt}}"
+    dt_integ = f"{report['measurement_time']:{dt_fmt}}"
+
+    ref_wave = f"{report['reference_wavelength']:.2f}"
+    extract_area = f"{report['extraction_area']:6.2f}"
+    cosmic_rays = f"{report['cr_ramp_rate']:9.4f}"
+
+    if report['background_area'] is None:
+        background_info = ''
+    else:
+        bkg_area = f"{report['background_area']:6.2f}"
+        bkg_brightness = f"{report['background']:6.2f}"
+        sky = f"{report['background_sky']:6.2f}"
+        bkg_flux = f"{report['background_total']:6.2f}"
+        bkg_source = f"{report['contamination']:.2f}"
+        background_info = (
+            f"Area of background measurement   {bkg_area}  pixels\n"
+            f"Background surface brightness    {bkg_brightness}  MJy/sr\n"
+            f"Total sky flux in background aperture  {sky}  e-/s\n"
+            f"Total flux in background aperture      {bkg_flux}  e-/s\n"
+            f"Background flux fraction from scene    {bkg_source}\n"
+        )
+
+    report = (
+        f"Signal-to-noise ratio      {snr}\n"
+        f"Extracted flux             {flux}  e-/s\n"
+        f"Standard deviation of flux {flux_std}  e-/s\n"
+        f"Brightest pixel rate       {pixel_rate}  e-/s\n"
+
+        f"\nFraction of time collecting flux   {duty_cycle}\n"
+        f"Total exposure time               {total_time}  s\n"
+        f"Single exposure time              {exp_time}  s\n"
+        f"First--last dt per exposure       {dt_exposure}  s\n"
+        f"Reset--last dt per integration    {dt_integ}  s\n"
+
+        f"\nReference wavelength   {ref_wave}  microns\n"
+        f"Area of extraction aperture      {extract_area}  pixels\n"
+        f"{background_info}"
+        f"Number of cosmic rays   {cosmic_rays}  events/pixel/read"
+    )
+
+    if as_html:
+        report = report.replace('\n', '<br>')
+    return report
+
+
 class PandeiaCalculation():
     """
     A class to interface with the pandeia.engine package.
@@ -1087,6 +1190,7 @@ class PandeiaCalculation():
         )
 
         nint = int(obs_dur*3600/single_exp_time)
+        # print(f'Nint: {nint}  [{obs_dur}, {single_exp_time}]')
         report = self.perform_calculation(
             ngroup, nint, disperser, filter, subarray, readout, aperture,
         )
