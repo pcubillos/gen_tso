@@ -5,6 +5,7 @@ __all__ = [
     'read_noise_variance',
     'exposure_time',
     'saturation_time',
+    'saturation_level',
     'load_sed_list',
     'find_closest_sed',
     'extract_sed',
@@ -175,10 +176,23 @@ def exposure_time(
     return exposure_time
 
 
-def saturation_time(instrument, ngroup=None, readout=None, subarray=None):
+def saturation_time(instrument, ngroup, readout, subarray):
     """
     Compute JWST's saturation time for the given instrument configuration.
     Based on pandeia.engine.exposure.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> # Calculate integration time for a given instrument setup:
+    >>> inst = 'nircam'
+    >>> ngroup = 90
+    >>> readout = 'rapid'
+    >>> subarray = 'subgrism64'
+    >>> integ_time = jwst.saturation_time(inst, ngroup, readout, subarray)
+    >>> print(integ_time)
+    30.6549
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
@@ -201,6 +215,71 @@ def saturation_time(instrument, ngroup=None, readout=None, subarray=None):
         ndrop1 + (ngroup - 1) * (nframe + ndrop2) + nframe
     )
     return saturation_time
+
+
+def saturation_level(reports, get_max=False):
+    """
+    Compute saturation values for a given perform_calculation output.
+
+    Parameters
+    ----------
+    reports: Dictionary or list of dictionaries
+        One or more pandeia's perform_calculation() output dictionary.
+        If there is more than one input report, return arrays of
+        saturation values for each input.
+    get_max: Bool
+        If True and there is  more than one input report, return the
+        saturation values for the report that's quickest to saturate.
+
+    Returns
+    -------
+    brightest_pixel_rate: Float
+        e- per second rate at the brightest pixel.
+    full_well: Float
+        Number of e- counts to saturate the detector.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> inst = 'nircam'
+    >>> readout = 'rapid'
+    >>> pando = jwst.PandeiaCalculation(inst, 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> result = pando.perform_calculation(
+    >>>     ngroup=2, nint=683, readout='rapid', filter='f444w',
+    >>> )
+    >>> pixel_rate, full_well = jwst.saturation_level(result)
+
+    >>> # Now I can calculate the saturation level for any integration time:
+    >>> # (for the given filter and scene)
+    >>> subarray = 'subgrism64'
+    >>> for ngroup in [2, 97, 122]:
+    >>>     integ_time = jwst.saturation_time(inst, ngroup, readout, subarray)
+    >>>     sat_level = pixel_rate * integ_time / full_well * 100
+    >>>     print(f'Sat. fraction for {ngroup:3d} groups: {sat_level:5.1f}%')
+    """
+    if not isinstance(reports, list):
+        reports = [reports]
+
+    ncalc = len(reports)
+    brightest_pixel_rate = np.zeros(ncalc)
+    full_well = np.zeros(ncalc)
+    for i,report in enumerate(reports):
+        results = report['scalar']
+        brightest_pixel_rate[i] = results['brightest_pixel']
+        full_well[i] = (
+            brightest_pixel_rate[i]
+            * results['saturation_time']
+            / results['fraction_saturation']
+        )
+
+    if len(reports) == 1:
+        return brightest_pixel_rate[0], full_well[0]
+    if get_max:
+        idx = np.argmax(flux_rate*full_well)
+        return brightest_pixel_rate[idx], full_well[idx]
+    return brightest_pixel_rate, full_well
 
 
 def load_sed_list(source):
@@ -672,7 +751,41 @@ def simulate_tso(
 
 
 class PandeiaCalculation():
-    def __init__(self, instrument, mode):
+    """
+    A class to interface with the pandeia.engine package.
+
+    Parameters
+    ----------
+    instrument: string
+        The JWST instrument: nircam, niriss, nirspec, miri.
+    mode: string
+        Observing mode. If not set, default to the first item for
+        each instrument from the list below.
+        - nircam:
+            ssgrism        spectroscopy
+            target_acq     aquisition
+        - niriss:
+            soss           spectroscopy
+            target_acq     aquisition
+        - nirspec:
+            bots           spectroscopy
+            target_acq     aquisition
+        - miri:
+            lrsslitless    spectroscopy
+            mrs_ts         spectroscopy
+            target_acq     aquisition
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> pando = jwst.PandeiaCalculation('nircam', 'target_acq')
+    """
+    def __init__(self, instrument, mode=None):
+        if mode is None:
+            # pick the most popular spectroscopic mode
+            pass
+        if mode == 'acquisition':
+            mode = 'target_acq'
         self.telescope = 'jwst'
         self.instrument = instrument
         self.mode = mode
@@ -826,22 +939,7 @@ class PandeiaCalculation():
             subarray=subarray, readout=readout,
             aperture=aperture,
         )
-        if not isinstance(reports, list):
-            reports = [reports]
-
-        ncalc = len(reports)
-        brightest_pixel_rate = np.zeros(ncalc)
-        full_well = np.zeros(ncalc)
-        for i,report in enumerate(reports):
-            results = report['scalar']
-            brightest_pixel_rate[i] = results['brightest_pixel']
-            full_well[i] = (
-                brightest_pixel_rate[i]
-                * results['saturation_time']
-                / results['fraction_saturation']
-            )
-        if len(reports) == 1:
-            return brightest_pixel_rate[0], full_well[0]
+        brightest_pixel_rate, full_well = saturation_level(reports)
         return brightest_pixel_rate, full_well
 
 
