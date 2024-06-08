@@ -7,7 +7,6 @@ __all__ = [
     'generate_all_instruments',
     'Detector',
     'detector_label',
-    'instrument_label',
 ]
 
 from itertools import product
@@ -435,6 +434,38 @@ class Detector:
                 }
         return default_vals
 
+    def instrument_label(self, disperser, filter):
+        """
+        Generate a pretty label with only instrument, mode,
+        and sometimes disperser or filter.
+
+        Examples
+        --------
+        >>> import gen_tso.pandeia_io as jwst
+        >>> detectors = jwst.generate_all_instruments()
+        >>> bots = detectors[4]
+        >>> print(bots.instrument_label(None, 'g395h/f290lp'))
+        """
+        inst = self.instrument
+        mode = self.mode
+        if mode == 'mrs_ts':
+            disperser_label = self.dispersers[disperser]
+            label = f'{inst} / MRS / {disperser_label}'
+        elif mode == 'lrsslitless':
+            label = f'{inst} / LRS'
+        elif mode == 'soss':
+            label = f'{inst} / SOSS'
+        elif mode == 'ssgrism':
+            filter_label = self.filters[filter]
+            label = f'{inst} / {filter_label}'
+        elif mode == 'bots':
+            disperser_label = self.filters[filter]
+            disperser_label = disperser_label[:disperser_label.index('/')]
+            label = f'{inst} / {disperser_label}'
+        elif mode == 'target_acq':
+            label = f'{inst} / acquisition'
+
+        return label
 
 
 
@@ -617,29 +648,4 @@ def detector_label(inst, mode, disperser, filter, subarray, readout):
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
 
 
-def instrument_label(detector, disperser, filter):
-    """
-    Generate a pretty label with only instrument, mode,
-    and sometimes disperser or filter.
-    """
-    inst = detector.instrument
-    mode = detector.mode
-    if mode == 'mrs_ts':
-        disperser_label = detector.dispersers[disperser]
-        label = f'{inst} / MRS / {disperser_label}'
-    if mode == 'lrsslitless':
-        label = f'{inst} / LRS'
-    if mode == 'soss':
-        label = f'{inst} / SOSS'
-    if mode == 'ssgrism':
-        filter_label = detector.filters[filter]
-        label = f'{inst} / {filter_label}'
-    elif mode == 'bots':
-        disperser_label = detector.filters[filter]
-        disperser_label = disperser_label[:disperser_label.index('/')]
-        label = f'{inst} / {disperser_label}'
-    elif mode == 'target_acq':
-        label = f'{inst} / acquisition'
-
-    return label
 
