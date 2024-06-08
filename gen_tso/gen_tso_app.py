@@ -554,13 +554,9 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Results",
-                    cs.custom_card(
-                        ui.span(
-                            ui.output_ui(id="exp_time"),
-                            style="font-family: monospace; font-size:medium;",
-                        ),
-                        body_args=dict(padding='8px'),
-                        style="background: #F2F2F2!important; border-radius: 3px;",
+                    ui.span(
+                        ui.output_ui(id="exp_time"),
+                        style="font-family: monospace; font-size:medium;",
                     ),
                 ),
                 ui.nav_panel(
@@ -720,7 +716,7 @@ def make_saturation_label(mode, disperser, filter, subarray, sed_label):
     """
     sat_label = f'{mode}_{filter}'
     if mode == 'bots':
-        sat_label = f'{sat_label}_{subarray}'
+        sat_label = f'{sat_label}_{disperser}_{subarray}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
     sat_label = f'{sat_label}_{sed_label}'
@@ -844,7 +840,7 @@ def server(input, output, session):
 
     @reactive.Effect
     @reactive.event(input.run_pandeia)
-    def _():
+    def run_pandeia():
         inst_name = input.select_instrument.get()
         inst = inst_name.lower()
         mode = input.select_mode.get()
@@ -857,9 +853,9 @@ def server(input, output, session):
         aperture = None
 
         detector = get_detector(mode, inst_name)
-        inst_label = jwst.instrument_label(detector, disperser, filter)
+        inst_label = detector.instrument_label(disperser, filter)
 
-        # "Exceptions":
+        # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
         if mode == 'mrs_ts':
@@ -867,7 +863,6 @@ def server(input, output, session):
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None
-
 
         obs_geometry = input.geometry.get()
         transit_dur = float(input.t_dur.get())
@@ -908,8 +903,18 @@ def server(input, output, session):
                 spectra[depth_label] = {'wl': wl, 'depth': depth}
             depth_model = [wl, depth]
 
+            obs_dur = exp_time / 3600.0
+            # TBD: If so, default to a pando.perform_calculation()
+            # and replace error with warning
+            if obs_dur < transit_dur:
+                error_msg = ui.markdown(
+                    f"**Error:**<br>observation time with **{nint} integration"
+                    f"(s)** is less than {obs_geometry.lower()} time"
+                )
+                ui.notification_show(error_msg, type="error", duration=5)
+                return
             tso = pando.tso_calculation(
-                obs_geometry.lower(), transit_dur, exp_time, depth_model,
+                obs_geometry.lower(), transit_dur, obs_dur, depth_model,
                 ngroup, disperser, filter, subarray, readout, aperture,
             )
 
@@ -963,6 +968,18 @@ def server(input, output, session):
             report = tso[rep_label]
         else:
             report = tso
+
+        # Update report
+        sat_label = make_saturation_label(
+            mode, disperser, filter, subarray, sed_label,
+        )
+        flux_rate, full_well = jwst.saturation_level(report, get_max=True)
+        cache_saturation[sat_label] = dict(
+            brightest_pixel_rate = flux_rate,
+            full_well = full_well,
+            report = report['scalar'],
+        )
+        saturation_label.set(sat_label)
 
         if len(report['warnings']) > 0:
             warning_text.set(report['warnings'])
@@ -1654,10 +1671,8 @@ def server(input, output, session):
         readout = input.readout.get()
         aperture = None
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, sed_label,
-        )
 
+        # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
         if mode == 'mrs_ts':
@@ -1668,6 +1683,10 @@ def server(input, output, session):
             disperser = None
         else:
             ngroup = 2
+
+        sat_label = make_saturation_label(
+            mode, disperser, filter, subarray, sed_label,
+        )
 
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
@@ -1862,6 +1881,15 @@ def server(input, output, session):
         if ngroup is None or detector is None or sed_label is None:
             return ui.HTML(' ')
 
+        # Front-end to back-end exceptions:
+        if mode == 'bots':
+            disperser, filter = filter.split('/')
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'target_acq':
+            aperture = input.disperser.get()
+            disperser = None
+
         ngroup = int(ngroup)
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
@@ -1871,13 +1899,11 @@ def server(input, output, session):
             inst, subarray, readout, ngroup, int(nint),
         )
         exposure_hours = exp_time / 3600.0
-        exp_text = ui.HTML(
-            f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
-        )
+        exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
 
         saturation_label.get()  # enforce calc_saturation renders exp_time
         if sat_label not in cache_saturation:
-            return exp_text
+            return ui.HTML(f'<pre>{exp_text}</pre>')
 
         pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
         full_well = cache_saturation[sat_label]['full_well']
@@ -1903,11 +1929,24 @@ def server(input, output, session):
             ngroup_max_sat = f'<span class="danger">{ngroup_max_sat}</span>'
         elif ngroup_max == 2:
             ngroup_max_sat = f'<span class="warning">{ngroup_max_sat}</span>'
+
+        if 'report' in cache_saturation[sat_label]:
+            # and groups / integs match
+            pandeia_report = cache_saturation[sat_label]['report']
+            report = (
+                '<br><br>' +
+                jwst.print_pandeia_report(pandeia_report, as_html=True)
+            )
+        else:
+            report = ''
         return ui.HTML(
+            '<pre>'
             f'{exp_text}<br>'
             f'Max. fraction of saturation: {saturation}<br>'
             f'{ngroup_80_sat}<br>'
-            f'{ngroup_max_sat}<br>'
+            f'{ngroup_max_sat}'
+            f'{report}'
+            '</pre>'
         )
 
     @render.text

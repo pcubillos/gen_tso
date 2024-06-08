@@ -1190,7 +1190,6 @@ class PandeiaCalculation():
         )
 
         nint = int(obs_dur*3600/single_exp_time)
-        # print(f'Nint: {nint}  [{obs_dur}, {single_exp_time}]')
         report = self.perform_calculation(
             ngroup, nint, disperser, filter, subarray, readout, aperture,
         )

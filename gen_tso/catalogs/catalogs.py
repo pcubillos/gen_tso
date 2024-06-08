@@ -29,7 +29,7 @@ def find_target(targets=None):
     Examples
     --------
     >>> import gen_tso.catalogs as cat
-    >>> cat.find_target()
+    >>> target = cat.find_target()
     """
     if targets is None:
         targets = load_targets('nea_data.txt', is_confirmed=True)
@@ -45,7 +45,7 @@ def find_target(targets=None):
         match_middle=True,
     )
     session = ptk.PromptSession(
-        history=ptk.history.FileHistory(f'{ROOT}/data/history_targets')
+        history=ptk.history.FileHistory(f'{ROOT}/data/target_search_history')
     )
     name = session.prompt(
         "(Press 'tab' for autocomplete)\nEnter Planet name: ",
