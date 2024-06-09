@@ -4,6 +4,7 @@
 __all__ = [
     'read_noise_variance',
     'exposure_time',
+    'bin_search_exposure_time',
     'saturation_time',
     'saturation_level',
     'load_sed_list',
@@ -99,10 +100,70 @@ def read_noise_variance(report, ins_config):
     return read_noise
 
 
-def exposure_time(
-        instrument, subarray, readout,
-        ngroup=None, nint=None, nexp=1,
-    ):
+def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
+    """
+    Return a callable that evaluates the exposure time as a function
+    of nint.
+
+    Parameters
+    ----------
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    ngroup: Integeer
+        Number of groups per integration.  Must be >= 2.
+    nexp: Integer
+        Number of exposures.
+
+    Returns
+    -------
+    exp_time: Float
+        Exposure time in seconds.
+
+    """
+    if isinstance(instrument, str):
+        telescope = 'jwst'
+        ins_config = get_instrument_config(telescope, instrument)
+    else:
+        ins_config = instrument.ins_config
+
+    # When switching instrument, subarray and readout updates are not atomic
+    if subarray not in ins_config['subarray_config']['default']:
+        return None
+    if readout not in ins_config['readout_pattern_config']:
+        return None
+
+    subarray_config = ins_config['subarray_config']['default'][subarray]
+    readout_config = ins_config['readout_pattern_config'][readout]
+    tfffr = subarray_config['tfffr']
+    tframe = subarray_config['tframe']
+    nframe = readout_config['nframe']
+    ndrop2 = readout_config['ndrop2']
+    ndrop1 = ndrop3 = 0
+    nreset1 = nreset2 = 1
+    if 'nreset1' in readout_config:
+        nreset1 = readout_config['nreset1']
+    elif 'nreset1' in subarray_config:
+        nreset1 = subarray_config['nreset1']
+    if 'nreset2' in readout_config:
+        nreset2 = readout_config['nreset2']
+
+    def exp_time(nint):
+        time = nexp * (
+            tfffr * nint +
+            tframe * (
+                nreset1 + (nint-1) * nreset2 +
+                nint * (ndrop1 + (ngroup-1) * (nframe + ndrop2) + nframe + ndrop3)
+            )
+        )
+        return time
+    return exp_time
+
+
+def exposure_time(instrument, subarray, readout, ngroup, nint, nexp=1):
     """
     Calculate the exposure time for the given instrumental setup.
     Based on pandeia.engine.exposure.
@@ -133,48 +194,89 @@ def exposure_time(
 
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
-    >>> subarray = 'full'
     >>> readout = 'rapid'
     >>> nint = 1
-    >>> ngroup = 20
+    >>> ngroup = 90
     >>> exp_time = jwst.exposure_time(inst, subarray, readout, ngroup, nint)
     >>> print(exp_time)
     """
-    if isinstance(instrument, str):
-        telescope = 'jwst'
-        ins_config = get_instrument_config(telescope, instrument)
-    else:
-        ins_config = instrument.ins_config
-
-    # When switching instrument, subarray and readout updates are not atomic
-    if subarray not in ins_config['subarray_config']['default']:
-        return 0.0
-    if readout not in ins_config['readout_pattern_config']:
-        return 0.0
-
-    subarray_config = ins_config['subarray_config']['default'][subarray]
-    readout_config = ins_config['readout_pattern_config'][readout]
-    tfffr = subarray_config['tfffr']
-    tframe = subarray_config['tframe']
-    nframe = readout_config['nframe']
-    ndrop2 = readout_config['ndrop2']
-    ndrop1 = ndrop3 = 0
-    nreset1 = nreset2 = 1
-    if 'nreset1' in readout_config:
-        nreset1 = readout_config['nreset1']
-    elif 'nreset1' in subarray_config:
-        nreset1 = subarray_config['nreset1']
-    if 'nreset2' in readout_config:
-        nreset2 = readout_config['nreset2']
-
-    exposure_time = nexp * (
-        tfffr * nint +
-        tframe * (
-            nreset1 + (nint-1) * nreset2 +
-            nint * (ndrop1 + (ngroup-1) * (nframe + ndrop2) + nframe + ndrop3)
-        )
+    exp_time = _exposure_time_function(
+        instrument, subarray, readout, ngroup, nexp,
     )
-    return exposure_time
+    if exp_time is None:
+        return 0.0
+    return exp_time(nint)
+
+
+def bin_search_exposure_time(
+        instrument, subarray, readout, ngroup, obs_time, nexp=1,
+    ):
+    """
+    Binary search for nint such that exp_time(nint) > obs_time
+
+    Parameters
+    ----------
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    ngroup: Integeer
+        Number of groups per integration.  Must be >= 2.
+    obs_time: Integer
+        Total observation time to aim for (in hours).
+    nexp: Integer
+        Number of exposures.
+
+    Returns
+    -------
+    nint: Integer
+        Number of integrations to reach obs_time.
+    exp_time: Float
+        Exposure time in seconds.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> instrument = 'miri'
+    >>> subarray = 'slitlessprism'
+    >>> readout = 'fastr1'
+    >>> ngroup = 30
+    >>> obs_time = 6.0
+    >>> nint, exp_time = jwst.bin_search_exposure_time(
+    >>>     instrument, subarray, readout, ngroup, obs_time,
+    >>> )
+    >>> print(nint, exp_time)
+    """
+    exp_time = _exposure_time_function(
+        instrument, subarray, readout, ngroup, nexp,
+    )
+    if exp_time is None:
+        return 0, 0.0
+
+    obs_time_sec = 3600 * obs_time
+    n1 = 1
+    t1 = exp_time(n1)
+    if obs_time_sec < t1:
+        return n1, t1
+
+    n2 = int(obs_time_sec / t1)
+    t2 = exp_time(n2)
+    while t2 < obs_time_sec:
+        n1 = n2
+        n2 = n1*2
+        t2 = exp_time(n2)
+    while n2-n1 > 1:
+        n = int(0.5*(n1+n2))
+        t = exp_time(n)
+        if obs_time_sec > t:
+            n1 = n
+        else:
+            n2 = n
+
+    return n2, exp_time(n2)
 
 
 def saturation_time(instrument, ngroup, readout, subarray):
@@ -1099,6 +1201,10 @@ class PandeiaCalculation():
             subarray=subarray, readout=readout,
             aperture=aperture,
         )
+        if isinstance(reports, list):
+            reports = [report['scalar'] for report in reports]
+        else:
+            reports = reports['scalar']
         brightest_pixel_rate, full_well = saturation_level(reports)
         return brightest_pixel_rate, full_well
 
