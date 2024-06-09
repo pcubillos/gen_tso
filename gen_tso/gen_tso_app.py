@@ -1664,7 +1664,7 @@ def server(input, output, session):
                 id="integrations",
                 label="Integrations",
                 value=1,
-                min=1, max=10000,
+                min=1, max=100000,
             )
 
     @reactive.Effect
@@ -1698,8 +1698,7 @@ def server(input, output, session):
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         flux_rate, full_well = pando.get_saturation_values(
-            disperser, filter, subarray, readout, ngroup,
-            aperture,
+            disperser, filter, subarray, readout, ngroup, aperture,
         )
         if isinstance(flux_rate, Iterable):
             idx = np.argmax(flux_rate*full_well)
@@ -1736,12 +1735,11 @@ def server(input, output, session):
         subarray = input.subarray.get()
         if ngroup is None:
             return
-        single_exp_time = jwst.exposure_time(
-            inst, subarray, readout, int(ngroup), int(nint),
+        integs, exp_time = jwst.bin_search_exposure_time(
+            inst, subarray, readout, int(ngroup), obs_dur,
         )
-        if single_exp_time == 0.0:
+        if exp_time == 0.0:
             return
-        integs = int(np.round(obs_dur*3600.0/single_exp_time))
         ui.update_numeric('integrations', value=integs)
 
 
