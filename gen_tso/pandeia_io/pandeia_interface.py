@@ -267,18 +267,17 @@ def saturation_level(reports, get_max=False):
     brightest_pixel_rate = np.zeros(ncalc)
     full_well = np.zeros(ncalc)
     for i,report in enumerate(reports):
-        results = report['scalar']
-        brightest_pixel_rate[i] = results['brightest_pixel']
+        brightest_pixel_rate[i] = report['brightest_pixel']
         full_well[i] = (
             brightest_pixel_rate[i]
-            * results['saturation_time']
-            / results['fraction_saturation']
+            * report['saturation_time']
+            / report['fraction_saturation']
         )
 
     if len(reports) == 1:
         return brightest_pixel_rate[0], full_well[0]
     if get_max:
-        idx = np.argmax(flux_rate*full_well)
+        idx = np.argmax(brightest_pixel_rate*full_well)
         return brightest_pixel_rate[idx], full_well[idx]
     return brightest_pixel_rate, full_well
 
@@ -751,15 +750,19 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
-def print_pandeia_report(report, as_html=False):
+def print_pandeia_report(report_in, report_out=None, as_html=False):
     r"""
     Get a string summarizing a pandeia's perform_calculation scalar output.
     Skip saturation values (which are covered in another function).
 
     Parameters
     ----------
-    report: Dictionary
+    report_in: Dictionary
         A pandeia's perform_calculation() 'scalar' output.
+    report_out: Dictionary
+        A pandeia's perform_calculation() 'scalar' output.
+        If not None, assume that the inputs reports are an in-transit
+        out-of-transit pair.
     as_html: Bool
         If True, replace '\n' linebreaks with HTML's <br>
         so that it formats well when printed as HTML.
@@ -777,80 +780,134 @@ def print_pandeia_report(report, as_html=False):
     >>> )
     >>> report = jwst.print_pandeia_report(result['scalar'])
     >>> print(report)
-    Signal-to-noise ratio         5998.2
-    Extracted flux                2106.2  e-/s
-    Standard deviation of flux       0.4  e-/s
-    Brightest pixel rate          1396.6  e-/s
 
-    Fraction of time collecting flux   0.98
-    Total exposure time                21638.7  s
-    Single exposure time               21638.7  s
-    First--last dt per exposure        21638.7  s
-    Reset--last dt per integration     21169.9  s
+    Signal-to-noise ratio       5998.2
+    Extracted flux              2106.2  e-/s
+    Flux standard deviation        0.4  e-/s
+    Brightest pixel rate        1396.6  e-/s
 
-    Reference wavelength   4.36  microns
-    Area of extraction aperture        4.76  pixels
-    Area of background measurement     6.35  pixels
-    Background surface brightness      0.26  MJy/sr
-    Total sky flux in background aperture    4.45  e-/s
-    Total flux in background aperture       65.97  e-/s
-    Background flux fraction from scene    0.93
-    Number of cosmic rays      0.0073  events/pixel/read
+    Integrations:                         683
+    Duty cycle:                          0.98
+    Total exposure time:              21638.7  s
+    Single exposure time:             21638.7  s
+    First--last dt per exposure:      21638.7  s
+    Reset--last dt per integration:   21169.9  s
+
+    Reference wavelength:                    4.36  microns
+    Area of extraction aperture:             4.76  pixels
+    Area of background measurement:           6.3  pixels
+    Background surface brightness:            0.3  MJy/sr
+    Total sky flux in background aperture:   4.45  e-/s
+    Total flux in background aperture:      65.97  e-/s
+    Background flux fraction from scene:     0.93
+    Number of cosmic rays:      0.0073  events/pixel/read
     """
-    dt_fmt = '8.1f' if report['total_exposure_time'] > 100 else '6.3f'
+    if not isinstance(report_in, list):
+        report_in = [report_in]
+    rate_in = report_in[0]['extracted_flux']
+    if report_out is not None:
+        if not isinstance(report_out, list):
+           report_out = [report_out]
+        rate_out = report_out[0]['extracted_flux']
 
-    snr = f"{report['sn']:9.1f}"
-    flux = f"{report['extracted_flux']:9.1f}"
-    flux_std = f"{report['extracted_noise']:9.1f}"
-    pixel_rate = f"{report['brightest_pixel']:9.1f}"
-
-    duty_cycle = f"{report['duty_cycle']:4.2f}"
-    total_time = f"{report['total_exposure_time']:{dt_fmt}}"
-    exp_time = f"{report['all_dithers_time']:{dt_fmt}}"
-    dt_exposure = f"{report['exposure_time']:{dt_fmt}}"
-    dt_integ = f"{report['measurement_time']:{dt_fmt}}"
-
-    ref_wave = f"{report['reference_wavelength']:.2f}"
-    extract_area = f"{report['extraction_area']:6.2f}"
-    cosmic_rays = f"{report['cr_ramp_rate']:9.4f}"
-
-    if report['background_area'] is None:
-        background_info = ''
+    # Take report with more flux in it
+    if report_out is None or rate_in > rate_out:
+        reports = report_in
     else:
-        bkg_area = f"{report['background_area']:6.2f}"
-        bkg_brightness = f"{report['background']:6.2f}"
-        sky = f"{report['background_sky']:6.2f}"
-        bkg_flux = f"{report['background_total']:6.2f}"
-        bkg_source = f"{report['contamination']:.2f}"
+        reports = report_out
+
+    dt_fmt = '8.1f' if report_in[0]['total_exposure_time'] > 100 else '8.3f'
+
+    snr = ''
+    flux = ''
+    flux_std = ''
+    pixel_rate = ''
+    ref_wave = ''
+    extract_area = ''
+    bkg_area = ''
+    bkg_brightness = ''
+    sky = ''
+    bkg_flux = ''
+    bkg_source = ''
+    for report in report_in:
+        snr += f"{report['sn']:9.1f} "
+        flux += f"{report['extracted_flux']:9.1f} "
+        flux_std += f"{report['extracted_noise']:9.1f} "
+        pixel_rate += f"{report['brightest_pixel']:9.1f} "
+        ref_wave += f"{report['reference_wavelength']:6.2f} "
+        extract_area += f"{report['extraction_area']:6.2f} "
+        if report_in[0]['background_area'] is not None:
+            bkg_area += f"{report['background_area']:6.1f} "
+            bkg_brightness += f"{report['background']:6.1f} "
+            sky += f"{report['background_sky']:6.2f} "
+            bkg_flux += f"{report['background_total']:6.2f} "
+            bkg_source += f"{report['contamination']:6.2f} "
+
+    background_info = ''
+    if report_in[0]['background_area'] is not None:
         background_info = (
-            f"Area of background measurement   {bkg_area}  pixels\n"
-            f"Background surface brightness    {bkg_brightness}  MJy/sr\n"
-            f"Total sky flux in background aperture  {sky}  e-/s\n"
-            f"Total flux in background aperture      {bkg_flux}  e-/s\n"
-            f"Background flux fraction from scene    {bkg_source}\n"
+            f"Area of background measurement:        {bkg_area} pixels\n"
+            f"Background surface brightness:         {bkg_brightness} MJy/sr\n"
+            f"Total sky flux in background aperture: {sky} e-/s\n"
+            f"Total flux in background aperture:     {bkg_flux} e-/s\n"
+            f"Background flux fraction from scene:   {bkg_source}\n"
         )
 
-    report = (
-        f"Signal-to-noise ratio      {snr}\n"
-        f"Extracted flux             {flux}  e-/s\n"
-        f"Standard deviation of flux {flux_std}  e-/s\n"
-        f"Brightest pixel rate       {pixel_rate}  e-/s\n"
+    cosmic_rays = f"{report_in[0]['cr_ramp_rate']:9.4f}"
 
-        f"\nFraction of time collecting flux   {duty_cycle}\n"
-        f"Total exposure time               {total_time}  s\n"
-        f"Single exposure time              {exp_time}  s\n"
-        f"First--last dt per exposure       {dt_exposure}  s\n"
-        f"Reset--last dt per integration    {dt_integ}  s\n"
+    integs = ''
+    duty_cycle = ''
+    total_time = ''
+    exp_time = ''
+    dt_exposure = ''
+    dt_integ = ''
+    reports = report_in[0:1]
+    if report_out is not None:
+        reports.append(report_out[0])
+    for report in reports:
+        integs += f"{report['total_integrations']:8d} "
+        duty_cycle += f"{report['duty_cycle']:8.2f} "
+        total_time += f"{report['total_exposure_time']:{dt_fmt}} "
+        exp_time += f"{report['all_dithers_time']:{dt_fmt}} "
+        dt_exposure += f"{report['exposure_time']:{dt_fmt}} "
+        dt_integ += f"{report['measurement_time']:{dt_fmt}} "
 
-        f"\nReference wavelength   {ref_wave}  microns\n"
-        f"Area of extraction aperture      {extract_area}  pixels\n"
+    if report_out is None:
+        tso_header = ''
+    else:
+        tso_header = f"{'in-transit':>41}  out-transit\n"
+    if report_in[0]['disperser'] in ['short', 'medium', 'long']:
+        channels = "CH1 CH2 CH3 CH4"
+        band_header1 = f"{'':31s}{channels.replace(' ', '       ')}\n"
+        band_header2 = f"{'':42s}{channels.replace(' ', '    ')}\n"
+    else:
+        band_header1 = band_header2 = ''
+
+    summary = (
+        f"{band_header1}"
+        f"Signal-to-noise ratio    {snr}\n"
+        f"Extracted flux           {flux} e-/s\n"
+        f"Flux standard deviation  {flux_std} e-/s\n"
+        f"Brightest pixel rate     {pixel_rate} e-/s\n\n"
+
+        f"{tso_header}"
+        f"Integrations:                    {integs}\n"
+        f"Duty cycle:                      {duty_cycle}\n"
+        f"Total exposure time:             {total_time} s\n"
+        f"Single exposure time:            {exp_time} s\n"
+        f"First--last dt per exposure:     {dt_exposure} s\n"
+        f"Reset--last dt per integration:  {dt_integ} s\n\n"
+
+        f"{band_header2}"
+        f"Reference wavelength:                  {ref_wave} microns\n"
+        f"Area of extraction aperture:           {extract_area} pixels\n"
         f"{background_info}"
-        f"Number of cosmic rays   {cosmic_rays}  events/pixel/read"
+        f"Number of cosmic rays:   {cosmic_rays}  events/pixel/read"
     )
 
     if as_html:
-        report = report.replace('\n', '<br>')
-    return report
+        summary = summary.replace('\n', '<br>')
+    return summary
 
 
 class PandeiaCalculation():
@@ -1148,7 +1205,8 @@ class PandeiaCalculation():
 
     def calc_noise(
             self, obs_dur, ngroup,
-            disperser, filter, subarray, readout, aperture,
+            disperser=None, filter=None, subarray=None, readout=None,
+            aperture=None,
         ):
         """
         Run a Pandeia calculation and extract the observed wavelength,
@@ -1183,6 +1241,17 @@ class PandeiaCalculation():
         >>> )
         >>> # Example TBD
         """
+        if aperture is None:
+            aperture = self.calc['configuration']['instrument']['aperture']
+        if disperser is None:
+            disperser = self.calc['configuration']['instrument']['disperser']
+        if readout is None:
+            readout = self.calc['configuration']['detector']['readout_pattern']
+        if subarray is None:
+            subarray = self.calc['configuration']['detector']['subarray']
+        if filter is None:
+            filter = self.calc['configuration']['instrument']['filter']
+
         ins_config = get_instrument_config(self.telescope, self.instrument)
         single_exp_time = exposure_time(
             self.instrument, nint=1, ngroup=ngroup,
@@ -1343,7 +1412,6 @@ class PandeiaCalculation():
         configs = product(
             aperture, disperser, filter, subarray, readout, ngroup,
         )
-
         tso = [
             self._tso_calculation(config, scene_in, scene_out, transit_dur, obs_dur)
             for config in configs
@@ -1380,7 +1448,6 @@ class PandeiaCalculation():
         self.calc['scene'][0] = scene_in
         report_in, wl, flux_in, variances_in, time_in = self.calc_noise(
             transit_dur, ngroup,
-            disperser, filter, subarray, readout, aperture,
         )
         var_lmf_in = variances_in[0]
 
@@ -1388,7 +1455,6 @@ class PandeiaCalculation():
         self.calc['scene'][0] = scene_out
         report_out, wl, flux_out, variances_out, time_out = self.calc_noise(
             out_transit_dur, ngroup,
-            disperser, filter, subarray, readout, aperture,
         )
         var_lmf_out = variances_out[0]
 
