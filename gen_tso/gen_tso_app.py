@@ -963,26 +963,33 @@ def server(input, output, session):
             tso_runs[tso_label]['obs_dur'] = obs_dur
             tso_runs[tso_label]['depth_model_name'] = depth_label
             tso_runs[tso_label]['depth_model'] = depth_model
-            # Take report with more flux in it:
-            rep_label = 'report_out' if obs_geometry=='Transit' else 'report_in'
-            report = tso[rep_label]
+            if isinstance(tso, list):
+                report_in = [report['report_in']['scalar'] for report in tso]
+                report_out = [report['report_out']['scalar'] for report in tso]
+                reports = report_in, report_out
+                # TBD: Consider other TSO reports?
+                warnings = tso[0]['report_in']['warnings']
+            else:
+                reports = tso['report_in']['scalar'], tso['report_out']['scalar']
+                warnings = tso['report_in']['warnings']
         else:
-            report = tso
+            reports = tso['scalar'], None
+            warnings = tso['warnings']
 
         # Update report
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
-        flux_rate, full_well = jwst.saturation_level(report, get_max=True)
+        flux_rate, full_well = jwst.saturation_level(reports[0], get_max=True)
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate = flux_rate,
             full_well = full_well,
-            report = report['scalar'],
+            report = reports,
         )
         saturation_label.set(sat_label)
 
-        if len(report['warnings']) > 0:
-            warning_text.set(report['warnings'])
+        if len(warnings) > 0:
+            warning_text.set(warnings)
         else:
             warning_text.set('')
 
@@ -1424,7 +1431,7 @@ def server(input, output, session):
         """Set observation time based on transit dur and popover settings"""
         t_dur = req(input.t_dur).get()
         if t_dur == '':
-            ui.update_text('obs_dur', value='')
+            ui.update_text('obs_dur', value='0.0')
             return
         transit_dur = float(t_dur)
         settling = req(input.settling_time).get()
@@ -1931,11 +1938,11 @@ def server(input, output, session):
             ngroup_max_sat = f'<span class="warning">{ngroup_max_sat}</span>'
 
         if 'report' in cache_saturation[sat_label]:
-            # and groups / integs match
-            pandeia_report = cache_saturation[sat_label]['report']
+            # TBD: check that groups / integs match
+            report_in, report_out = cache_saturation[sat_label]['report']
             report = (
                 '<br><br>' +
-                jwst.print_pandeia_report(pandeia_report, as_html=True)
+                jwst.print_pandeia_report(report_in, report_out, as_html=True)
             )
         else:
             report = ''
