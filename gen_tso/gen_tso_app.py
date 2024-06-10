@@ -1871,6 +1871,7 @@ def server(input, output, session):
     # Results
     @render.ui
     def exp_time():
+        saturation_label.get()  # enforce calc_saturation renders exp_time
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
         detector = get_detector(mode=mode, instrument=instrument)
@@ -1884,7 +1885,7 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
         if ngroup is None or detector is None or sed_label is None:
-            return ui.HTML(' ')
+            return ui.HTML('<pre> </pre>')
 
         # Front-end to back-end exceptions:
         if mode == 'bots':
@@ -1896,19 +1897,15 @@ def server(input, output, session):
             disperser = None
 
         ngroup = int(ngroup)
+        report_text = jwst._print_pandeia_exposure(
+            inst, subarray, readout, ngroup, int(nint),
+        )
+
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
-
-        exp_time = jwst.exposure_time(
-            inst, subarray, readout, ngroup, int(nint),
-        )
-        exposure_hours = exp_time / 3600.0
-        exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
-
-        saturation_label.get()  # enforce calc_saturation renders exp_time
         if sat_label not in cache_saturation:
-            return ui.HTML(f'<pre>{exp_text}</pre>')
+            return ui.HTML(f'<pre>{report_text}</pre>')
 
         pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
         full_well = cache_saturation[sat_label]['full_well']
