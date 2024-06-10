@@ -3,9 +3,8 @@
 *.DS_Store
 *~
 gen_tso/data/last_updated*
-data/target_search_history
-data/tess_candidates_tmp.txt
-
+gen_tso/data/target_search_history
+gen_tso/data/tess_candidates_tmp.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

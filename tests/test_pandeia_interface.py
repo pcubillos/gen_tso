@@ -1,17 +1,21 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
+import os
+import pickle
+
 import numpy as np
+
 import gen_tso.pandeia_io as jwst
+from gen_tso.utils import ROOT
+
+os.chdir(ROOT+'../tests')
 
 
 def test_saturation_level_perform_calculation_single():
-    # TBD: mock pando.perform_calculation()
-    pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
-    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
-    result = pando.perform_calculation(
-        ngroup=2, nint=683, readout='rapid', filter='f444w',
-    )
+    # See tests/make_mocks.py
+    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+        result = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(result)
     expected_rate = 1396.5528564453125
@@ -21,13 +25,9 @@ def test_saturation_level_perform_calculation_single():
 
 
 def test_saturation_level_perform_calculation_multi():
-    # TBD: mock pando.perform_calculation()
-    pando = jwst.PandeiaCalculation('miri', 'mrs_ts')
-    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
-    aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-    result = pando.perform_calculation(
-        ngroup=250, nint=40, aperture=aperture,
-    )
+    # See tests/make_mocks.py
+    with open('mocks/perform_calculation_miri_mrs_ts.pkl', 'rb') as f:
+        result = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(result)
     expected_rate = [
@@ -41,15 +41,9 @@ def test_saturation_level_perform_calculation_multi():
 
 
 def test_saturation_level_tso_calculation_single():
-    # TBD: mock pando.tso_calculation()
-    wl = np.logspace(0, 2, 1000)
-    depth = [wl, np.tile(0.03, len(wl))]
-    pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
-    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
-    tso = pando.tso_calculation(
-        'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
-        ngroup=90, readout='rapid', filter='f444w',
-    )
+    # See tests/make_mocks.py
+    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+        tso = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(tso)
     expected_rate = [1354.6842041 , 1396.55285645]
@@ -59,16 +53,9 @@ def test_saturation_level_tso_calculation_single():
 
 
 def test_saturation_level_tso_calculation_multi():
-    # TBD: mock pando.tso_calculation()
-    wl = np.logspace(0, 2, 1000)
-    depth = [wl, np.tile(0.03, len(wl))]
-    pando = jwst.PandeiaCalculation('miri', 'mrs_ts')
-    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
-    aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-    tso = pando.tso_calculation(
-        'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
-        ngroup=250, aperture=aperture,
-    )
+    # See tests/make_mocks.py
+    with open('mocks/tso_calculation_miri_mrs_ts.pkl', 'rb') as f:
+        tso = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(tso)
     expected_rate = [
@@ -176,4 +163,44 @@ def test_bin_search_exposure_time_bad_readout():
         inst, subarray, readout, ngroup, obs_time,
     )
     assert exp_time == 0.0
+
+
+def test__print_pandeia_saturation_perform_calc():
+    # See tests/make_mocks.py
+    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+        result = pickle.load(f)
+
+    text = jwst._print_pandeia_saturation(reports=[result], format=None)
+    expected_text = """Max fraction of saturation: 1.6%
+ngroup below 80% saturation: 97
+ngroup below 100% saturation: 122"""
+    assert text == expected_text
+
+
+def test__print_pandeia_saturation_tso_calc():
+    # See tests/make_mocks.py
+    with open('mocks/tso_calculation_miri_mrs_ts.pkl', 'rb') as f:
+        tso = pickle.load(f)
+
+    text = jwst._print_pandeia_saturation(reports=tso, format=None)
+    expected_text = """Max fraction of saturation: 73.2%
+ngroup below 80% saturation: 273
+ngroup below 100% saturation: 341"""
+    assert text == expected_text
+
+
+def test__print_pandeia_saturation_values():
+    pixel_rate, full_well = 1396.5528564453125, 58100.002280515175
+    inst = 'nircam'
+    subarray = 'subgrism64'
+    readout = 'rapid'
+    ngroup = 90
+    text = jwst._print_pandeia_saturation(
+        inst, subarray, readout, ngroup, pixel_rate, full_well,
+        format=None,
+    )
+    expected_text = """Max fraction of saturation: 73.7%
+ngroup below 80% saturation: 97
+ngroup below 100% saturation: 122"""
+    assert text == expected_text
 

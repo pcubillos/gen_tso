@@ -15,6 +15,7 @@ __all__ = [
     'simulate_tso',
     '_print_pandeia_report',
     '_print_pandeia_exposure',
+    '_print_pandeia_saturation',
     'print_pandeia_report',
     'PandeiaCalculation',
 ]
@@ -912,6 +913,16 @@ def _print_pandeia_report(reports, format=None):
     text_report = _print_pandeia_exposure(inst, subarray, readout, ngroup, nint)
 
     # Saturation
+    reports = report_in + report_out
+    pixel_rate, full_well = saturation_level(reports, get_max=True)
+    saturation_report = _print_pandeia_saturation(
+        inst, subarray, readout, ngroup, pixel_rate, full_well,
+        format=format,
+    )
+    text_report = f'{text_report}\n{saturation_report}'
+    if format == 'html':
+        text_report = text_report.replace('\n', '<br>')
+
     # Full report
 
     return text_report
@@ -961,6 +972,79 @@ def _print_pandeia_exposure(
     exposure_hours = exp_time / 3600.0
     exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
     return exp_text
+
+
+def _print_pandeia_saturation(
+        inst=None, subarray=None, readout=None, ngroup=None,
+        pixel_rate=None, full_well=None, reports=None, format=None,
+    ):
+    """
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=190, readout='rapid', filter='f444w',
+    >>> )
+
+    >>> pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+    >>> inst = 'nircam'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'rapid'
+    >>> ngroup = 90
+    >>> nint = 150
+    >>> text = jwst._print_pandeia_saturation(
+    >>>     inst, subarray, readout, ngroup, pixel_rate, full_well,
+    >>>     format='html',
+    >>> )
+
+    >>> text = jwst._print_pandeia_saturation(
+    >>>     reports=[tso], format='html',
+    >>> )
+    """
+    # parse reports
+    if reports is not None:
+        pixel_rate, full_well = saturation_level(reports, get_max=True)
+        # This is a TSO dict
+        if 'report_in' in reports[0]:
+            report = reports[0]['report_in']
+        else:
+            report = reports[0]
+        config = report['input']['configuration']
+        inst = config['instrument']['instrument']
+        subarray = config['detector']['subarray']
+        readout = config['detector']['readout_pattern']
+        ngroup = config['detector']['ngroup']
+
+    sat_time = saturation_time(inst, ngroup, readout, subarray)
+    sat_fraction = 100 * pixel_rate * sat_time / full_well
+    ngroup_80 = int(80*ngroup/sat_fraction)
+    ngroup_max = int(100*ngroup/sat_fraction)
+
+    saturation = format_text(
+        f"{sat_fraction:.1f}%", sat_fraction>=81, sat_fraction>=100, format,
+    )
+    ngroup_80 = format_text(
+        f"{ngroup_80:d}", ngroup_80==2, ngroup_80<2, format,
+    )
+    ngroup_max = format_text(
+        f"{ngroup_max:d}", ngroup_max==2, ngroup_max<2, format,
+    )
+    saturation = f'Max fraction of saturation: {saturation}'
+    ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80}'
+    ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max}'
+
+    sat_text = (
+        f'{saturation}\n'
+        f'{ngroup_80_sat}\n'
+        f'{ngroup_max_sat}'
+    )
+    if format == 'html':
+        sat_text = sat_text.replace('\n', '<br>')
+    return sat_text
 
 
 def print_pandeia_report(report_in, report_out=None, as_html=False):

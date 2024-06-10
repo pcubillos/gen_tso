@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-from collections.abc import Iterable
 import os
 import sys
 import pickle
@@ -967,7 +966,7 @@ def server(input, output, session):
                 report_in = [report['report_in']['scalar'] for report in tso]
                 report_out = [report['report_out']['scalar'] for report in tso]
                 reports = report_in, report_out
-                # TBD: Consider other TSO reports?
+                # TBD: Consider warnings in other TSO reports?
                 warnings = tso[0]['report_in']['warnings']
             else:
                 reports = tso['report_in']['scalar'], tso['report_out']['scalar']
@@ -976,11 +975,11 @@ def server(input, output, session):
             reports = tso['scalar'], None
             warnings = tso['warnings']
 
+        flux_rate, full_well = jwst.saturation_level(tso, get_max=True)
         # Update report
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
-        flux_rate, full_well = jwst.saturation_level(reports[0], get_max=True)
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate = flux_rate,
             full_well = full_well,
@@ -1699,11 +1698,8 @@ def server(input, output, session):
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         flux_rate, full_well = pando.get_saturation_values(
             disperser, filter, subarray, readout, ngroup, aperture,
+            get_max=True,
         )
-        if isinstance(flux_rate, Iterable):
-            idx = np.argmax(flux_rate*full_well)
-            flux_rate = flux_rate[idx]
-            full_well = full_well[idx]
 
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate = flux_rate,
@@ -1729,7 +1725,6 @@ def server(input, output, session):
 
         obs_dur = float(req(input.obs_dur).get())
         inst = input.select_instrument.get().lower()
-        nint = 1
         ngroup = input.groups.get()
         readout = input.readout.get()
         subarray = input.subarray.get()
@@ -1890,10 +1885,10 @@ def server(input, output, session):
         # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
-        if mode == 'mrs_ts':
-            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        #if mode == 'mrs_ts':
+        #    aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
-            aperture = input.disperser.get()
+            #aperture = input.disperser.get()
             disperser = None
 
         ngroup = int(ngroup)
@@ -1904,52 +1899,23 @@ def server(input, output, session):
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
-        if sat_label not in cache_saturation:
-            return ui.HTML(f'<pre>{report_text}</pre>')
+        if sat_label in cache_saturation:
+            pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
+            full_well = cache_saturation[sat_label]['full_well']
+            saturation_text = jwst._print_pandeia_saturation(
+                inst, subarray, readout, ngroup, pixel_rate, full_well,
+                format='html',
+            )
+            report_text += f'<br>{saturation_text}'
 
-        pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
-        full_well = cache_saturation[sat_label]['full_well']
-        sat_time = jwst.saturation_time(detector, ngroup, readout, subarray)
-        sat_fraction = pixel_rate * sat_time / full_well
-        ngroup_80 = int(0.8*ngroup/sat_fraction)
-        ngroup_max = int(ngroup/sat_fraction)
-        saturation = f'{100.0*sat_fraction:.1f}%'
-        ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80:d}'
-        ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max:d}'
-
-        if sat_fraction >= 1.0:
-            saturation = f'<span class="danger">{saturation}</span>'
-        elif sat_fraction > 0.81:
-            saturation = f'<span class="warning">{saturation}</span>'
-
-        if ngroup_80 < 2:
-            ngroup_80_sat = f'<span class="danger">{ngroup_80_sat}</span>'
-        elif ngroup_80 == 2:
-            ngroup_80_sat = f'<span class="warning">{ngroup_80_sat}</span>'
-
-        if ngroup_max < 2:
-            ngroup_max_sat = f'<span class="danger">{ngroup_max_sat}</span>'
-        elif ngroup_max == 2:
-            ngroup_max_sat = f'<span class="warning">{ngroup_max_sat}</span>'
-
-        if 'report' in cache_saturation[sat_label]:
+        if sat_label in cache_saturation and 'report' in cache_saturation[sat_label]:
             # TBD: check that groups / integs match
             report_in, report_out = cache_saturation[sat_label]['report']
-            report = (
-                '<br><br>' +
+            report_text = (
+                f'{report_text}<br><br>' +
                 jwst.print_pandeia_report(report_in, report_out, as_html=True)
             )
-        else:
-            report = ''
-        return ui.HTML(
-            '<pre>'
-            f'{exp_text}<br>'
-            f'Max. fraction of saturation: {saturation}<br>'
-            f'{ngroup_80_sat}<br>'
-            f'{ngroup_max_sat}'
-            f'{report}'
-            '</pre>'
-        )
+        return ui.HTML(f'<pre>{report_text}</pre>')
 
     @render.text
     @reactive.event(warning_text)
