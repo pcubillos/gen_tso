@@ -13,6 +13,8 @@ __all__ = [
     'make_scene',
     'set_depth_scene',
     'simulate_tso',
+    '_print_pandeia_report',
+    '_print_pandeia_exposure',
     'print_pandeia_report',
     'PandeiaCalculation',
 ]
@@ -364,6 +366,9 @@ def saturation_level(reports, get_max=False):
     """
     if not isinstance(reports, list):
         reports = [reports]
+
+    if 'scalar' in reports[0]:
+        reports = [report['scalar'] for report in reports]
 
     ncalc = len(reports)
     brightest_pixel_rate = np.zeros(ncalc)
@@ -850,6 +855,105 @@ def simulate_tso(
 
     mask = bin_out > 0
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
+
+
+def _print_pandeia_report(reports, format=None):
+    """
+    Return a text summarizing a tso_run() or perform_calculation() output.
+    Similar to the results panel in the ETC.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=90, readout='rapid', filter='f444w',
+    >>> )
+
+    >>> tso_report = jwst._print_pandeia_report(tso, format='rich')
+    >>> print(tso_report)
+    """
+    # This is a TSO dict
+    if 'report_in' in reports:
+        report_in = reports['report_in']
+        report_out = reports['report_out']
+    # This is a perform_calculation dict
+    else:
+        report_in = reports
+        report_out = None
+
+    # Put everything into a list to make things easier to handle:
+    if not isinstance(report_in, list):
+        report_in = [report_in]
+    if report_out is not None and not isinstance(report_out, list):
+        report_out = [report_out]
+
+    # Exposure
+    config = report_in[0]['input']['configuration']
+    inst = config['instrument']['instrument']
+    subarray = config['detector']['subarray']
+    readout = config['detector']['readout_pattern']
+    ngroup = config['detector']['ngroup']
+    nint = config['detector']['nint']
+    if report_out is not None:
+        nint += report_out[0]['input']['configuration']['detector']['nint']
+    text_report = _print_pandeia_exposure(inst, subarray, readout, ngroup, nint)
+
+    # Saturation
+    # Full report
+
+    return text_report
+
+
+def _print_pandeia_exposure(
+        inst=None, subarray=None, readout=None, ngroup=None, nint=None,
+        config=None, format=None,
+    ):
+    """
+    Return a text summarizing a tso_run() or perform_calculation() output.
+    Similar to the results panel in the ETC.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=190, readout='rapid', filter='f444w',
+    >>> )
+
+    >>> config = tso['report_out']['input']['configuration']
+    >>> text = jwst._print_pandeia_exposure(config=config)
+
+    >>> inst = 'nircam'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'rapid'
+    >>> ngroup = 90
+    >>> nint = 150
+    >>> text = jwst._print_pandeia_exposure(
+    >>>     inst, subarray, readout, ngroup, nint,
+    >>> )
+    """
+    if config is not None:
+        inst = config['instrument']['instrument']
+        subarray = config['detector']['subarray']
+        readout = config['detector']['readout_pattern']
+        nint = config['detector']['nint']
+        ngroup = config['detector']['ngroup']
+
+    exp_time = exposure_time(inst, subarray, readout, ngroup, nint)
+    exposure_hours = exp_time / 3600.0
+    exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
+    return exp_text
 
 
 def print_pandeia_report(report_in, report_out=None, as_html=False):
