@@ -38,7 +38,7 @@ from pandeia.engine.perform_calculation import perform_calculation
 from pandeia.engine.normalization import NormalizationFactory
 from synphot.config import conf, Conf
 
-from ..utils import constant_resolution_spectrum
+from ..utils import constant_resolution_spectrum, format_text
 
 
 def check_pandeia_version():
@@ -329,7 +329,8 @@ def saturation_level(reports, get_max=False):
     Parameters
     ----------
     reports: Dictionary or list of dictionaries
-        One or more pandeia's perform_calculation() output dictionary.
+        One or more pandeia's perform_calculation() output dictionary
+        or a tso_calculation output dictionary.
         If there is more than one input report, return arrays of
         saturation values for each input.
     get_max: Bool
@@ -363,22 +364,28 @@ def saturation_level(reports, get_max=False):
     >>>     integ_time = jwst.saturation_time(inst, ngroup, readout, subarray)
     >>>     sat_level = pixel_rate * integ_time / full_well * 100
     >>>     print(f'Sat. fraction for {ngroup:3d} groups: {sat_level:5.1f}%')
+    Sat. fraction for   2 groups:   1.6%
+    Sat. fraction for  97 groups:  79.4%
+    Sat. fraction for 122 groups:  99.9%
     """
     if not isinstance(reports, list):
         reports = [reports]
-
-    if 'scalar' in reports[0]:
-        reports = [report['scalar'] for report in reports]
+    # Unpack TSO dictionary
+    if 'report_in' in reports[0]:
+        reports = (
+            [report['report_in'] for report in reports] +
+            [report['report_out'] for report in reports]
+        )
 
     ncalc = len(reports)
     brightest_pixel_rate = np.zeros(ncalc)
     full_well = np.zeros(ncalc)
     for i,report in enumerate(reports):
-        brightest_pixel_rate[i] = report['brightest_pixel']
+        brightest_pixel_rate[i] = report['scalar']['brightest_pixel']
         full_well[i] = (
             brightest_pixel_rate[i]
-            * report['saturation_time']
-            / report['fraction_saturation']
+            * report['scalar']['saturation_time']
+            / report['scalar']['fraction_saturation']
         )
 
     if len(reports) == 1:
@@ -1261,7 +1268,7 @@ class PandeiaCalculation():
 
     def get_saturation_values(
             self, disperser, filter, subarray, readout, ngroup=2,
-            aperture=None,
+            aperture=None, get_max=False,
         ):
         """
         Calculate the brightest-pixel rate (e-/s) and full_well (e-)
@@ -1305,11 +1312,7 @@ class PandeiaCalculation():
             subarray=subarray, readout=readout,
             aperture=aperture,
         )
-        if isinstance(reports, list):
-            reports = [report['scalar'] for report in reports]
-        else:
-            reports = reports['scalar']
-        brightest_pixel_rate, full_well = saturation_level(reports)
+        brightest_pixel_rate, full_well = saturation_level(reports, get_max)
         return brightest_pixel_rate, full_well
 
 
