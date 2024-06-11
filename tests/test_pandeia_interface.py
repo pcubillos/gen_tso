@@ -68,8 +68,8 @@ def test_saturation_level_tso_calculation_multi():
     np.testing.assert_allclose(full_well, expected_well)
 
 
+@pytest.mark.skip(reason='TBD')
 def test_saturation_level_tso_calculation_get_max():
-    # TBD: implement
     pass
 
 
@@ -228,8 +228,8 @@ ngroup below 100% saturation: 122"""
     assert text == expected_text
 
 
+@pytest.mark.skip(reason='TBD')
 def test__print_pandeia_stats():
-    # TBD
     pass
 
 
@@ -238,7 +238,6 @@ def test__print_pandeia_report_perform_calculation_single():
         result = pickle.load(f)
 
     report = jwst._print_pandeia_report([result], format=None)
-    print(report)
     expected_report = """Exposure time: 701.41 s (0.19 h)
 Max fraction of saturation: 1.6%
 ngroup below 80% saturation: 97
@@ -272,7 +271,6 @@ def test__print_pandeia_report_perform_calculation_multi():
         result = pickle.load(f)
 
     report = jwst._print_pandeia_report(result, format=None)
-    print(report)
     expected_report = """Exposure time: 27858.63 s (7.74 h)
 Max fraction of saturation: 73.2%
 ngroup below 80% saturation: 273
@@ -305,7 +303,6 @@ def test__print_pandeia_report_tso_calculation_single():
         result = pickle.load(f)
 
     report = jwst._print_pandeia_report(result, format=None)
-    print(report)
     expected_report = """Exposure time: 21545.44 s (5.98 h)
 Max fraction of saturation: 73.7%
 ngroup below 80% saturation: 97
@@ -366,4 +363,86 @@ Background flux fraction from scene:     0.65   0.44   0.06   0.04
 Number of cosmic rays:      0.3122  events/pixel/read"""
     assert report == expected_report
 
+
+def test_tso_print_plain(capsys):
+    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+        result = pickle.load(f)
+    # Make some troublesome figures
+    result['report_in']['scalar']['duty_cycle'] = 0.25
+    result['report_in']['input']['configuration']['detector']['ngroup'] = 130
+    result['report_out']['scalar']['duty_cycle'] = 0.25
+    result['report_out']['input']['configuration']['detector']['ngroup'] = 130
+
+    jwst.tso_print(result, format=None)
+    captured = capsys.readouterr()
+    expected_report = (
+        "Exposure time: 31014.40 s (8.62 h)\r\n"
+        "Max fraction of saturation: 106.4%\r\n"
+        "ngroup below 80% saturation: 97\r\n"
+        "ngroup below 100% saturation: 122\r\n"
+        "\r\n"
+        "Signal-to-noise ratio       3484.8\r\n"
+        "Extracted flux              2043.0  e-/s\r\n"
+        "Flux standard deviation        0.6  e-/s\r\n"
+        "Brightest pixel rate        1354.7  e-/s\r\n"
+        "\r\n"
+        "                               in-transit  out-transit\r\n"
+        "Integrations:                         243      452\r\n"
+        "Duty cycle:                          0.25     0.25\r\n"
+        "Total exposure time:               7533.2  14012.3  s\r\n"
+        "First--last dt per exposure:       7533.2  14012.3  s\r\n"
+        "Reset--last dt per integration:    7366.4  13702.1  s\r\n"
+        "\r\n"
+        "Reference wavelength:                    4.36  microns\r\n"
+        "Area of extraction aperture:             4.76  pixels\r\n"
+        "Area of background measurement:           6.3  pixels\r\n"
+        "Background surface brightness:            0.3  MJy/sr\r\n"
+        "Total sky flux in background aperture:   4.45  e-/s\r\n"
+        "Total flux in background aperture:      64.12  e-/s\r\n"
+        "Background flux fraction from scene:     0.93\r\n"
+        "Number of cosmic rays:      0.0072  events/pixel/read\r\n"
+    )
+    assert captured.out == expected_report
+
+
+@pytest.mark.skip(reason='Having some issues with capsys IO')
+def test_tso_print_rich(capsys):
+    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+        result = pickle.load(f)
+    # Make some troublesome figures
+    result['report_in']['scalar']['duty_cycle'] = 0.25
+    result['report_in']['input']['configuration']['detector']['ngroup'] = 130
+    result['report_out']['scalar']['duty_cycle'] = 0.25
+    result['report_out']['input']['configuration']['detector']['ngroup'] = 130
+
+    jwst.tso_print(result)
+    captured = capsys.readouterr()
+    expected_report = (
+        "Exposure time: 31014.40 s (8.62 h)\r\n"
+        "Max fraction of saturation: 106.4%\r\n"
+        "ngroup below 80% saturation: 97\r\n"
+        "ngroup below 100% saturation: 122\r\n"
+        "\r\n"
+        "Signal-to-noise ratio       3484.8\r\n"
+        "Extracted flux              2043.0  e-/s\r\n"
+        "Flux standard deviation        0.6  e-/s\r\n"
+        "Brightest pixel rate        1354.7  e-/s\r\n"
+        "\r\n"
+        "                               in-transit  out-transit\r\n"
+        "Integrations:                         243      452\r\n"
+        "Duty cycle:                          0.25     0.25\r\n"
+        "Total exposure time:               7533.2  14012.3  s\r\n"
+        "First--last dt per exposure:       7533.2  14012.3  s\r\n"
+        "Reset--last dt per integration:    7366.4  13702.1  s\r\n"
+        "\r\n"
+        "Reference wavelength:                    4.36  microns\r\n"
+        "Area of extraction aperture:             4.76  pixels\r\n"
+        "Area of background measurement:           6.3  pixels\r\n"
+        "Background surface brightness:            0.3  MJy/sr\r\n"
+        "Total sky flux in background aperture:   4.45  e-/s\r\n"
+        "Total flux in background aperture:      64.12  e-/s\r\n"
+        "Background flux fraction from scene:     0.93\r\n"
+        "Number of cosmic rays:      0.0072  events/pixel/read\r\n"
+    )
+    assert captured.out == expected_report
 

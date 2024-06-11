@@ -17,6 +17,7 @@ __all__ = [
     '_print_pandeia_saturation',
     '_print_pandeia_stats',
     '_print_pandeia_report',
+    'tso_print',
     'PandeiaCalculation',
 ]
 
@@ -37,6 +38,7 @@ from pandeia.engine.calc_utils import (
 )
 from pandeia.engine.perform_calculation import perform_calculation
 from pandeia.engine.normalization import NormalizationFactory
+import prompt_toolkit
 from synphot.config import conf, Conf
 
 from ..utils import constant_resolution_spectrum, format_text
@@ -1253,6 +1255,51 @@ def _print_pandeia_report(reports, format=None):
     return text_report
 
 
+def tso_print(calculation, format='rich'):
+    """
+    Print to screen a tso_calculation() output or a Pandeia's
+    perform_calculation() output.
+
+    Parameters
+    ----------
+    calculation: Dictionary or list of dictionaries
+        A tso_calculation() or a Pandeia's perform_calculation() output.
+    format: String
+        If 'rich' print with colourful text when there are warnings
+        or errors in values.
+        If None, print as plain text.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> import numpy as np
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=100, readout='rapid', filter='f444w',
+    >>> )
+    >>> # A perform_calculation() call:
+    >>> jwst.tso_print(tso)
+
+    >>> # A tso_calculation() call:
+    >>> calc = pando.perform_calculation(ngroup=130, nint=300)
+    >>> jwst.tso_print(calc)
+    """
+    # TBD: get style from style.css file?
+    style = prompt_toolkit.styles.Style.from_dict({
+        'danger': '#cb2222',
+        'warning': '#ffa500',
+    })
+    report = _print_pandeia_report(calculation, format)
+    if format == 'rich':
+        report = prompt_toolkit.HTML(report)
+    prompt_toolkit.print_formatted_text(report, style=style)
+
+
 class PandeiaCalculation():
     """
     A class to interface with the pandeia.engine package.
@@ -1823,6 +1870,36 @@ class PandeiaCalculation():
             'report_out': report_out,
         }
         return tso
+
+
+    def tso_print(self, format='rich'):
+        """
+        Print to screen a summary of the latest tso_calculation() ran.
+
+        Parameters
+        ----------
+        format: String
+            If 'rich' print with colourful text when there are warnings
+            or errors in values.
+            If None, print as plain text.
+
+        Examples
+        --------
+        >>> import gen_tso.pandeia_io as jwst
+        >>> import numpy as np
+
+        >>> wl = np.logspace(0, 2, 1000)
+        >>> depth = [wl, np.tile(0.03, len(wl))]
+        >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+        >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+        >>> tso = pando.tso_calculation(
+        >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+        >>>     ngroup=130, readout='rapid', filter='f444w',
+        >>> )
+        >>> pando.tso_print()
+        """
+        tso_print(self.tso, format)
+
 
     def simulate_tso(
             self, n_obs=1, resolution=None, bins=None, noiseless=False,
