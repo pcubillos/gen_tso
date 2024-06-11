@@ -17,16 +17,28 @@ def test_format_text_normal():
     assert formatted == text
 
 
-def test_format_text_html():
+def test_format_text_html_warning():
+    text = 'WASP-80 b'
+    formatted = u.format_text(text, warning=True, format='html')
+    assert formatted == '<span class="warning">WASP-80 b</span>'
+
+
+def test_format_text_html_danger():
     text = 'WASP-80 b'
     formatted = u.format_text(text, danger=True, format='html')
     assert formatted == '<span class="danger">WASP-80 b</span>'
 
 
-def test_format_text_rich():
+def test_format_text_rich_warning():
+    text = 'WASP-80 b'
+    formatted = u.format_text(text, warning=True, format='rich')
+    assert formatted == '<warning>WASP-80 b</warning>'
+
+
+def test_format_text_rich_danger():
     text = 'WASP-80 b'
     formatted = u.format_text(text, danger=True, format='rich')
-    assert formatted == FormattedText([('#cb2222', 'WASP-80 b')])
+    assert formatted == '<danger>WASP-80 b</danger>'
 
 
 def test_format_text_warning():

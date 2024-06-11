@@ -411,9 +411,14 @@ def format_text(text, warning=False, danger=False, format=None):
         If True, format as danger text (red color).
         If True, overrides warning.
     format: String
-        Leave as None for plain text. Set to 'html' for HTML format.
-        Set to 'rich' for prompt_toolkit FormattedText.
+        If None return plain text.
+        If 'html' return HTML formatted text.
+        If 'rich' return formatted text to be printed with prompt_toolkit.
 
+    See also
+    --------
+    gen_tso.pandeia_io.tso_print
+        
     Examples
     --------
     >>> import gen_tso.utils as u
@@ -430,10 +435,8 @@ def format_text(text, warning=False, danger=False, format=None):
     status = 'normal'
     if danger:
         status = 'danger'
-        color = '#cb2222'
     elif warning:
         status = 'warning'
-        color = '#ffa500'
 
     if format is None or status=='normal':
         return text
@@ -441,7 +444,7 @@ def format_text(text, warning=False, danger=False, format=None):
     if format == 'html':
         text_value = f'<span class="{status}">{text}</span>'
     elif format == 'rich':
-        text_value = FormattedText([(color, text)])
+        text_value = f'<{status}>{text}</{status}>'
     return text_value
 
 
