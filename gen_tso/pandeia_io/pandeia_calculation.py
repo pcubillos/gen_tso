@@ -17,7 +17,7 @@ from pandeia.engine.perform_calculation import perform_calculation
 
 from .pandeia_interface import (
     read_noise_variance,
-    exposure_time,
+    bin_search_exposure_time,
     saturation_level,
     make_scene,
     set_depth_scene,
@@ -319,9 +319,9 @@ class PandeiaCalculation():
         return report
 
     def calc_noise(
-            self, obs_dur, ngroup,
+            self, obs_dur=None, ngroup=None,
             disperser=None, filter=None, subarray=None, readout=None,
-            aperture=None,
+            aperture=None, nint=None,
         ):
         """
         Run a Pandeia calculation and extract the observed wavelength,
@@ -367,13 +367,25 @@ class PandeiaCalculation():
         if filter is None:
             filter = self.calc['configuration']['instrument']['filter']
 
-        ins_config = get_instrument_config(self.telescope, self.instrument)
-        single_exp_time = exposure_time(
-            self.instrument, nint=1, ngroup=ngroup,
-            readout=readout, subarray=subarray,
-        )
+        if ngroup is None:
+            raise TypeError("Missing required argument: 'ngroup'")
+        # Check timing inputs are properly defined:
+        if obs_dur is None and nint is None:
+            raise ValueError(
+                'Neither of obs_dur nor nint were provided'
+            )
+        if obs_dur is not None and nint is not None:
+            raise ValueError(
+                'Either provide obs_dur or nint, but not both'
+            )
+        if obs_dur is not None:
+            nint, _ = bin_search_exposure_time(
+                self.instrument, subarray, readout, ngroup, obs_dur,
+            )
+        if nint == 0:
+            nint = 1
+            # TBD: and raise a warning
 
-        nint = int(obs_dur*3600/single_exp_time)
         report = self.perform_calculation(
             ngroup, nint, disperser, filter, subarray, readout, aperture,
         )
@@ -386,6 +398,7 @@ class PandeiaCalculation():
         # Background variance:
         background_var = report['1d']['extracted_bg_only'][1] * measurement_time
         # Read noise variance:
+        ins_config = get_instrument_config(self.telescope, self.instrument)
         read_noise = read_noise_variance(report, ins_config)
         npix = report['scalar']['extraction_area']
         read_noise_var = 2.0 * read_noise**2.0 * nint * npix
@@ -401,7 +414,7 @@ class PandeiaCalculation():
 
     def tso_calculation(
             self, obs_type, transit_dur, obs_dur, depth_model,
-            ngroup, disperser=None, filter=None,
+            ngroup=None, disperser=None, filter=None,
             subarray=None, readout=None, aperture=None,
         ):
         """
@@ -501,6 +514,10 @@ class PandeiaCalculation():
         >>> plt.xlabel('Wavelength (um)')
         >>> plt.ylabel('Transit depth (%)')
         """
+        if transit_dur >= obs_dur:
+            raise ValueError(
+                f'{obs_type} duration is longer than the observation duration'
+            )
         # Scale in or out transit flux rates
         scene = self.calc['scene'][0]
         star_scene, depth_scene = set_depth_scene(scene, obs_type, depth_model)
@@ -528,7 +545,9 @@ class PandeiaCalculation():
             aperture, disperser, filter, subarray, readout, ngroup,
         )
         tso = [
-            self._tso_calculation(config, scene_in, scene_out, transit_dur, obs_dur)
+            self._tso_calculation(
+                config, scene_in, scene_out, transit_dur, obs_dur,
+            )
             for config in configs
         ]
         if len(tso) == 1:
@@ -559,17 +578,35 @@ class PandeiaCalculation():
         elif filter is not None:
             self.calc['configuration']['instrument']['filter'] = filter
 
+        # Now that everything is defined I can turn durations into integs:
+        inst = self.instrument
+        subarray = self.calc['configuration']['detector']['subarray']
+        readout = self.calc['configuration']['detector']['readout_pattern']
+        if transit_dur is not None:
+            transit_integs, _ = bin_search_exposure_time(
+                inst, subarray, readout, ngroup, transit_dur,
+            )
+        if obs_dur is not None:
+            obs_integs, _ = bin_search_exposure_time(
+                inst, subarray, readout, ngroup, obs_dur,
+            )
+        if obs_integs <= transit_integs:
+            raise ValueError(
+                "Number of integrations for the total observation duration "
+                "is <= in-transit integrations"
+            )
+
         # Compute observed fluxes and noises:
         self.calc['scene'][0] = scene_in
         report_in, wl, flux_in, variances_in, time_in = self.calc_noise(
-            transit_dur, ngroup,
+            nint=transit_integs, ngroup=ngroup,
         )
         var_lmf_in = variances_in[0]
 
-        out_transit_dur = obs_dur - transit_dur
+        out_transit_integs = obs_integs - transit_integs
         self.calc['scene'][0] = scene_out
         report_out, wl, flux_out, variances_out, time_out = self.calc_noise(
-            out_transit_dur, ngroup,
+            nint=out_transit_integs, ngroup=ngroup,
         )
         var_lmf_out = variances_out[0]
 
