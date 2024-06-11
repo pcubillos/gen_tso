@@ -13,10 +13,10 @@ __all__ = [
     'make_scene',
     'set_depth_scene',
     'simulate_tso',
-    '_print_pandeia_report',
     '_print_pandeia_exposure',
     '_print_pandeia_saturation',
-    'print_pandeia_report',
+    '_print_pandeia_stats',
+    '_print_pandeia_report',
     'PandeiaCalculation',
 ]
 
@@ -865,80 +865,19 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
-def _print_pandeia_report(reports, format=None):
-    """
-    Return a text summarizing a tso_run() or perform_calculation() output.
-    Similar to the results panel in the ETC.
-
-    Examples
-    --------
-    >>> import gen_tso.pandeia_io as jwst
-
-    >>> wl = np.logspace(0, 2, 1000)
-    >>> depth = [wl, np.tile(0.03, len(wl))]
-    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
-    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
-    >>> tso = pando.tso_calculation(
-    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
-    >>>     ngroup=90, readout='rapid', filter='f444w',
-    >>> )
-
-    >>> tso_report = jwst._print_pandeia_report(tso, format='rich')
-    >>> print(tso_report)
-    """
-    # This is a TSO dict
-    if 'report_in' in reports:
-        report_in = reports['report_in']
-        report_out = reports['report_out']
-    # This is a perform_calculation dict
-    else:
-        report_in = reports
-        report_out = None
-
-    # Put everything into a list to make things easier to handle:
-    if not isinstance(report_in, list):
-        report_in = [report_in]
-    if report_out is not None and not isinstance(report_out, list):
-        report_out = [report_out]
-
-    # Exposure
-    config = report_in[0]['input']['configuration']
-    inst = config['instrument']['instrument']
-    subarray = config['detector']['subarray']
-    readout = config['detector']['readout_pattern']
-    ngroup = config['detector']['ngroup']
-    nint = config['detector']['nint']
-    if report_out is not None:
-        nint += report_out[0]['input']['configuration']['detector']['nint']
-    text_report = _print_pandeia_exposure(inst, subarray, readout, ngroup, nint)
-
-    # Saturation
-    reports = report_in + report_out
-    pixel_rate, full_well = saturation_level(reports, get_max=True)
-    saturation_report = _print_pandeia_saturation(
-        inst, subarray, readout, ngroup, pixel_rate, full_well,
-        format=format,
-    )
-    text_report = f'{text_report}\n{saturation_report}'
-    if format == 'html':
-        text_report = text_report.replace('\n', '<br>')
-
-    # Full report
-
-    return text_report
-
-
 def _print_pandeia_exposure(
         inst=None, subarray=None, readout=None, ngroup=None, nint=None,
         config=None, format=None,
     ):
     """
-    Return a text summarizing a tso_run() or perform_calculation() output.
-    Similar to the results panel in the ETC.
+    Return a text showing the total exposure time in seconds and hours.
+    Either config or the set of inst, subarray, readout, ngroup, and nint
+    values must be defined.
 
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
+    >>> import numy as np
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
@@ -949,9 +888,11 @@ def _print_pandeia_exposure(
     >>>     ngroup=190, readout='rapid', filter='f444w',
     >>> )
 
+    >>> # Print from config dictionary:
     >>> config = tso['report_out']['input']['configuration']
     >>> text = jwst._print_pandeia_exposure(config=config)
 
+    >>> # Print from direct input values:
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
     >>> readout = 'rapid'
@@ -980,6 +921,7 @@ def _print_pandeia_saturation(
     ):
     """
     >>> import gen_tso.pandeia_io as jwst
+    >>> import numy as np
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
@@ -990,6 +932,7 @@ def _print_pandeia_saturation(
     >>>     ngroup=190, readout='rapid', filter='f444w',
     >>> )
 
+    >>> # Directly print from input values:
     >>> pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
@@ -1001,6 +944,7 @@ def _print_pandeia_saturation(
     >>>     format='html',
     >>> )
 
+    >>> # Print from tso_calculation() or perform_calculation() output:
     >>> text = jwst._print_pandeia_saturation(
     >>>     reports=[tso], format='html',
     >>> )
@@ -1047,22 +991,27 @@ def _print_pandeia_saturation(
     return sat_text
 
 
-def print_pandeia_report(report_in, report_out=None, as_html=False):
+def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
     r"""
-    Get a string summarizing a pandeia's perform_calculation scalar output.
-    Skip saturation values (which are covered in another function).
+    Return a text summarizing the SNR, timings, and backround info
+    from a perform_calculation() or a tso_calculation() output.
 
     Parameters
     ----------
+    inst: String
+        Instrument name.
+    mode: String
+        Instrument's mode.
     report_in: Dictionary
-        A pandeia's perform_calculation() 'scalar' output.
+        A tso_calculation() or pandeia's perform_calculation() output.
     report_out: Dictionary
-        A pandeia's perform_calculation() 'scalar' output.
+        A pandeia's perform_calculation() output.
         If not None, assume that the inputs reports are an in-transit
-        out-of-transit pair.
-    as_html: Bool
-        If True, replace '\n' linebreaks with HTML's <br>
-        so that it formats well when printed as HTML.
+        and out-of-transit pair.
+    format: String
+        If None format as plain text (e.g., for print() calls)
+        If 'rich' format as rich/colorful text (e.g., for FormattedText())
+        If 'html' format as HTML text (e.g., for browser applications)
 
     Examples
     --------
@@ -1075,33 +1024,14 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
     >>> result = pando.perform_calculation(
     >>>     ngroup=92, nint=683, readout='rapid', filter='f444w',
     >>> )
-    >>> report = jwst.print_pandeia_report(result['scalar'])
+    >>> report = jwst.print_pandeia_report(inst, mode, result['scalar'])
     >>> print(report)
-
-    Signal-to-noise ratio       5998.2
-    Extracted flux              2106.2  e-/s
-    Flux standard deviation        0.4  e-/s
-    Brightest pixel rate        1396.6  e-/s
-
-    Integrations:                         683
-    Duty cycle:                          0.98
-    Total exposure time:              21638.7  s
-    Single exposure time:             21638.7  s
-    First--last dt per exposure:      21638.7  s
-    Reset--last dt per integration:   21169.9  s
-
-    Reference wavelength:                    4.36  microns
-    Area of extraction aperture:             4.76  pixels
-    Area of background measurement:           6.3  pixels
-    Background surface brightness:            0.3  MJy/sr
-    Total sky flux in background aperture:   4.45  e-/s
-    Total flux in background aperture:      65.97  e-/s
-    Background flux fraction from scene:     0.93
-    Number of cosmic rays:      0.0073  events/pixel/read
     """
     if not isinstance(report_in, list):
         report_in = [report_in]
     rate_in = report_in[0]['extracted_flux']
+    if report_out == []:
+        report_out = None
     if report_out is not None:
         if not isinstance(report_out, list):
            report_out = [report_out]
@@ -1112,8 +1042,6 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
         reports = report_in
     else:
         reports = report_out
-
-    dt_fmt = '8.1f' if report_in[0]['total_exposure_time'] > 100 else '8.3f'
 
     snr = ''
     flux = ''
@@ -1126,8 +1054,15 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
     sky = ''
     bkg_flux = ''
     bkg_source = ''
+    min_snr = 0.0
+    if mode == 'target_acq' and inst in ['miri', 'nirspec']:
+        min_snr = 20.0
+    if mode == 'target_acq' and inst in ['niriss', 'nircam']:
+        min_snr = 30.0
+
     for report in report_in:
-        snr += f"{report['sn']:9.1f} "
+        sn = report['sn']
+        snr += format_text(f"{sn:9.1f} ", danger=sn<min_snr, format=format)
         flux += f"{report['extracted_flux']:9.1f} "
         flux_std += f"{report['extracted_noise']:9.1f} "
         pixel_rate += f"{report['brightest_pixel']:9.1f} "
@@ -1147,7 +1082,7 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
             f"Background surface brightness:         {bkg_brightness} MJy/sr\n"
             f"Total sky flux in background aperture: {sky} e-/s\n"
             f"Total flux in background aperture:     {bkg_flux} e-/s\n"
-            f"Background flux fraction from scene:   {bkg_source}\n"
+            f"Background flux fraction from scene:   {bkg_source.rstrip()}\n"
         )
 
     cosmic_rays = f"{report_in[0]['cr_ramp_rate']:9.4f}"
@@ -1158,12 +1093,17 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
     exp_time = ''
     dt_exposure = ''
     dt_integ = ''
+    dt_fmt = '8.1f' if report_in[0]['total_exposure_time'] > 100 else '8.3f'
+    min_duty = 0.0 if mode == 'target_acq' else 0.49
     reports = report_in[0:1]
     if report_out is not None:
         reports.append(report_out[0])
     for report in reports:
         integs += f"{report['total_integrations']:8d} "
-        duty_cycle += f"{report['duty_cycle']:8.2f} "
+        duty = report['duty_cycle']
+        duty_cycle += format_text(
+            f"{duty:8.2f} ", warning=duty<min_duty, format=format,
+        )
         total_time += f"{report['total_exposure_time']:{dt_fmt}} "
         exp_time += f"{report['all_dithers_time']:{dt_fmt}} "
         dt_exposure += f"{report['exposure_time']:{dt_fmt}} "
@@ -1173,7 +1113,7 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
         tso_header = ''
     else:
         tso_header = f"{'in-transit':>41}  out-transit\n"
-    if report_in[0]['disperser'] in ['short', 'medium', 'long']:
+    if mode == 'miri_ts' and len(reports)==4:
         channels = "CH1 CH2 CH3 CH4"
         band_header1 = f"{'':31s}{channels.replace(' ', '       ')}\n"
         band_header2 = f"{'':42s}{channels.replace(' ', '    ')}\n"
@@ -1182,16 +1122,17 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
 
     summary = (
         f"{band_header1}"
-        f"Signal-to-noise ratio    {snr}\n"
+        f"Signal-to-noise ratio    {snr.rstrip()}\n"
         f"Extracted flux           {flux} e-/s\n"
         f"Flux standard deviation  {flux_std} e-/s\n"
         f"Brightest pixel rate     {pixel_rate} e-/s\n\n"
 
         f"{tso_header}"
-        f"Integrations:                    {integs}\n"
-        f"Duty cycle:                      {duty_cycle}\n"
+        f"Integrations:                    {integs.rstrip()}\n"
+        f"Duty cycle:                      {duty_cycle.rstrip()}\n"
         f"Total exposure time:             {total_time} s\n"
-        f"Single exposure time:            {exp_time} s\n"
+        # Ignore exp_time since it always matches total_time (nexp=1)
+        #f"Single exposure time:            {exp_time} s\n"
         f"First--last dt per exposure:     {dt_exposure} s\n"
         f"Reset--last dt per integration:  {dt_integ} s\n\n"
 
@@ -1202,9 +1143,114 @@ def print_pandeia_report(report_in, report_out=None, as_html=False):
         f"Number of cosmic rays:   {cosmic_rays}  events/pixel/read"
     )
 
-    if as_html:
+    if format=='html':
         summary = summary.replace('\n', '<br>')
     return summary
+
+
+def _print_pandeia_report(reports, format=None):
+    """
+    Get a text summarizing tso_calculation() or perform_calculation() output.
+    Similar to the results panel in the ETC.
+
+    Parameters
+    ----------
+    reports: Dictionary
+        A tso_calculation() or a perform_calculation() output.
+        Or a list of them.
+    format: String
+        If None format as plain text (e.g., for print() calls)
+        If 'rich' format as rich/colorful text (e.g., for FormattedText())
+        If 'html' format as HTML text (e.g., for browser applications)
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=90, readout='rapid', filter='f444w',
+    >>> )
+
+    >>> tso_report = jwst._print_pandeia_report(tso, format=None)
+    >>> print(tso_report)
+
+    Exposure time: 21545.44 s (5.98 h)
+    Max fraction of saturation: 73.7%
+    ngroup below 80% saturation: 97
+    ngroup below 100% saturation: 122
+
+    Signal-to-noise ratio       3484.8
+    Extracted flux              2043.0  e-/s
+    Flux standard deviation        0.6  e-/s
+    Brightest pixel rate        1354.7  e-/s
+
+                                   in-transit  out-transit
+    Integrations:                         243      452
+    Duty cycle:                          0.98     0.98
+    Total exposure time:               7533.2  14012.3  s
+    First--last dt per exposure:       7533.2  14012.3  s
+    Reset--last dt per integration:    7366.4  13702.1  s
+
+    Reference wavelength:                    4.36  microns
+    Area of extraction aperture:             4.76  pixels
+    Area of background measurement:           6.3  pixels
+    Background surface brightness:            0.3  MJy/sr
+    Total sky flux in background aperture:   4.45  e-/s
+    Total flux in background aperture:      64.12  e-/s
+    Background flux fraction from scene:     0.93
+    Number of cosmic rays:      0.0072  events/pixel/read
+    """
+    if not isinstance(reports, list):
+        reports = [reports]
+    # This is a TSO dict
+    if 'report_in' in reports[0]:
+        report_in = [report['report_in'] for report in reports]
+        report_out = [report['report_out'] for report in reports]
+    # This is a perform_calculation dict
+    else:
+        report_in = reports
+        report_out = []
+
+    # Put everything into a list to make things easier to handle:
+    if not isinstance(report_in, list):
+        report_in = [report_in]
+    if not isinstance(report_out, list):
+        report_out = [report_out]
+
+    # Exposure
+    config = report_in[0]['input']['configuration']
+    inst = config['instrument']['instrument']
+    mode = config['instrument']['mode']
+    subarray = config['detector']['subarray']
+    readout = config['detector']['readout_pattern']
+    ngroup = config['detector']['ngroup']
+    nint = config['detector']['nint']
+    if report_out != []:
+        nint += report_out[0]['input']['configuration']['detector']['nint']
+    text_report = _print_pandeia_exposure(inst, subarray, readout, ngroup, nint)
+
+    # Saturation
+    reports = report_in + report_out
+    pixel_rate, full_well = saturation_level(reports, get_max=True)
+    saturation_report = _print_pandeia_saturation(
+        inst, subarray, readout, ngroup, pixel_rate, full_well,
+        format=format,
+    )
+    text_report = f'{text_report}\n{saturation_report}'
+
+    # Full report
+    scalar_in = [report['scalar'] for report in report_in]
+    scalar_out = [report['scalar'] for report in report_out]
+    stats = _print_pandeia_stats(inst, mode, scalar_in, scalar_out, format)
+    text_report = f'{text_report}\n\n{stats}'
+    if format == 'html':
+        text_report = text_report.replace('\n', '<br>')
+    return text_report
 
 
 class PandeiaCalculation():
