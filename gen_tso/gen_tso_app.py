@@ -854,6 +854,7 @@ def server(input, output, session):
         detector = get_detector(mode, inst_name)
         inst_label = detector.instrument_label(disperser, filter)
 
+        run_is_tso = True
         # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
@@ -862,6 +863,8 @@ def server(input, output, session):
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None
+            nint = 1
+            run_is_tso = False
 
         obs_geometry = input.geometry.get()
         transit_dur = float(input.t_dur.get())
@@ -869,20 +872,23 @@ def server(input, output, session):
         exp_time = jwst.exposure_time(
             inst, subarray, readout, ngroup, nint,
         )
-        # TBD: if exp_time << obs_dur, raise warning
-
-        #print(
-        #    repr(inst), repr(mode), repr(disperser), repr(filter),
-        #    repr(subarray), repr(readout), repr(aperture),
-        #)
+        in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
+            inst, subarray, readout, ngroup, transit_dur,
+        )
+        if mode != 'target_acq' and in_transit_integs > nint:
+            error_msg = ui.markdown(
+                f"**Warning:**<br>observation time for **{nint} integration"
+                f"(s)** is less than the {obs_geometry.lower()} time.  Running "
+                "a perform_calculation()"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            run_is_tso = False
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        print(sed_type, sed_model, norm_band, repr(norm_mag))
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 
-        if mode == 'target_acq':
-            nint = 1
+        if not run_is_tso:
             tso = pando.perform_calculation(
                 ngroup, nint, disperser, filter, subarray, readout, aperture,
             )
@@ -891,11 +897,11 @@ def server(input, output, session):
         else:
             depth_label, wl, depth = parse_depth_model(input)
             if depth_label is None:
-                ui.notification_show(
-                    f"No {obs_geometry.lower()} depth model to simulate",
-                    type="error",
-                    duration=5,
+                error_msg = (
+                    f"**Error:**<br>no {obs_geometry.lower()} depth model "
+                    "to simulate"
                 )
+                ui.notification_show(error_msg, type="error", duration=5)
                 return
             if depth_label not in spectra:
                 spectrum_choices[obs_geometry.lower()].append(depth_label)
@@ -903,38 +909,27 @@ def server(input, output, session):
             depth_model = [wl, depth]
 
             obs_dur = exp_time / 3600.0
-            # TBD: If so, default to a pando.perform_calculation()
-            # and replace error with warning
-            if obs_dur < transit_dur:
-                error_msg = ui.markdown(
-                    f"**Error:**<br>observation time with **{nint} integration"
-                    f"(s)** is less than {obs_geometry.lower()} time"
-                )
-                ui.notification_show(error_msg, type="error", duration=5)
-                return
             tso = pando.tso_calculation(
                 obs_geometry.lower(), transit_dur, obs_dur, depth_model,
                 ngroup, disperser, filter, subarray, readout, aperture,
             )
 
+        if run_is_tso:
+            success = "TSO model simulated!"
+        else:
+            success = "Pandeia calculation done!"
+        ui.notification_show(success, type="message", duration=2)
+
         detector_label = jwst.detector_label(
             inst, mode, disperser, filter, subarray, readout,
-        )
-
-        ui.notification_show(
-            "TSO model simulated!",
-            type="message",
-            duration=2,
         )
         group_ints = f'({ngroup} G, {nint} I)'
         pretty_label = (
             f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
         )
         tso_label = f'{obs_geometry} {pretty_label}'
-        tso_labels[obs_geometry][tso_label] = pretty_label
-        ui.update_select('display_tso_run', choices=tso_labels)
 
-        tso_runs[tso_label] = dict(
+        tso_run = dict(
             # The detector
             inst=inst,
             mode=mode,
@@ -954,38 +949,47 @@ def server(input, output, session):
             ngroup=ngroup,
             # The outputs
             tso=tso,
-            #pandeia_results=pandeia_results,
         )
-        if mode != 'target_acq':
+        if run_is_tso:
             # The planet
-            tso_runs[tso_label]['t_dur'] = transit_dur
-            tso_runs[tso_label]['obs_dur'] = obs_dur
-            tso_runs[tso_label]['depth_model_name'] = depth_label
-            tso_runs[tso_label]['depth_model'] = depth_model
+            tso_run['t_dur'] = transit_dur
+            tso_run['obs_dur'] = obs_dur
+            tso_run['depth_model_name'] = depth_label
+            tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
-                report_in = [report['report_in']['scalar'] for report in tso]
-                report_out = [report['report_out']['scalar'] for report in tso]
-                reports = report_in, report_out
-                # TBD: Consider warnings in other TSO reports?
+                reports = (
+                    [report['report_in']['scalar'] for report in tso],
+                    [report['report_out']['scalar'] for report in tso],
+                )
                 warnings = tso[0]['report_in']['warnings']
+                # TBD: Consider warnings in other TSO reports?
             else:
-                reports = tso['report_in']['scalar'], tso['report_out']['scalar']
+                reports = (
+                    tso['report_in']['scalar'],
+                    tso['report_out']['scalar'],
+                )
                 warnings = tso['report_in']['warnings']
         else:
             reports = tso['scalar'], None
             warnings = tso['warnings']
 
-        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+        if run_is_tso or mode=='target_acq':
+            tso_labels[obs_geometry][tso_label] = pretty_label
+            tso_runs[tso_label] = tso_run
+            ui.update_select('display_tso_run', choices=tso_labels)
+
         # Update report
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
+        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate=pixel_rate,
             full_well=full_well,
             inst=inst,
             mode=mode,
             reports=reports,
+            warnings=warnings,
         )
         saturation_label.set(sat_label)
 
