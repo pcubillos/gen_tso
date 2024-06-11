@@ -975,15 +975,17 @@ def server(input, output, session):
             reports = tso['scalar'], None
             warnings = tso['warnings']
 
-        flux_rate, full_well = jwst.saturation_level(tso, get_max=True)
+        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
         # Update report
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
         cache_saturation[sat_label] = dict(
-            brightest_pixel_rate = flux_rate,
-            full_well = full_well,
-            report = reports,
+            brightest_pixel_rate=pixel_rate,
+            full_well=full_well,
+            inst=inst,
+            mode=mode,
+            reports=reports,
         )
         saturation_label.set(sat_label)
 
@@ -1696,14 +1698,14 @@ def server(input, output, session):
 
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-        flux_rate, full_well = pando.get_saturation_values(
+        pixel_rate, full_well = pando.get_saturation_values(
             disperser, filter, subarray, readout, ngroup, aperture,
             get_max=True,
         )
 
         cache_saturation[sat_label] = dict(
-            brightest_pixel_rate = flux_rate,
-            full_well = full_well,
+            brightest_pixel_rate=pixel_rate,
+            full_well=full_well,
         )
         # This reactive variable enforces a re-rendering of exp_time
         saturation_label.set(sat_label)
@@ -1899,7 +1901,8 @@ def server(input, output, session):
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, sed_label,
         )
-        if sat_label in cache_saturation:
+        cached = sat_label in cache_saturation
+        if cached:
             pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
             full_well = cache_saturation[sat_label]['full_well']
             saturation_text = jwst._print_pandeia_saturation(
@@ -1908,13 +1911,15 @@ def server(input, output, session):
             )
             report_text += f'<br>{saturation_text}'
 
-        if sat_label in cache_saturation and 'report' in cache_saturation[sat_label]:
+        if cached and 'reports' in cache_saturation[sat_label]:
             # TBD: check that groups / integs match
-            report_in, report_out = cache_saturation[sat_label]['report']
-            report_text = (
-                f'{report_text}<br><br>' +
-                jwst.print_pandeia_report(report_in, report_out, as_html=True)
+            report_in, report_out = cache_saturation[sat_label]['reports']
+            inst = cache_saturation[sat_label]['inst']
+            mode = cache_saturation[sat_label]['mode']
+            stats_text = jwst._print_pandeia_stats(
+                inst, mode, report_in, report_out, format='html',
             )
+            report_text += f'<br><br>{stats_text}'
         return ui.HTML(f'<pre>{report_text}</pre>')
 
     @render.text
