@@ -49,3 +49,7 @@ version = {attr = "gen_tso.version.__version__"}
 [tool.setuptools.package-data]
 "gen_tso.data" = ["*"]
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning",
+]
