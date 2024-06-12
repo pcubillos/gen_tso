@@ -53,13 +53,6 @@ bands_dict = {
     'V mag': 'johnson,v',
 }
 
-inst_names = [
-    'MIRI',
-    'NIRCam',
-    'NIRISS',
-    'NIRSpec',
-]
-
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 
@@ -75,9 +68,9 @@ filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
 tso_labels = {}
-tso_labels['Transit'] = {}
-tso_labels['Eclipse'] = {}
-tso_labels['Acquisition'] = {}
+tso_labels['transit'] = {}
+tso_labels['eclipse'] = {}
+tso_labels['acquisition'] = {}
 
 cache_saturation = {}
 spectrum_choices = {
@@ -138,7 +131,7 @@ app_ui = ui.page_fluid(
     # Instrument and detector modes:
     ui.layout_columns(
         cs.navset_card_tab_jwst(
-            inst_names,
+            ['MIRI', 'NIRCam', 'NIRISS', 'NIRSpec'],
             id="select_instrument",
             selected='NIRCam',
             header="Select an instrument and detector",
@@ -321,7 +314,10 @@ app_ui = ui.page_fluid(
                     ui.input_select(
                         id='geometry',
                         label='',
-                        choices=['Transit', 'Eclipse'],
+                        choices={
+                            'transit': 'Transit',
+                            'eclipse': 'Eclipse',
+                        }
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
@@ -753,11 +749,7 @@ def server(input, output, session):
             if det.instrument == inst_name and det.obs_type=='acquisition':
                 acq_modes[det.mode] = 'Target Acquisition'
         choices['Acquisition'] = acq_modes
-
-        ui.update_select(
-            'select_mode',
-            choices=choices,
-        )
+        ui.update_select('select_mode', choices=choices)
 
 
     @reactive.Effect
@@ -878,7 +870,7 @@ def server(input, output, session):
         if mode != 'target_acq' and in_transit_integs > nint:
             error_msg = ui.markdown(
                 f"**Warning:**<br>observation time for **{nint} integration"
-                f"(s)** is less than the {obs_geometry.lower()} time.  Running "
+                f"(s)** is less than the {obs_geometry} time.  Running "
                 "a perform_calculation()"
             )
             ui.notification_show(error_msg, type="warning", duration=5)
@@ -892,25 +884,25 @@ def server(input, output, session):
             tso = pando.perform_calculation(
                 ngroup, nint, disperser, filter, subarray, readout, aperture,
             )
-            obs_geometry = 'Acquisition'
+            obs_geometry = 'acquisition'
             depth_label = ''
         else:
             depth_label, wl, depth = parse_depth_model(input)
             if depth_label is None:
-                error_msg = (
-                    f"**Error:**<br>no {obs_geometry.lower()} depth model "
+                error_msg = ui.markdown(
+                    f"**Error:**<br>no {obs_geometry} depth model "
                     "to simulate"
                 )
                 ui.notification_show(error_msg, type="error", duration=5)
                 return
             if depth_label not in spectra:
-                spectrum_choices[obs_geometry.lower()].append(depth_label)
+                spectrum_choices[obs_geometry].append(depth_label)
                 spectra[depth_label] = {'wl': wl, 'depth': depth}
             depth_model = [wl, depth]
 
             obs_dur = exp_time / 3600.0
             tso = pando.tso_calculation(
-                obs_geometry.lower(), transit_dur, obs_dur, depth_model,
+                obs_geometry, transit_dur, obs_dur, depth_model,
                 ngroup, disperser, filter, subarray, readout, aperture,
             )
 
@@ -1001,6 +993,7 @@ def server(input, output, session):
         print(inst, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
+
 
     @reactive.effect
     @reactive.event(input.save_button)
@@ -1340,7 +1333,7 @@ def server(input, output, session):
     @render.ui
     def depth_label_text():
         """Set depth model label"""
-        obs_geometry = str(input.geometry.get()).lower()
+        obs_geometry = input.geometry.get()
         depth_label = planet_model_name(input)
         is_bookmarked = not bookmarked_depth.get()
         is_bookmarked = depth_label in spectrum_choices[obs_geometry]
@@ -1368,11 +1361,11 @@ def server(input, output, session):
     @reactive.event(input.bookmark_depth)
     def _():
         """Toggle bookmarked depth model"""
-        obs_geometry = input.geometry.get().lower()
+        obs_geometry = input.geometry.get()
         depth_label = planet_model_name(input)
         if depth_label is None:
             ui.notification_show(
-                f"No {obs_geometry.lower()} depth model to bookmark",
+                f"No {obs_geometry} depth model to bookmark",
                 type="error",
                 duration=5,
             )
@@ -1393,9 +1386,9 @@ def server(input, output, session):
     def _():
         obs_geometry = input.geometry.get()
         selected = input.planet_model_type.get()
-        if obs_geometry == 'Transit':
+        if obs_geometry == 'transit':
             choices = ['Flat', 'Input']
-        elif obs_geometry == 'Eclipse':
+        elif obs_geometry == 'eclipse':
             choices = ['Blackbody', 'Input']
         if selected not in choices:
             selected = choices[0]
@@ -1409,13 +1402,13 @@ def server(input, output, session):
     @render.text
     @reactive.event(input.geometry)
     def transit_dur_label():
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.geometry.get().capitalize()
         return f"{obs_geometry[0]}_dur (h):"
 
     @render.text
     @reactive.event(input.geometry)
     def transit_depth_label():
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.geometry.get().capitalize()
         return f"{obs_geometry} depth"
 
     @render.ui
@@ -1510,7 +1503,7 @@ def server(input, output, session):
             )
 
         if model_type == 'Input':
-            choices = spectrum_choices[obs_geometry.lower()]
+            choices = spectrum_choices[obs_geometry]
             input_select = ui.input_select(
                 id="depth",
                 label="",
@@ -1520,10 +1513,10 @@ def server(input, output, session):
             if len(choices) > 0:
                 return input_select
 
-            if obs_geometry == 'Transit':
-                tooltip_text = f"a {obs_geometry.lower()}"
-            elif obs_geometry == 'Eclipse':
-                tooltip_text = f"an {obs_geometry.lower()}"
+            if obs_geometry == 'transit':
+                tooltip_text = f"a {obs_geometry}"
+            elif obs_geometry == 'eclipse':
+                tooltip_text = f"an {obs_geometry}"
             return ui.tooltip(
                 input_select,
                 f'Upload {tooltip_text} depth spectrum',
@@ -1563,7 +1556,7 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.upload_depth)
     def _():
-        obs_geometry = input.geometry.get().lower()
+        obs_geometry = input.geometry.get()
         m = ui.modal(
             ui.input_file(
                 id="upload_file",
@@ -1617,7 +1610,7 @@ def server(input, output, session):
             label = label[0:-4]
 
         if units in depth_units:
-            obs_geometry = input.geometry.get().lower()
+            obs_geometry = input.geometry.get()
             spectrum_choices[obs_geometry].append(label)
             # TBD: convert depth units
             spectra[label] = {'wl': wl, 'depth': depth}
@@ -1820,7 +1813,7 @@ def server(input, output, session):
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
         obs_geometry = input.geometry.get()
-        model_names = spectrum_choices[obs_geometry.lower()]
+        model_names = spectrum_choices[obs_geometry]
         nmodels = len(model_names)
         if nmodels == 0:
             return go.Figure()
@@ -1862,7 +1855,7 @@ def server(input, output, session):
                 instrument_label=tso_run['inst_label'],
                 bin_widths=None,
                 units=units, wl_range=wl_range, wl_scale=wl_scale,
-                obs_geometry='Transit',
+                obs_geometry='transit',
             )
         else:
             fig = go.Figure()
