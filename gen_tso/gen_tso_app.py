@@ -67,10 +67,18 @@ def get_detector(mode=None, instrument=None):
 filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
-tso_labels = {}
-tso_labels['transit'] = {}
-tso_labels['eclipse'] = {}
-tso_labels['acquisition'] = {}
+
+def make_tso_labels(tso_runs):
+    tso_labels = dict(
+        Transit={},
+        Eclipse={},
+        Acquisition={},
+    )
+    for tso_label, tso_run in tso_runs.items():
+        obs_type = tso_run['obs_type'].capitalize()
+        tso_labels[obs_type][tso_label] = tso_run['label']
+    return tso_labels
+
 
 cache_saturation = {}
 spectrum_choices = {
@@ -153,7 +161,7 @@ app_ui = ui.page_fluid(
                         "TSO runs will show here after a 'Run Pandeia' call",
                         placement='right',
                     ),
-                    choices=tso_labels,
+                    choices=make_tso_labels(tso_runs),
                     selected=[''],
                     #width='450px',
                 ),
@@ -926,6 +934,7 @@ def server(input, output, session):
             inst=inst,
             mode=mode,
             inst_label=inst_label,
+            label=pretty_label,
             # The SED
             sed_type=sed_type,
             sed_model=sed_model,
@@ -966,8 +975,8 @@ def server(input, output, session):
             warnings = tso['warnings']
 
         if run_is_tso or mode=='target_acq':
-            tso_labels[obs_geometry][tso_label] = pretty_label
             tso_runs[tso_label] = tso_run
+            tso_labels = make_tso_labels(tso_runs)
             ui.update_select('display_tso_run', choices=tso_labels)
 
         # Update report
@@ -993,6 +1002,16 @@ def server(input, output, session):
         print(inst, mode, disperser, filter, subarray, readout)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
+
+
+    @reactive.effect
+    @reactive.event(input.delete_button)
+    def _():
+        tso_label = input.display_tso_run.get()
+        #tso_labels[obs_geometry][tso_label] = pretty_label
+        del tso_runs[tso_label]
+        tso_labels = make_tso_labels(tso_runs)
+        ui.update_select('display_tso_run', choices=tso_labels)
 
 
     @reactive.effect
