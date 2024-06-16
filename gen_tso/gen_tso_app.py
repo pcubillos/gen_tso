@@ -9,7 +9,7 @@ import textwrap
 
 import numpy as np
 import scipy.interpolate as si
-
+import pandas as pd
 import faicons as fa
 from htmltools import HTML
 import plotly.graph_objects as go
@@ -401,6 +401,8 @@ app_ui = ui.page_fluid(
                 ui.input_switch("integs_switch", "Match obs. duration", False),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
+            # Search nearby Gaia targets for acquisition
+            ui.output_ui('target_acq_input'),
             body_args=dict(class_="p-2 m-0"),
         ),
 
@@ -564,7 +566,11 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     ui.output_ui('warnings_label'),
-                    ui.output_text_verbatim(id="warnings")
+                    ui.output_text_verbatim(id="warnings"),
+                ),
+                ui.nav_panel(
+                    "Acquisition targets",
+                    ui.output_data_frame(id="acquisition_targets"),
                 ),
             ),
             col_widths=[12, 12],
@@ -735,6 +741,8 @@ def server(input, output, session):
     uploaded_units = reactive.Value(None)
     warning_text = reactive.Value('')
     machine_readable_info = reactive.Value(False)
+    acq_target_list = reactive.Value(None)
+    current_science_target = reactive.Value(None)
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -1755,6 +1763,43 @@ def server(input, output, session):
             return
         ui.update_numeric('integrations', value=integs)
 
+    @render.ui
+    @reactive.event(input.select_mode)
+    def target_acq_input():
+        mode = input.select_mode.get()
+        if mode != 'target_acq':
+            return None
+
+        return ui.panel_well(
+            ui.tooltip(
+                ui.markdown('Acquisition targets'),
+                'Gaia targets within 80" from science target',
+                id="gaia_tooltip",
+                placement="top",
+            ),
+            ui.layout_column_wrap(
+                ui.input_action_button(
+                    id="search_gaia_ta",
+                    label="Search nearby targets",
+                    class_='btn btn-outline-secondary btn-sm',
+                ),
+                ui.input_action_button(
+                    id="perform_ta_calculation",
+                    label="Run TA Pandeia",
+                    class_='btn btn-outline-secondary btn-sm',
+                    # TBD: set a style from CSS file independently of id
+                ),
+                ui.input_action_button(
+                    id="get_acquisition_target",
+                    label="Print acq. target data",
+                    class_='btn btn-outline-secondary btn-sm',
+                ),
+                width=1,
+                gap='5px',
+                class_="px-0 py-0 mx-0 my-0",
+            ),
+            class_="px-2 pt-2 pb-2 m-0",
+        )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Viewer
@@ -1953,6 +1998,111 @@ def server(input, output, session):
             )
             text += warn + '\n\n'
         return text
+
+
+    @render.data_frame
+    @reactive.event(input.search_gaia_ta, input.target)
+    def acquisition_targets():
+        name = input.target.get()
+        # if change of input.target was the trigger:
+        if name != current_science_target.get() and name != '':
+            current_science_target.set(name)
+            acq_target_list.set(None)
+            return
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+
+        names, G_mag, teff, log_g, ra, dec, separation = cat.fetch_gaia_targets(
+            target.ra, target.dec, max_separation=80.0,
+        )
+        names = np.array([
+            'Gaia DR3 6910753016653587840', 'Gaia DR3 6910752844854895360',
+            'Gaia DR3 6910747136843460480', 'Gaia DR3 6910746934979897088',
+            'Gaia DR3 6910747141138328064', 'Gaia DR3 6910753046718453248',
+            'Gaia DR3 6910746930684973952', 'Gaia DR3 6910746866260418944',
+            'Gaia DR3 6910746934979895936'])
+        G_mag = np.array([
+             9.491504, 16.80548 , 18.476078, 16.334204, 18.974197, 17.175997,
+            18.024723, 15.700529, 16.899416])
+        teff = np.array([
+            4729.3774, 5503.5996, 4959.2495, 5394.8145, 3979.5588, 5134.7896,
+            4528.2563, 5572.225 , 4862.2915])
+        log_g = np.array([
+            4.5058, 4.4191, 4.7718, 4.3786, 5.018 , 4.3886, 4.6305, 3.774 ,
+            4.6665])
+        ra = np.array([
+            315.02597081, 315.03419028, 315.01496413, 315.01522348,
+            315.00966205, 315.04041427, 315.02272526, 315.03525381,
+            315.0218094 ])
+        dec = np.array([
+            -5.09487006, -5.08816924, -5.09282223, -5.10531022, -5.10264537,
+            -5.08275871, -5.11378437, -5.11325095, -5.11603216])
+        separation = np.array([
+            4.99691642e-02, 3.80699861e+01, 4.01249572e+01, 5.38511968e+01,
+            6.48380986e+01, 6.76834547e+01, 6.91223563e+01, 7.41212133e+01,
+            7.76740049e+01])
+        acq_target_list.set([names, G_mag, teff, log_g, ra, dec, separation])
+        data_df = {
+            'Gaia DR3 target': [name[9:] for name in names],
+            'G_mag': [f'{mag:5.2f}' for mag in G_mag],
+            'separation (")': [f'{sep:.3f}' for sep in separation],
+            'T_eff (K)': [f'{temp:.1f}' for temp in teff],
+            'log(g)': [f'{grav:.2f}' for grav in log_g],
+            'RA (deg)': [f'{r:.4f}' for r in ra],
+            'dec (deg)': [f'{d:.4f}' for d in dec],
+        }
+        acquisition_df = pd.DataFrame(data=data_df)
+        return render.DataGrid(
+            acquisition_df,
+            selection_mode="row",
+            height='370px',
+            summary=True,
+        )
+
+    @reactive.effect
+    @reactive.event(input.perform_ta_calculation)
+    def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+        target_list = acq_target_list.get()
+        if target_list is None:
+            error_msg = ui.markdown(
+                "First click the '*Search nearby targets*' button, then select "
+                "a target from the '*Acquisition targets*' tab"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            return
+
+        selected = acquisition_targets.cell_selection()['rows']
+        if len(selected) == 0:
+            error_msg = ui.markdown(
+                "First select a target from the '*Acquisition targets*' tab"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            return
+        names, G_mag, teff, log_g, ra, dec, separation = target_list
+        idx = selected[0]
+        # TBD: get SED and run pandeia
+        text = (
+            f"acq_target = {repr(names[idx])}\n"
+            f"gaia_mag = {G_mag[idx]}\n"
+            f"separation = {separation[idx]}\n"
+            f"teff = {teff[idx]}\n"
+            f"log_g = {log_g[idx]}\n"
+            f"ra = {ra[idx]}\n"
+            f"dec = {dec[idx]}"
+        )
+        print(text)
+
+
+    @reactive.effect
+    @reactive.event(input.get_acquisition_target)
+    def _():
+        # TBD: print to screen, or open ui.modal, or both?
+        print('OK, work now!')
 
 app = App(app_ui, server)
 
