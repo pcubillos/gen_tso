@@ -16,12 +16,13 @@ authors = [
   {name = "Patricio Cubillos", email = "pcubillos@fulbrightmail.org"}
 ]
 dependencies = [
-    'shiny>=0.8.1',
+    'shiny>=0.10.2',
     'pandeia.engine>=3.0.0',
     'scipy',
     'numpy>=1.15.1',
     'requests>=2.19.1',
     'grequests>=0.7.0',
+    'astropy>=5.3.0',
     'astroquery',
     'pandas',
     'plotly',
