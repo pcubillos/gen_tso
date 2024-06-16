@@ -1,3 +1,17 @@
+
+#perform_ta_calculation{
+    font-weight:bold;
+    background-color:#eeba0b;
+    color:#FFFFFF;
+    border-color:#cc9c00;
+}
+
+#perform_ta_calculation:hover{
+    color:#000000;
+    background-color:#ffc60a;
+    border-color:#eeba0b;
+}
+
 #run_pandeia{
     font-weight:bold;
     background-color:#eeba0b;
