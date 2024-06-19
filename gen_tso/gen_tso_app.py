@@ -462,8 +462,16 @@ app_ui = ui.page_fluid(
                     class_='pb-1',
                 ),
                 ui.output_ui('groups_input'),
-                ui.output_ui('integration_input'),
-                ui.input_switch("integs_switch", "Match obs. duration", False),
+                ui.panel_conditional(
+                    "input.select_mode != 'target_acq'",
+                    ui.input_numeric(
+                        id="integrations",
+                        label="Integrations",
+                        value=1,
+                        min=1, max=100000,
+                    ),
+                    ui.input_switch("integs_switch", "Match obs. duration", False),
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             # Search nearby Gaia targets for acquisition
@@ -920,7 +928,7 @@ def server(input, output, session):
         subarray = input.subarray.get()
         readout = input.readout.get()
         ngroup = int(input.groups.get())
-        nint = int(input.integrations.get())
+        nint = input.integrations.get()
         aperture = None
 
         detector = get_detector(mode, inst_name)
@@ -1685,24 +1693,6 @@ def server(input, output, session):
                 min=2, max=10000,
             )
 
-    @render.ui
-    @reactive.event(input.select_mode)
-    def integration_input():
-        mode = input.select_mode.get()
-        if mode == 'target_acq':
-            return ui.input_select(
-                id="integrations",
-                label="Integrations",
-                choices=[1],
-            )
-        else:
-            return ui.input_numeric(
-                id="integrations",
-                label="Integrations",
-                value=1,
-                min=1, max=100000,
-            )
-
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
@@ -1964,10 +1954,11 @@ def server(input, output, session):
         if mode == 'target_acq':
             #aperture = input.disperser.get()
             disperser = None
+            nint = 1
 
         ngroup = int(ngroup)
         report_text = jwst._print_pandeia_exposure(
-            inst, subarray, readout, ngroup, int(nint),
+            inst, subarray, readout, ngroup, nint,
         )
 
         sat_label = make_saturation_label(
