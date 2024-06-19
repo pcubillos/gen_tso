@@ -25,7 +25,7 @@ def main():
     """
     reload = '--debug' in sys.argv
     app = os.path.realpath(os.path.dirname(__file__)) + '/gen_tso_app.py'
-    run_app(app, reload=reload, launch_browser=True)
+    run_app(app, reload=reload, launch_browser=True, dev_mode=False)
 
 
 if __name__ == "__main__":
