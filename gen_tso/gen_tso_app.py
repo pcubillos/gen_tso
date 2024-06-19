@@ -81,12 +81,23 @@ def make_tso_labels(tso_runs):
 
 
 cache_saturation = {}
-spectrum_choices = {
+
+# Planet and stellar spectra
+spectra = {
+    'transit': {},
+    'eclipse': {},
+    'sed': {},
+}
+bookmarked_spectra = {
     'transit': [],
     'eclipse': [],
     'sed': [],
 }
-spectra = {}
+user_spectra = {
+    'transit': [],
+    'eclipse': [],
+    'sed': [],
+}
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
@@ -99,15 +110,15 @@ current_dir = os.path.realpath(os.getcwd())
 for location in loading_folders:
     t_models, e_models, sed_models = collect_spectra(location)
     for label, model in t_models.items():
-        spectra[label] = model
-        spectrum_choices['transit'].append(label)
+        spectra['transit'][label] = model
+        user_spectra['transit'].append(label)
     for label, model in e_models.items():
-        spectra[label] = model
-        spectrum_choices['eclipse'].append(label)
+        spectra['eclipse'][label] = model
+        user_spectra['eclipse'].append(label)
     # for label, model in sed_models.items():
         # 'depth' --> 'flux'
-        #spectra[label] = {'wl': wl, 'depth': depth}
-        #spectrum_choices['sed'].append(label)
+        #spectra['sed'][label] = {'wl': wl, 'depth': depth}
+        #user_spectra['sed'].append(label)
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
@@ -127,6 +138,15 @@ sed_units = [
     "mJy",
 ]
 
+layout_kwargs = dict(
+    width=1/2,
+    fixed_width=False,
+    heights_equal='all',
+    gap='7px',
+    fill=False,
+    fillable=True,
+    class_="pb-2 pt-0 m-0",
+)
 
 app_ui = ui.page_fluid(
     ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
@@ -345,7 +365,52 @@ app_ui = ui.page_fluid(
                     label=ui.output_ui('depth_label_text'),
                     choices=["Input"],
                 ),
-                ui.output_ui('choose_depth'),
+                ui.panel_conditional(
+                    "input.planet_model_type == 'Input'",
+                    ui.tooltip(
+                        ui.input_select(
+                            id="depth",
+                            label="",
+                            choices=user_spectra['transit'],
+                        ),
+                        '',
+                        id='depth_tooltip',
+                        placement='right',
+                    ),
+                ),
+                ui.panel_conditional(
+                    "input.planet_model_type == 'Flat'",
+                    ui.layout_column_wrap(
+                        ui.p("Depth (%):"),
+                        ui.input_numeric(
+                            id="transit_depth",
+                            label="",
+                            value=0.5,
+                            step=0.1,
+                        ),
+                        **layout_kwargs,
+                    ),
+                ),
+                ui.panel_conditional(
+                    "input.planet_model_type == 'Blackbody'",
+                    ui.layout_column_wrap(
+                        ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
+                        ui.input_numeric(
+                            id="eclipse_depth",
+                            label="",
+                            value=0.05,
+                            step=0.1,
+                        ),
+                        ui.p("Temp (K):"),
+                        ui.input_numeric(
+                            id="tplanet",
+                            label="",
+                            value=2000.0,
+                            step=100,
+                        ),
+                        **layout_kwargs,
+                    ),
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             body_args=dict(class_="p-2 m-0"),
@@ -593,13 +658,13 @@ def planet_model_name(input):
     model_type = input.planet_model_type.get()
     if model_type == 'Input':
         return input.depth.get()
-    transit_depth = input.depth.get()
-    if model_type == 'Flat':
+    elif model_type == 'Flat':
+        transit_depth = input.transit_depth.get()
         return f'Flat transit ({transit_depth:.3f}%)'
     elif model_type == 'Blackbody':
+        eclipse_depth = input.eclipse_depth.get()
         t_planet = input.tplanet.get()
-        return f'Blackbody({t_planet:.0f}K, rprs\u00b2={transit_depth:.3f}%)'
-    raise ValueError('Invalid model type')
+        return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 
 def get_throughput(input):
@@ -684,27 +749,26 @@ def parse_depth_model(input):
     """
     model_type = input.planet_model_type.get()
     depth_label = planet_model_name(input)
+    obs_geometry = input.geometry.get()
 
     if model_type == 'Input':
         if depth_label is None:
             wl, depth = None, None
         else:
-            wl = spectra[depth_label]['wl']
-            depth = spectra[depth_label]['depth']
+            wl = spectra[obs_geometry][depth_label]['wl']
+            depth = spectra[obs_geometry][depth_label]['depth']
     elif model_type == 'Flat':
         nwave = 1000
-        transit_depth = input.depth.get() * 0.01
+        transit_depth = input.transit_depth.get() * 0.01
         wl = np.linspace(0.6, 50.0, nwave)
         depth = np.tile(transit_depth, nwave)
     elif model_type == 'Blackbody':
-        transit_depth = input.depth.get() * 0.01
+        transit_depth = input.eclipse_depth.get() * 0.01
         t_planet = input.tplanet.get()
         # Un-normalized planet and star SEDs
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
-        planet_scene = jwst.make_scene(
-            'blackbody', t_planet, norm_band='none',
-        )
+        planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
         wl, f_star = jwst.extract_sed(star_scene)
         wl_planet, f_planet = jwst.extract_sed(planet_scene)
         # Interpolate black body at wl_star
@@ -912,8 +976,8 @@ def server(input, output, session):
                 ui.notification_show(error_msg, type="error", duration=5)
                 return
             if depth_label not in spectra:
-                spectrum_choices[obs_geometry].append(depth_label)
-                spectra[depth_label] = {'wl': wl, 'depth': depth}
+                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+                bookmarked_spectra[obs_geometry].append(depth_label)
             depth_model = [wl, depth]
 
             obs_dur = exp_time / 3600.0
@@ -1295,7 +1359,7 @@ def server(input, output, session):
             selected = f' Blackbody (Teff={teff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices=spectrum_choices['sed']
+            choices = list(spectra['sed'])
             selected = None
 
         return ui.input_select(
@@ -1312,8 +1376,8 @@ def server(input, output, session):
     )
     def stellar_sed_label():
         """Check current SED is bookmarked"""
-        sed_type, sed_model, norm_band, norm_mag, label = parse_sed(input)
-        is_bookmarked = label in spectrum_choices['sed']
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        is_bookmarked = sed_label in bookmarked_spectra['sed']
         bookmarked_sed.set(is_bookmarked)
         if is_bookmarked:
             sed_icon = fa.icon_svg("star", style='solid', fill='gold')
@@ -1341,34 +1405,32 @@ def server(input, output, session):
         """Toggle bookmarked SED"""
         is_bookmarked = not bookmarked_sed.get()
         bookmarked_sed.set(is_bookmarked)
-        sed_type, sed_model, norm_band, norm_mag, sed_file = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
-            spectrum_choices['sed'].append(sed_file)
-            spectra[sed_file] = {'wl': wl, 'flux': flux}
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            bookmarked_spectra['sed'].append(sed_label)
         else:
-            spectrum_choices['sed'].remove(sed_file)
-            spectra.pop(sed_file)
+            bookmarked_spectra['sed'].remove(sed_label)
+            if sed_label not in user_spectra['sed']:
+                spectra['sed'].pop(sed_label)
 
 
-    # This breaks because tplanet is not always defined
-    #@reactive.event(
-    #    bookmarked_depth, input.geometry,
-    #    input.planet_model_type, input.depth, input.tplanet,
-    #)
     @render.ui
+    @reactive.event(
+        bookmarked_depth, input.geometry, input.planet_model_type,
+        input.depth, input.transit_depth, input.eclipse_depth, input.tplanet,
+    )
     def depth_label_text():
         """Set depth model label"""
         obs_geometry = input.geometry.get()
         depth_label = planet_model_name(input)
-        is_bookmarked = not bookmarked_depth.get()
-        is_bookmarked = depth_label in spectrum_choices[obs_geometry]
+
+        is_bookmarked = depth_label in bookmarked_spectra[obs_geometry]
         bookmarked_depth.set(is_bookmarked)
-        if is_bookmarked:
-            depth_icon = fa.icon_svg("earth-americas", style='solid', fill='royalblue')
-        else:
-            depth_icon = fa.icon_svg("earth-americas", style='solid', fill='gray')
+        fill = 'royalblue' if is_bookmarked else 'gray'
+        depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
         icons = [
             depth_icon,
             fa.icon_svg("file-arrow-up", fill='black'),
@@ -1381,7 +1443,7 @@ def server(input, output, session):
             label=f"{obs_geometry.capitalize()} depth spectrum: ",
             icons=icons,
             tooltips=texts,
-            button_ids=['bookmark_depth', 'upload_depth']
+            button_ids=['bookmark_depth', 'upload_depth'],
         )
 
     @reactive.Effect
@@ -1400,18 +1462,20 @@ def server(input, output, session):
         is_bookmarked = not bookmarked_depth.get()
         bookmarked_depth.set(is_bookmarked)
         if is_bookmarked:
+            bookmarked_spectra[obs_geometry].append(depth_label)
             depth_label, wl, depth = parse_depth_model(input)
-            spectrum_choices[obs_geometry].append(depth_label)
-            spectra[depth_label] = {'wl': wl, 'depth': depth}
+            spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
-            spectrum_choices[obs_geometry].remove(depth_label)
-            spectra.pop(depth_label)
+            bookmarked_spectra[obs_geometry].remove(depth_label)
+            if depth_label not in user_spectra[obs_geometry]:
+                spectra[obs_geometry].pop(depth_label)
 
 
     @reactive.effect
-    @reactive.event(input.geometry)
+    @reactive.event(input.geometry, update_depth_flag)
     def _():
         obs_geometry = input.geometry.get()
+
         selected = input.planet_model_type.get()
         if obs_geometry == 'transit':
             choices = ['Flat', 'Input']
@@ -1419,12 +1483,22 @@ def server(input, output, session):
             choices = ['Blackbody', 'Input']
         if selected not in choices:
             selected = choices[0]
-
         ui.update_select(
             id="planet_model_type",
             choices=choices,
             selected=selected,
         )
+
+        ui.update_select(id="depth", choices=user_spectra[obs_geometry])
+
+        if len(user_spectra[obs_geometry]) > 0:
+            tooltip_text = ''
+        elif obs_geometry == 'transit':
+            tooltip_text = f'Upload a {obs_geometry} depth spectrum'
+        elif obs_geometry == 'eclipse':
+            tooltip_text = f'Upload an {obs_geometry} depth spectrum'
+        ui.update_tooltip('depth_tooltip', tooltip_text)
+
 
     @render.text
     @reactive.event(input.geometry)
@@ -1468,87 +1542,23 @@ def server(input, output, session):
         ui.update_text('obs_dur', value=f'{t_total:.2f}')
 
 
-    @render.ui
-    @reactive.event(
-        input.target, input.geometry, input.planet_model_type,
-        update_depth_flag,
-    )
-    def choose_depth():
-        obs_geometry = input.geometry.get()
-        model_type = input.planet_model_type.get()
-
+    @reactive.Effect
+    @reactive.event(input.target)
+    def _():
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             rprs_square = 1.0
             teq_planet = 1000.0
         else:
-            teq_planet = target.eq_temp
+            teq_planet = np.round(target.eq_temp, decimals=1)
             rprs_square = target.rprs**2.0
             if np.isnan(rprs_square):
                 rprs_square = 0.0
         rprs_square_percent = np.round(100*rprs_square, decimals=4)
-
-        layout_kwargs = dict(
-            width=1/2,
-            fixed_width=False,
-            heights_equal='all',
-            gap='7px',
-            fill=False,
-            fillable=True,
-            class_="pb-2 pt-0 m-0",
-        )
-
-        if model_type == 'Flat':
-            return ui.layout_column_wrap(
-                ui.p("Depth (%):"),
-                ui.input_numeric(
-                    id="depth",
-                    label="",
-                    value=rprs_square_percent,
-                    step=0.1,
-                ),
-                **layout_kwargs,
-            )
-        elif model_type == 'Blackbody':
-            return ui.layout_column_wrap(
-                ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
-                ui.input_numeric(
-                    id="depth",
-                    label="",
-                    value=rprs_square_percent,
-                    step=0.1,
-                ),
-                ui.p("Temp (K):"),
-                ui.input_numeric(
-                    id="tplanet",
-                    label="",
-                    value=teq_planet,
-                    step=100,
-                ),
-                **layout_kwargs,
-            )
-
-        if model_type == 'Input':
-            choices = spectrum_choices[obs_geometry]
-            input_select = ui.input_select(
-                id="depth",
-                label="",
-                choices=choices,
-                #selected=selected,
-            )
-            if len(choices) > 0:
-                return input_select
-
-            if obs_geometry == 'transit':
-                tooltip_text = f"a {obs_geometry}"
-            elif obs_geometry == 'eclipse':
-                tooltip_text = f"an {obs_geometry}"
-            return ui.tooltip(
-                input_select,
-                f'Upload {tooltip_text} depth spectrum',
-                placement='right',
-            )
+        ui.update_numeric(id="transit_depth", value=rprs_square_percent)
+        ui.update_numeric(id="eclipse_depth", value=rprs_square_percent)
+        ui.update_numeric('tplanet', value=teq_planet)
 
 
     @reactive.effect
@@ -1638,9 +1648,10 @@ def server(input, output, session):
 
         if units in depth_units:
             obs_geometry = input.geometry.get()
-            spectrum_choices[obs_geometry].append(label)
             # TBD: convert depth units
-            spectra[label] = {'wl': wl, 'depth': depth}
+            spectra[obs_geometry][label] = {'wl': wl, 'depth': depth}
+            user_spectra[obs_geometry].append(label)
+            bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
                 return
             # Trigger update choose_depth
@@ -1851,12 +1862,12 @@ def server(input, output, session):
     def plotly_sed():
         # Gather bookmarked SEDs
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
-        model_names = spectrum_choices['sed']
+        model_names = bookmarked_spectra['sed']
         if len(model_names) == 0:
             fig = go.Figure()
             fig.update_layout(title='Bookmark some SEDs to show them here')
             return fig
-        sed_models = [spectra[model] for model in model_names]
+        sed_models = [spectra['sed'][model] for model in model_names]
 
         # Get current SED:
         sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
@@ -1877,7 +1888,7 @@ def server(input, output, session):
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
         obs_geometry = input.geometry.get()
-        model_names = spectrum_choices[obs_geometry]
+        model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
         if nmodels == 0:
             return go.Figure()
@@ -1888,7 +1899,7 @@ def server(input, output, session):
         wl_scale = input.plot_depth_xscale.get()
         resolution = input.depth_resolution.get()
 
-        depth_models = [spectra[model] for model in model_names]
+        depth_models = [spectra[obs_geometry][model] for model in model_names]
         fig = tplots.plotly_depth_spectra(
             depth_models, model_names, current_model,
             units=units, wl_scale=wl_scale, resolution=resolution,

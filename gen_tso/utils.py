@@ -354,6 +354,7 @@ def collect_spectra(folder, on_fail=None):
     on_fail: String
         if 'warning' raise a warning.
         if 'error' raise an error.
+
     Examples
     --------
     >>> import gen_tso.utils as u
