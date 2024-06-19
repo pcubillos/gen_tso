@@ -52,7 +52,6 @@ bands_dict = {
     'Gaia mag': 'gaia,g',
     'V mag': 'johnson,v',
 }
-
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 
@@ -449,6 +448,14 @@ app_ui = ui.page_fluid(
                     label="Readout pattern",
                     choices=[''],
                     selected='',
+                ),
+                ui.panel_conditional(
+                    "input.select_mode == 'soss' && input.filter == 'clear'",
+                    ui.input_select(
+                        id="order",
+                        label="Order",
+                        choices={},
+                    ),
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
@@ -1670,6 +1677,20 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
+    @reactive.Effect
+    @reactive.event(input.subarray)
+    def set_soss_orders():
+        if input.subarray.get() == 'substrip96':
+            orders = {'1': '1'}
+        else:
+            orders = {
+                '1': '1',
+                '2': '2',
+                '3': '1 and 2',
+            }
+        ui.update_select(id='order', choices=orders)
+
+
     @render.ui
     @reactive.event(input.select_mode, input.subarray)
     def groups_input():
