@@ -5,7 +5,7 @@ __all__ = [
     'read_noise_variance',
     'exposure_time',
     'bin_search_exposure_time',
-    'saturation_time',
+    'integration_time',
     'saturation_level',
     'load_sed_list',
     'find_closest_sed',
@@ -277,9 +277,9 @@ def bin_search_exposure_time(
     return n2, exp_time(n2)
 
 
-def saturation_time(instrument, ngroup, readout, subarray):
+def integration_time(instrument, subarray, readout, ngroup):
     """
-    Compute JWST's saturation time for the given instrument configuration.
+    Compute JWST's integration time for a given instrument configuration.
     Based on pandeia.engine.exposure.
 
     Examples
@@ -291,7 +291,7 @@ def saturation_time(instrument, ngroup, readout, subarray):
     >>> ngroup = 90
     >>> readout = 'rapid'
     >>> subarray = 'subgrism64'
-    >>> integ_time = jwst.saturation_time(inst, ngroup, readout, subarray)
+    >>> integ_time = jwst.integration_time(inst, subarray, readout, ngroup)
     >>> print(integ_time)
     30.6549
     """
@@ -312,10 +312,10 @@ def saturation_time(instrument, ngroup, readout, subarray):
     ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
     ndrop1 = 0
 
-    saturation_time = tframe * (
+    integration_time = tframe * (
         ndrop1 + (ngroup - 1) * (nframe + ndrop2) + nframe
     )
-    return saturation_time
+    return integration_time
 
 
 def saturation_level(reports, get_max=False):
@@ -357,7 +357,7 @@ def saturation_level(reports, get_max=False):
     >>> # (for the given filter and scene)
     >>> subarray = 'subgrism64'
     >>> for ngroup in [2, 97, 122]:
-    >>>     integ_time = jwst.saturation_time(inst, ngroup, readout, subarray)
+    >>>     integ_time = jwst.integration_time(inst, subarray, readout, ngroup)
     >>>     sat_level = pixel_rate * integ_time / full_well * 100
     >>>     print(f'Sat. fraction for {ngroup:3d} groups: {sat_level:5.1f}%')
     Sat. fraction for   2 groups:   1.6%
@@ -958,7 +958,7 @@ def _print_pandeia_saturation(
         readout = config['detector']['readout_pattern']
         ngroup = config['detector']['ngroup']
 
-    sat_time = saturation_time(inst, ngroup, readout, subarray)
+    sat_time = integration_time(inst, subarray, readout, ngroup)
     sat_fraction = 100 * pixel_rate * sat_time / full_well
     ngroup_80 = int(80*ngroup/sat_fraction)
     ngroup_max = int(100*ngroup/sat_fraction)
