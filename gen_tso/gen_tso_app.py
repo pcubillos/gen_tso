@@ -797,7 +797,7 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def make_saturation_label(mode, disperser, filter, subarray, sed_label):
+def make_saturation_label(mode, disperser, filter, subarray, order, sed_label):
     """
     Make a label of unique saturation setups to identify when and
     when not the saturation level can be estimated.
@@ -805,6 +805,9 @@ def make_saturation_label(mode, disperser, filter, subarray, sed_label):
     sat_label = f'{mode}_{filter}'
     if mode == 'bots':
         sat_label = f'{sat_label}_{disperser}_{subarray}'
+    elif mode == 'soss':
+        order = f'_O{order[0]}' if len(order)==1 else ''
+        sat_label = f'{sat_label}_{sed_label}{order}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
     sat_label = f'{sat_label}_{sed_label}'
@@ -934,6 +937,7 @@ def server(input, output, session):
         filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
+        order = input.order.get()
         ngroup = int(input.groups.get())
         nint = input.integrations.get()
         aperture = None
@@ -945,6 +949,10 @@ def server(input, output, session):
         # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
+        if mode == 'soss':
+            order = [int(val) for val in order.split()]
+        else:
+            order = None
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
@@ -978,6 +986,7 @@ def server(input, output, session):
         if not run_is_tso:
             tso = pando.perform_calculation(
                 ngroup, nint, disperser, filter, subarray, readout, aperture,
+                order,
             )
             obs_geometry = 'acquisition'
             depth_label = ''
@@ -998,7 +1007,7 @@ def server(input, output, session):
             obs_dur = exp_time / 3600.0
             tso = pando.tso_calculation(
                 obs_geometry, transit_dur, obs_dur, depth_model,
-                ngroup, disperser, filter, subarray, readout, aperture,
+                ngroup, disperser, filter, subarray, readout, aperture, order,
             )
 
         if run_is_tso:
@@ -1008,7 +1017,7 @@ def server(input, output, session):
         ui.notification_show(success, type="message", duration=2)
 
         detector_label = jwst.detector_label(
-            inst, mode, disperser, filter, subarray, readout,
+            inst, mode, disperser, filter, subarray, readout, order,
         )
         group_ints = f'({ngroup} G, {nint} I)'
         pretty_label = (
@@ -1034,6 +1043,7 @@ def server(input, output, session):
             filter=filter,
             subarray=subarray,
             readout=readout,
+            order=order,
             ngroup=ngroup,
             # The outputs
             tso=tso,
@@ -1068,7 +1078,7 @@ def server(input, output, session):
 
         # Update report
         sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, sed_label,
+            mode, disperser, filter, subarray, order, sed_label,
         )
         pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
         cache_saturation[sat_label] = dict(
@@ -1086,7 +1096,7 @@ def server(input, output, session):
         else:
             warning_text.set('')
 
-        print(inst, mode, disperser, filter, subarray, readout)
+        print(inst, mode, disperser, filter, subarray, readout, order)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
@@ -1686,7 +1696,7 @@ def server(input, output, session):
             orders = {
                 '1': '1',
                 '2': '2',
-                '3': '1 and 2',
+                '1 2': '1 and 2',
             }
         ui.update_select(id='order', choices=orders)
 
@@ -1723,12 +1733,15 @@ def server(input, output, session):
         filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
+        order = input.order.get()
         aperture = None
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
         # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
+        if mode == 'soss':
+            order = [int(val) for val in order.split()]
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
@@ -1739,13 +1752,13 @@ def server(input, output, session):
             ngroup = 2
 
         sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, sed_label,
+            mode, disperser, filter, subarray, order, sed_label,
         )
 
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
         pixel_rate, full_well = pando.get_saturation_values(
-            disperser, filter, subarray, readout, ngroup, aperture,
+            disperser, filter, subarray, readout, ngroup, aperture, order,
             get_max=True,
         )
 
@@ -1824,7 +1837,7 @@ def server(input, output, session):
         )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-    # Viewer
+    # Viewers
     @render_plotly
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
@@ -1960,6 +1973,7 @@ def server(input, output, session):
         filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
+        order = input.order.get()
         ngroup = input.groups.get()
         nint = input.integrations.get()
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
@@ -1983,7 +1997,7 @@ def server(input, output, session):
         )
 
         sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, sed_label,
+            mode, disperser, filter, subarray, order, sed_label,
         )
         cached = sat_label in cache_saturation
         if cached:
