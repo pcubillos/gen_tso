@@ -170,7 +170,7 @@ class PandeiaCalculation():
 
     def get_saturation_values(
             self, disperser, filter, subarray, readout, ngroup=2,
-            aperture=None, get_max=False,
+            aperture=None, order=None, get_max=False,
         ):
         """
         Calculate the brightest-pixel rate (e-/s) and full_well (e-)
@@ -212,7 +212,7 @@ class PandeiaCalculation():
             ngroup=ngroup, nint=1,
             disperser=disperser, filter=filter,
             subarray=subarray, readout=readout,
-            aperture=aperture,
+            aperture=aperture, order=order,
         )
         brightest_pixel_rate, full_well = saturation_level(reports, get_max)
         return brightest_pixel_rate, full_well
@@ -221,7 +221,7 @@ class PandeiaCalculation():
     def perform_calculation(
             self, ngroup, nint,
             disperser=None, filter=None, subarray=None, readout=None,
-            aperture=None,
+            aperture=None, order=None,
         ):
         """
         Run pandeia's perform_calculation() for the given configuration
@@ -229,7 +229,7 @@ class PandeiaCalculation():
 
         Parameter
         ----------
-        ngroup: Integeer
+        ngroup: Integer
             Number of groups per integration.  Must be >= 2.
         nint: Integer
             Number of integrations.
@@ -243,6 +243,9 @@ class PandeiaCalculation():
             Readout pattern mode for the given instrument.
         aperture: String
             Aperture configuration for the given instrument.
+        order: Integer
+            For NIRISS SOSS only, the spectral order.
+            Other modes will ignore this argument.
 
         Returns
         -------
@@ -273,9 +276,11 @@ class PandeiaCalculation():
             readout = [readout]
         if not isinstance(aperture, Iterable) or isinstance(aperture, str):
             aperture = [aperture]
+        if not isinstance(order, Iterable) or isinstance(order, str):
+            order = [order]
 
         configs = product(
-            aperture, disperser, filter, subarray, readout, nint, ngroup,
+            aperture, disperser, filter, subarray, readout, order, nint, ngroup,
         )
 
         reports = [
@@ -292,7 +297,7 @@ class PandeiaCalculation():
         (the real function that) runs pandeia.
         """
         # Unpack configuration parameters
-        aperture, disperser, filter, subarray, readout, nint, ngroup = params
+        aperture, disperser, filter, subarray, readout, order, nint, ngroup = params
         if aperture is not None:
             self.calc['configuration']['instrument']['aperture'] = aperture
         if disperser is not None:
@@ -301,14 +306,12 @@ class PandeiaCalculation():
             self.calc['configuration']['detector']['readout_pattern'] = readout
         if subarray is not None:
             self.calc['configuration']['detector']['subarray'] = subarray
+        if order is not None and self.mode == 'soss':
+            self.calc['strategy']['order'] = order
         if filter == '':
             self.calc['configuration']['instrument']['filter'] = None
         elif filter is not None:
             self.calc['configuration']['instrument']['filter'] = filter
-
-        if self.instrument == 'niriss':
-            self.calc['strategy']['order'] = 1
-            # DataError: No mask configured for SOSS order 2.
 
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
@@ -415,7 +418,7 @@ class PandeiaCalculation():
     def tso_calculation(
             self, obs_type, transit_dur, obs_dur, depth_model,
             ngroup=None, disperser=None, filter=None,
-            subarray=None, readout=None, aperture=None,
+            subarray=None, readout=None, aperture=None, order=None,
         ):
         """
         Run pandeia to simulate a transit/eclipse time-series observation
@@ -439,6 +442,7 @@ class PandeiaCalculation():
         subarray: String
         readout: String
         aperture: String
+        order: String
 
         Returns
         -------
@@ -540,9 +544,11 @@ class PandeiaCalculation():
             readout = [readout]
         if not isinstance(aperture, Iterable) or isinstance(aperture, str):
             aperture = [aperture]
+        if not isinstance(order, Iterable) or isinstance(order, str):
+            order = [order]
 
         configs = product(
-            aperture, disperser, filter, subarray, readout, ngroup,
+            aperture, disperser, filter, subarray, readout, order, ngroup,
         )
         tso = [
             self._tso_calculation(
@@ -564,7 +570,7 @@ class PandeiaCalculation():
         """
         (the real function that) runs a TSO calculation.
         """
-        aperture, disperser, filter, subarray, readout, ngroup = config
+        aperture, disperser, filter, subarray, readout, order, ngroup = config
         if aperture is not None:
             self.calc['configuration']['instrument']['aperture'] = aperture
         if disperser is not None:
@@ -573,6 +579,8 @@ class PandeiaCalculation():
             self.calc['configuration']['detector']['readout_pattern'] = readout
         if subarray is not None:
             self.calc['configuration']['detector']['subarray'] = subarray
+        if order is not None and self.mode == 'soss':
+            self.calc['strategy']['order'] = order
         if filter == '':
             self.calc['configuration']['instrument']['filter'] = None
         elif filter is not None:
