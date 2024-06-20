@@ -148,12 +148,22 @@ layout_kwargs = dict(
 )
 
 app_ui = ui.page_fluid(
-    ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
-    ui.include_css(css_file),
     #ui.markdown("""
     #    This app is based on [shiny][0].
     #    [0]: https://shiny.posit.co/py/api/core
     #    """),
+    ui.layout_columns(
+        ui.output_image("tso_logo", height='50px', inline=True),
+        ui.markdown(
+            "## **Gen TSO**: A general exoplanet ETC for JWST "
+            "time-series observations",
+        ),
+        col_widths=(1,11),
+        fixed_width=False,
+        fill=False,
+        fillable=True,
+    ),
+    ui.include_css(css_file),
 
     # Instrument and detector modes:
     ui.layout_columns(
@@ -825,6 +835,15 @@ def server(input, output, session):
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
     current_science_target = reactive.Value(None)
+
+    @render.image
+    def tso_logo():
+        dir = Path(__file__).resolve().parent
+        img: ImgData = {
+            "src": str(dir / "../docs/images/gen_tso_logo.png"),
+            "height": "50px",
+        }
+        return img
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
