@@ -6,7 +6,6 @@ __all__ = [
     'filter_throughputs',
     'generate_all_instruments',
     'Detector',
-    'detector_label',
 ]
 
 from itertools import product
@@ -669,7 +668,9 @@ def generate_all_instruments():
     return detectors
 
 
-def detector_label(inst, mode, disperser, filter, subarray, readout):
+def make_detector_label(
+        inst, mode, disperser, filter, subarray, readout, order,
+    ):
     """
     Generate a pretty and (as succinct as possible) label for the
     detector configuration.
@@ -681,7 +682,8 @@ def detector_label(inst, mode, disperser, filter, subarray, readout):
     if mode == 'lrsslitless':
         return 'MIRI LRS'
     if mode == 'soss':
-        return f'NIRISS {mode.upper()} {subarray}'
+        order = f' O{order[0]}' if len(order)==1 else ''
+        return f'NIRISS {mode.upper()} {subarray}{order}'
     if mode == 'ssgrism':
         subarray = subarray.replace('grism', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
@@ -691,4 +693,19 @@ def detector_label(inst, mode, disperser, filter, subarray, readout):
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
 
 
+def make_saturation_label(mode, disperser, filter, subarray, order, sed_label):
+    """
+    Make a label of unique saturation setups to identify when and
+    when not the saturation level can be estimated.
+    """
+    sat_label = f'{mode}_{filter}'
+    if mode == 'bots':
+        sat_label = f'{sat_label}_{disperser}_{subarray}'
+    elif mode == 'soss':
+        order = f'_O{order[0]}' if len(order)==1 else ''
+        sat_label = f'{sat_label}_{sed_label}{order}'
+    elif mode == 'mrs_ts':
+        sat_label = f'{sat_label}_{disperser}'
+    sat_label = f'{sat_label}_{sed_label}'
+    return sat_label
 

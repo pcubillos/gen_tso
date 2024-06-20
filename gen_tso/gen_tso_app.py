@@ -24,7 +24,10 @@ from gen_tso.utils import (
     ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
 )
 import gen_tso.catalogs.utils as u
-
+from gen_tso.pandeia_io.pandeia_defaults import (
+    make_detector_label,
+    make_saturation_label,
+)
 
 # Catalog of known exoplanets (and candidate planets)
 catalog = cat.Catalog()
@@ -153,12 +156,12 @@ app_ui = ui.page_fluid(
     #    [0]: https://shiny.posit.co/py/api/core
     #    """),
     ui.layout_columns(
-        ui.output_image("tso_logo", height='50px', inline=True),
         ui.markdown(
             "## **Gen TSO**: A general exoplanet ETC for JWST "
             "time-series observations",
         ),
-        col_widths=(1,11),
+        ui.output_image("tso_logo", height='50px', inline=True),
+        col_widths=(11,1),
         fixed_width=False,
         fill=False,
         fillable=True,
@@ -807,23 +810,6 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def make_saturation_label(mode, disperser, filter, subarray, order, sed_label):
-    """
-    Make a label of unique saturation setups to identify when and
-    when not the saturation level can be estimated.
-    """
-    sat_label = f'{mode}_{filter}'
-    if mode == 'bots':
-        sat_label = f'{sat_label}_{disperser}_{subarray}'
-    elif mode == 'soss':
-        order = f'_O{order[0]}' if len(order)==1 else ''
-        sat_label = f'{sat_label}_{sed_label}{order}'
-    elif mode == 'mrs_ts':
-        sat_label = f'{sat_label}_{disperser}'
-    sat_label = f'{sat_label}_{sed_label}'
-    return sat_label
-
-
 def server(input, output, session):
     sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
@@ -838,9 +824,9 @@ def server(input, output, session):
 
     @render.image
     def tso_logo():
-        dir = Path(__file__).resolve().parent
+        dir = Path(__file__).resolve().parent.parent
         img: ImgData = {
-            "src": str(dir / "../docs/images/gen_tso_logo.png"),
+            "src": str(dir / "docs/images/gen_tso_logo.png"),
             "height": "50px",
         }
         return img
@@ -1035,7 +1021,7 @@ def server(input, output, session):
             success = "Pandeia calculation done!"
         ui.notification_show(success, type="message", duration=2)
 
-        detector_label = jwst.detector_label(
+        detector_label = make_detector_label(
             inst, mode, disperser, filter, subarray, readout, order,
         )
         group_ints = f'({ngroup} G, {nint} I)'
