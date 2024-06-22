@@ -727,8 +727,8 @@ def get_auto_sed(input):
         m_models, m_teff, m_logg = p_models, p_teff, p_logg
 
     try:
-        teff = float(input.teff())
-        logg = float(input.logg())
+        teff = float(input.teff.get())
+        logg = float(input.logg.get())
     except ValueError:
         return m_models, None
     idx = jwst.find_closest_sed(m_teff, m_logg, teff, logg)
@@ -1357,7 +1357,6 @@ def server(input, output, session):
             return
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
-
         teff = u.as_str(target.teff, '.1f', '')
         log_g = u.as_str(target.logg_star, '.2f', '')
         t_dur = u.as_str(target.transit_dur, '.3f', '')
@@ -1578,17 +1577,19 @@ def server(input, output, session):
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
-            rprs_square = 1.0
+            rprs_square = 0.0
             teq_planet = 1000.0
         else:
             teq_planet = np.round(target.eq_temp, decimals=1)
+            if np.isnan(teq_planet):
+                teq_planet = 0.0
             rprs_square = target.rprs**2.0
             if np.isnan(rprs_square):
                 rprs_square = 0.0
         rprs_square_percent = np.round(100*rprs_square, decimals=4)
         ui.update_numeric(id="transit_depth", value=rprs_square_percent)
         ui.update_numeric(id="eclipse_depth", value=rprs_square_percent)
-        ui.update_numeric('tplanet', value=teq_planet)
+        ui.update_numeric(id='tplanet', value=teq_planet)
 
 
     @reactive.effect
