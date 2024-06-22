@@ -25,6 +25,7 @@ from gen_tso.utils import (
 )
 import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
+    get_detector,
     make_detector_label,
     make_saturation_label,
 )
@@ -58,13 +59,13 @@ bands_dict = {
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 
-def get_detector(mode=None, instrument=None):
-    if mode is not None:
-        for det in detectors:
-            if det.mode == mode:
-                if instrument is None or det.instrument==instrument:
-                    return det
-        return None
+#def get_detector(mode=None, instrument=None):
+#    if mode is not None:
+#        for det in detectors:
+#            if det.mode == mode:
+#                if instrument is None or det.instrument==instrument:
+#                    return det
+#        return None
 
 filter_throughputs = jwst.filter_throughputs()
 
@@ -860,7 +861,7 @@ def server(input, output, session):
     def _():
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
-        det = get_detector(mode, instrument)
+        det = get_detector(instrument, mode, detectors)
 
         ui.update_select(
             'disperser',
@@ -894,7 +895,7 @@ def server(input, output, session):
     def update_subarray():
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
-        det = get_detector(mode, instrument)
+        det = get_detector(instrument, mode, detectors)
 
         if mode == 'bots':
             disperser = input.filter.get().split('/')[0]
@@ -917,7 +918,7 @@ def server(input, output, session):
     def update_readout():
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
-        det = get_detector(mode, instrument)
+        det = get_detector(instrument, mode, detectors)
 
         disperser = input.disperser.get()
         choices = det.get_constrained_val('readouts', disperser=disperser)
@@ -947,7 +948,7 @@ def server(input, output, session):
         nint = input.integrations.get()
         aperture = None
 
-        detector = get_detector(mode, inst_name)
+        detector = get_detector(inst_name, mode, detectors)
         inst_label = detector.instrument_label(disperser, filter)
 
         run_is_tso = True
@@ -1713,7 +1714,7 @@ def server(input, output, session):
         mode = input.select_mode.get()
         if mode == 'target_acq':
             instrument = req(input.select_instrument).get()
-            det = get_detector(mode, instrument)
+            det = get_detector(instrument, mode, detectors)
             subarray = input.subarray.get()
             choices = det.get_constrained_val('groups', subarray=subarray)
 
@@ -1973,7 +1974,7 @@ def server(input, output, session):
         saturation_label.get()  # enforce calc_saturation renders exp_time
         instrument = req(input.select_instrument).get()
         mode = input.select_mode.get()
-        detector = get_detector(mode=mode, instrument=instrument)
+        detector = get_detector(instrument, mode, detectors)
         inst = instrument.lower()
         disperser = input.disperser.get()
         filter = input.filter.get()
@@ -1988,7 +1989,7 @@ def server(input, output, session):
             return ui.HTML('<pre> </pre>')
 
         # Front-end to back-end exceptions:
-        if mode == 'bots':
+        if mode == 'bots' and '/' in filter:
             disperser, filter = filter.split('/')
         #if mode == 'mrs_ts':
         #    aperture = ['ch1', 'ch2', 'ch3', 'ch4']

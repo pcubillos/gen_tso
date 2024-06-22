@@ -467,7 +467,6 @@ class Detector:
         return label
 
 
-
 def filter_throughputs():
     """
     Collect the throughput response curves for each instrument configuration
@@ -665,6 +664,29 @@ def generate_all_instruments():
         detectors.append(det)
 
     return detectors
+
+
+def get_detector(instrument=None, mode=None, detectors=None):
+    """
+    Find the detector matching instrument and mode.
+    """
+    if detectors is None:
+        detectors = generate_all_instruments()
+
+    if instrument is None and mode is None:
+        return None
+
+    if mode is None:
+        # Default to first detector for instrument (spectroscopic mode)
+        for detector in detectors:
+            if detector.instrument.lower() == instrument:
+                return detector
+
+    for det in detectors:
+        if det.mode == mode:
+            if instrument is None or det.instrument==instrument:
+                return det
+    return None
 
 
 def make_detector_label(
