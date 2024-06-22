@@ -58,15 +58,6 @@ bands_dict = {
 }
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
-
-#def get_detector(mode=None, instrument=None):
-#    if mode is not None:
-#        for det in detectors:
-#            if det.mode == mode:
-#                if instrument is None or det.instrument==instrument:
-#                    return det
-#        return None
-
 filter_throughputs = jwst.filter_throughputs()
 
 tso_runs = {}
@@ -126,7 +117,6 @@ for location in loading_folders:
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
-
 css_file = f'{ROOT}data/style.css'
 
 depth_units = [
@@ -173,11 +163,11 @@ app_ui = ui.page_fluid(
     ui.layout_columns(
         cs.navset_card_tab_jwst(
             ['MIRI', 'NIRCam', 'NIRISS', 'NIRSpec'],
-            id="select_instrument",
+            id="instrument",
             selected='NIRCam',
             header="Select an instrument and detector",
             footer=ui.input_select(
-                "select_mode",
+                "mode",
                 "",
                 choices = {},
                 width='425px',
@@ -464,7 +454,7 @@ app_ui = ui.page_fluid(
                     selected='',
                 ),
                 ui.panel_conditional(
-                    "input.select_mode == 'soss' && input.filter == 'clear'",
+                    "input.mode == 'soss' && input.filter == 'clear'",
                     ui.input_select(
                         id="order",
                         label="Order",
@@ -484,7 +474,7 @@ app_ui = ui.page_fluid(
                 ),
                 ui.output_ui('groups_input'),
                 ui.panel_conditional(
-                    "input.select_mode != 'target_acq'",
+                    "input.mode != 'target_acq'",
                     ui.input_numeric(
                         id="integrations",
                         label="Integrations",
@@ -697,8 +687,8 @@ def planet_model_name(input):
 
 
 def get_throughput(input):
-    inst = req(input.select_instrument).get().lower()
-    mode = req(input.select_mode).get()
+    inst = req(input.instrument).get().lower()
+    mode = req(input.mode).get()
     if mode == 'target_acq':
         obs_type = 'acquisition'
     else:
@@ -826,7 +816,7 @@ def server(input, output, session):
     @render.image
     def tso_logo():
         dir = Path(__file__).resolve().parent.parent
-        img: ImgData = {
+        img = {
             "src": str(dir / "docs/images/gen_tso_logo.png"),
             "height": "50px",
         }
@@ -835,13 +825,13 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
     @reactive.Effect
-    @reactive.event(input.select_instrument)
+    @reactive.event(input.instrument)
     def _():
-        inst_name = input.select_instrument.get()
-        print(f"You selected me: {inst_name}")
+        inst = input.instrument.get()
+        print(f"You selected me: {inst}")
         spec_modes = {}
         for det in detectors:
-            if det.instrument == inst_name and det.obs_type=='spectroscopy':
+            if det.instrument == inst and det.obs_type=='spectroscopy':
                 spec_modes[det.mode] = det.mode_label
         choices = {}
         choices['Spectroscopy'] = spec_modes
@@ -850,39 +840,39 @@ def server(input, output, session):
 
         acq_modes = {}
         for det in detectors:
-            if det.instrument == inst_name and det.obs_type=='acquisition':
+            if det.instrument == inst and det.obs_type=='acquisition':
                 acq_modes[det.mode] = 'Target Acquisition'
         choices['Acquisition'] = acq_modes
-        ui.update_select('select_mode', choices=choices)
+        ui.update_select('mode', choices=choices)
 
 
     @reactive.Effect
-    @reactive.event(input.select_mode)
+    @reactive.event(input.mode)
     def _():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        det = get_detector(instrument, mode, detectors)
+        inst = req(input.instrument).get()
+        mode = input.mode.get()
+        detector = get_detector(inst, mode, detectors)
 
         ui.update_select(
             'disperser',
-            label=det.disperser_label,
-            choices=det.dispersers,
-            selected=det.default_disperser,
+            label=detector.disperser_label,
+            choices=detector.dispersers,
+            selected=detector.default_disperser,
         )
         ui.update_select(
             'filter',
-            label=det.filter_label,
-            choices=det.filters,
-            selected=det.default_filter,
+            label=detector.filter_label,
+            choices=detector.filters,
+            selected=detector.default_filter,
         )
 
         selected = input.filter_filter.get()
-        if det.obs_type == 'acquisition':
-            choices = [det.instrument]
+        if detector.obs_type == 'acquisition':
+            choices = [detector.instrument]
         else:
-            choices = [det.instrument, 'all']
+            choices = [detector.instrument, 'all']
 
-        if selected != 'all' or det.obs_type=='acquisition':
+        if selected != 'all' or detector.obs_type=='acquisition':
             selected = None
         ui.update_radio_buttons(
             "filter_filter",
@@ -893,19 +883,19 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.disperser, input.filter)
     def update_subarray():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        det = get_detector(instrument, mode, detectors)
+        inst = req(input.instrument).get()
+        mode = input.mode.get()
+        detector = get_detector(inst, mode, detectors)
 
         if mode == 'bots':
             disperser = input.filter.get().split('/')[0]
         else:
             disperser = input.disperser.get()
-        choices = det.get_constrained_val('subarrays', disperser=disperser)
+        choices = detector.get_constrained_val('subarrays', disperser=disperser)
 
         subarray = input.subarray.get()
         if subarray not in choices:
-            subarray = det.default_subarray
+            subarray = detector.default_subarray
 
         ui.update_select(
             'subarray',
@@ -916,16 +906,16 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.disperser)
     def update_readout():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        det = get_detector(instrument, mode, detectors)
+        inst = req(input.instrument).get()
+        mode = input.mode.get()
+        detector = get_detector(inst, mode, detectors)
 
         disperser = input.disperser.get()
-        choices = det.get_constrained_val('readouts', disperser=disperser)
+        choices = detector.get_constrained_val('readouts', disperser=disperser)
 
         readout = input.readout.get()
         if readout not in choices:
-            readout = det.default_readout
+            readout = detector.default_readout
 
         ui.update_select(
             'readout',
@@ -936,9 +926,8 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.run_pandeia)
     def run_pandeia():
-        inst_name = input.select_instrument.get()
-        inst = inst_name.lower()
-        mode = input.select_mode.get()
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
@@ -948,7 +937,7 @@ def server(input, output, session):
         nint = input.integrations.get()
         aperture = None
 
-        detector = get_detector(inst_name, mode, detectors)
+        detector = get_detector(inst, mode, detectors)
         inst_label = detector.instrument_label(disperser, filter)
 
         run_is_tso = True
@@ -1709,14 +1698,14 @@ def server(input, output, session):
 
 
     @render.ui
-    @reactive.event(input.select_mode, input.subarray)
+    @reactive.event(input.mode, input.subarray)
     def groups_input():
-        mode = input.select_mode.get()
+        mode = input.mode.get()
         if mode == 'target_acq':
-            instrument = req(input.select_instrument).get()
-            det = get_detector(instrument, mode, detectors)
+            inst = req(input.instrument).get()
+            detector = get_detector(inst, mode, detectors)
             subarray = input.subarray.get()
-            choices = det.get_constrained_val('groups', subarray=subarray)
+            choices = detector.get_constrained_val('groups', subarray=subarray)
 
             return ui.input_select(
                 id="groups",
@@ -1734,8 +1723,8 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
-        inst = input.select_instrument.get().lower()
-        mode = input.select_mode.get()
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
@@ -1779,12 +1768,12 @@ def server(input, output, session):
 
     @reactive.Effect
     @reactive.event(
-        input.integs_switch, input.obs_dur, input.select_mode,
-        input.select_instrument, input.groups, input.readout, input.subarray,
+        input.integs_switch, input.obs_dur, input.mode,
+        input.instrument, input.groups, input.readout, input.subarray,
     )
     def _():
         """Switch to make the integrations match observation duration"""
-        if input.select_mode.get() == 'target_acq':
+        if input.mode.get() == 'target_acq':
             return
         match_dur = input.integs_switch.get()
         if not match_dur:
@@ -1792,7 +1781,7 @@ def server(input, output, session):
             return
 
         obs_dur = float(req(input.obs_dur).get())
-        inst = input.select_instrument.get().lower()
+        inst = input.instrument.get().lower()
         ngroup = input.groups.get()
         readout = input.readout.get()
         subarray = input.subarray.get()
@@ -1806,9 +1795,9 @@ def server(input, output, session):
         ui.update_numeric('integrations', value=integs)
 
     @render.ui
-    @reactive.event(input.select_mode)
+    @reactive.event(input.mode)
     def target_acq_input():
-        mode = input.select_mode.get()
+        mode = input.mode.get()
         if mode != 'target_acq':
             return None
 
@@ -1849,8 +1838,8 @@ def server(input, output, session):
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
 
-        inst = req(input.select_instrument).get().lower()
-        mode = input.select_mode.get()
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
 
@@ -1972,10 +1961,9 @@ def server(input, output, session):
     @render.ui
     def exp_time():
         saturation_label.get()  # enforce calc_saturation renders exp_time
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        detector = get_detector(instrument, mode, detectors)
-        inst = instrument.lower()
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
+        detector = get_detector(inst, mode, detectors)
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
@@ -2060,32 +2048,6 @@ def server(input, output, session):
         names, G_mag, teff, log_g, ra, dec, separation = cat.fetch_gaia_targets(
             target.ra, target.dec, max_separation=80.0,
         )
-        names = np.array([
-            'Gaia DR3 6910753016653587840', 'Gaia DR3 6910752844854895360',
-            'Gaia DR3 6910747136843460480', 'Gaia DR3 6910746934979897088',
-            'Gaia DR3 6910747141138328064', 'Gaia DR3 6910753046718453248',
-            'Gaia DR3 6910746930684973952', 'Gaia DR3 6910746866260418944',
-            'Gaia DR3 6910746934979895936'])
-        G_mag = np.array([
-             9.491504, 16.80548 , 18.476078, 16.334204, 18.974197, 17.175997,
-            18.024723, 15.700529, 16.899416])
-        teff = np.array([
-            4729.3774, 5503.5996, 4959.2495, 5394.8145, 3979.5588, 5134.7896,
-            4528.2563, 5572.225 , 4862.2915])
-        log_g = np.array([
-            4.5058, 4.4191, 4.7718, 4.3786, 5.018 , 4.3886, 4.6305, 3.774 ,
-            4.6665])
-        ra = np.array([
-            315.02597081, 315.03419028, 315.01496413, 315.01522348,
-            315.00966205, 315.04041427, 315.02272526, 315.03525381,
-            315.0218094 ])
-        dec = np.array([
-            -5.09487006, -5.08816924, -5.09282223, -5.10531022, -5.10264537,
-            -5.08275871, -5.11378437, -5.11325095, -5.11603216])
-        separation = np.array([
-            4.99691642e-02, 3.80699861e+01, 4.01249572e+01, 5.38511968e+01,
-            6.48380986e+01, 6.76834547e+01, 6.91223563e+01, 7.41212133e+01,
-            7.76740049e+01])
         acq_target_list.set([names, G_mag, teff, log_g, ra, dec, separation])
         data_df = {
             'Gaia DR3 target': [name[9:] for name in names],

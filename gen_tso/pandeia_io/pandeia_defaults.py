@@ -679,12 +679,12 @@ def get_detector(instrument=None, mode=None, detectors=None):
     if mode is None:
         # Default to first detector for instrument (spectroscopic mode)
         for detector in detectors:
-            if detector.instrument.lower() == instrument:
+            if detector.instrument.lower() == instrument.lower():
                 return detector
 
     for det in detectors:
         if det.mode == mode:
-            if instrument is None or det.instrument==instrument:
+            if instrument is None or det.instrument.lower()==instrument.lower():
                 return det
     return None
 
