@@ -24,6 +24,9 @@ from .pandeia_interface import (
     simulate_tso,
     tso_print,
 )
+from .pandeia_defaults import generate_all_instruments
+detectors = generate_all_instruments()
+
 
 class PandeiaCalculation():
     """
@@ -53,12 +56,17 @@ class PandeiaCalculation():
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
+
+    >>> detectors = jwst.generate_all_instruments()
     >>> pando = jwst.PandeiaCalculation('nircam', 'target_acq')
     """
     def __init__(self, instrument, mode=None):
         if mode is None:
-            # pick the most popular spectroscopic mode
-            pass
+            # Default to the most popular spectroscopic mode
+            for detector in detectors:
+                if detector.instrument.lower() == instrument:
+                    mode = detector.mode
+                    break
         if mode == 'acquisition':
             mode = 'target_acq'
         self.telescope = 'jwst'
@@ -67,6 +75,7 @@ class PandeiaCalculation():
         self.calc = build_default_calc(
             self.telescope, self.instrument, self.mode,
         )
+        # TBD: default configuration from detectors
 
     def get_configs(self, output=None):
         """
@@ -86,15 +95,6 @@ class PandeiaCalculation():
         ins_config = get_instrument_config(self.telescope, self.instrument)
         config = ins_config['mode_config'][self.mode]
 
-        subarrays = config['subarrays']
-        screen_output = f'subarrays: {subarrays}\n'
-
-        if self.instrument == 'niriss':
-            readouts = ins_config['readout_patterns']
-        else:
-            readouts = config['readout_patterns']
-        screen_output += f'readout patterns: {readouts}\n'
-
         if self.instrument == 'nirspec':
             gratings_dict = ins_config['config_constraints']['dispersers']
             gratings = filters = dispersers = []
@@ -103,10 +103,19 @@ class PandeiaCalculation():
                     gratings.append(f'{grating}/{filter}')
             screen_output += f'grating/filter pairs: {gratings}'
         else:
-            filters = config['filters']
             dispersers = [disperser for disperser in config['dispersers']]
+            filters = config['filters']
             screen_output += f'dispersers: {dispersers}\n'
             screen_output += f'filters: {filters}'
+
+        subarrays = config['subarrays']
+        screen_output = f'subarrays: {subarrays}\n'
+
+        if self.instrument == 'niriss':
+            readouts = ins_config['readout_patterns']
+        else:
+            readouts = config['readout_patterns']
+        screen_output += f'readout patterns: {readouts}\n'
 
         if output is None:
             print(screen_output)

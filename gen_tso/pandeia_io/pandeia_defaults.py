@@ -134,8 +134,8 @@ def get_configs(instrument=None, obs_type=None):
     ta_apertures = {
         'miri': ['imager'],
         'nircam': ['lw'],
-        'nirspec': ['s1600a1'],
         'niriss': ['imager', 'nrm'],
+        'nirspec': ['s1600a1'],
     }
     if instrument is None:
         instrument = 'miri nircam nirspec niriss'.split()
@@ -663,7 +663,6 @@ def generate_all_instruments():
             constraints,
         )
         detectors.append(det)
-
 
     return detectors
 
