@@ -15,6 +15,7 @@ from pandeia.engine.calc_utils import (
 )
 from pandeia.engine.perform_calculation import perform_calculation
 
+from ..plotly_io.plots import band_boundaries
 from .pandeia_interface import (
     read_noise_variance,
     bin_search_exposure_time,
@@ -24,8 +25,13 @@ from .pandeia_interface import (
     simulate_tso,
     tso_print,
 )
-from .pandeia_defaults import generate_all_instruments
+from .pandeia_defaults import (
+    generate_all_instruments,
+    filter_throughputs,
+    get_detector,
+)
 detectors = generate_all_instruments()
+throughputs = filter_throughputs()
 
 
 class PandeiaCalculation():
@@ -38,26 +44,25 @@ class PandeiaCalculation():
         The JWST instrument: nircam, niriss, nirspec, miri.
     mode: string
         Observing mode. If not set, default to the first item for
-        each instrument from the list below.
-        - nircam:
-            ssgrism        spectroscopy
-            target_acq     aquisition
-        - niriss:
-            soss           spectroscopy
-            target_acq     aquisition
-        - nirspec:
-            bots           spectroscopy
-            target_acq     aquisition
-        - miri:
-            lrsslitless    spectroscopy
-            mrs_ts         spectroscopy
-            target_acq     aquisition
+        each instrument from this list below:
+          instrument   mode          comments
+          ----------   ----          --------
+          nircam:      ssgrism       spectroscopy
+                       target_acq    aquisition
+          niriss:      soss          spectroscopy
+                       target_acq    aquisition
+          nirspec:     bots          spectroscopy
+                       target_acq    aquisition
+          miri:        lrsslitless   spectroscopy
+                       mrs_ts        spectroscopy
+                       target_acq    aquisition
 
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
 
-    >>> detectors = jwst.generate_all_instruments()
+    >>> pando = jwst.PandeiaCalculation('nircam')
+    >>> pando = jwst.PandeiaCalculation('nirspec')
     >>> pando = jwst.PandeiaCalculation('nircam', 'target_acq')
     """
     def __init__(self, instrument, mode=None):
@@ -69,13 +74,32 @@ class PandeiaCalculation():
                     break
         if mode == 'acquisition':
             mode = 'target_acq'
+
         self.telescope = 'jwst'
         self.instrument = instrument
         self.mode = mode
         self.calc = build_default_calc(
             self.telescope, self.instrument, self.mode,
         )
-        # TBD: default configuration from detectors
+        # Set default config for TSO:
+        detector = get_detector(self.instrument, self.mode, detectors)
+        disperser = detector.default_disperser
+        filter = detector.default_filter
+        subarray = detector.default_subarray
+        readout = detector.default_readout
+        if self.mode == 'bots':
+            disperser, filter = filter.split('/')
+
+        if self.mode == 'target_acq':
+            self.calc['configuration']['instrument']['aperture'] = disperser
+        else:
+            self.calc['configuration']['instrument']['disperser'] = disperser
+        self.calc['configuration']['instrument']['filter'] = filter
+        self.calc['configuration']['detector']['subarray'] = subarray
+        self.calc['configuration']['detector']['readout_pattern'] = readout
+        self.calc['strategy']['reference_wavelength'] = -1.0
+        self._ensure_wl_reference_in_range()
+
 
     def get_configs(self, output=None):
         """
@@ -95,21 +119,22 @@ class PandeiaCalculation():
         ins_config = get_instrument_config(self.telescope, self.instrument)
         config = ins_config['mode_config'][self.mode]
 
+        screen_output = ''
         if self.instrument == 'nirspec':
             gratings_dict = ins_config['config_constraints']['dispersers']
             gratings = filters = dispersers = []
             for grating, filter_list in gratings_dict.items():
                 for filter in filter_list['filters']:
                     gratings.append(f'{grating}/{filter}')
-            screen_output += f'grating/filter pairs: {gratings}'
+            screen_output += f'grating/filter pairs: {gratings}\n'
         else:
             dispersers = [disperser for disperser in config['dispersers']]
             filters = config['filters']
             screen_output += f'dispersers: {dispersers}\n'
-            screen_output += f'filters: {filters}'
+            screen_output += f'filters: {filters}\n'
 
         subarrays = config['subarrays']
-        screen_output = f'subarrays: {subarrays}\n'
+        screen_output += f'subarrays: {subarrays}\n'
 
         if self.instrument == 'niriss':
             readouts = ins_config['readout_patterns']
@@ -131,6 +156,59 @@ class PandeiaCalculation():
             return gratings
         else:
             raise ValueError(f"Invalid config output: '{output}'")
+
+    def wl_ranges(self):
+        """
+        Get wavelength range covered by the instrument/mode
+        """
+        aperture = self.calc['configuration']['instrument']['aperture']
+        disperser = self.calc['configuration']['instrument']['disperser']
+        filter = self.calc['configuration']['instrument']['filter']
+        conf = get_instrument_config('jwst', self.instrument)
+
+        if self.mode == 'bots':
+            subarray = self.calc['configuration']['detector']['subarray']
+            filter = f'{disperser}/{filter}'
+            throughput = throughputs['spectroscopy'][self.instrument][subarray][filter]
+            band_bounds = band_boundaries(throughput, threshold=0.03)
+            bounds = [tuple(np.round(bounds, 3)) for bounds in band_bounds]
+            if len(bounds) == 1:
+                bounds = bounds[0]
+            return bounds
+
+        if self.mode in ['ssgrism', 'target_acq']:
+            config = conf['range'][aperture][filter]
+        elif self.mode in ['lrsslitless', 'mrs_ts']:
+            config = conf['range'][aperture][disperser]
+        elif self.mode == 'soss':
+            order = 1
+            disperser = f'{disperser}_{order}'
+            config = conf['range'][aperture][disperser][filter]
+
+        wl_min = config['wmin']
+        wl_max = config['wmax']
+        return (wl_min, wl_max)
+
+    def _ensure_wl_reference_in_range(self):
+        """
+        Make sure that reference wavelength is in the range of the detector
+        """
+        ref_wl = self.calc['strategy']['reference_wavelength']
+        wl_ranges = self.wl_ranges()
+        if isinstance(wl_ranges, tuple):
+            wl_ranges = [wl_ranges]
+        in_range = np.any([
+            ran[0]<ref_wl and ref_wl<ran[1]
+            for ran in wl_ranges
+        ])
+        if in_range:
+            return
+        subarray = self.calc['configuration']['detector']['subarray']
+        if self.mode == 'bots' and subarray != 'sub2048':
+            ref_wl = np.mean(wl_ranges[0])
+        else:
+            ref_wl = 0.5*(np.amax(wl_ranges) + np.amin(wl_ranges))
+        self.calc['strategy']['reference_wavelength'] = np.round(ref_wl, 2)
 
 
     def set_scene(
@@ -325,6 +403,7 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
         self.calc['configuration']['detector']['ngroup'] = ngroup
+        self._ensure_wl_reference_in_range()
 
         report = perform_calculation(self.calc)
         self.report = report
