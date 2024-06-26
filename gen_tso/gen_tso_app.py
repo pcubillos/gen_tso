@@ -486,7 +486,47 @@ app_ui = ui.page_fluid(
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             # Search nearby Gaia targets for acquisition
-            ui.output_ui('target_acq_input'),
+            ui.panel_conditional(
+                "input.mode == 'target_acq'",
+                ui.panel_well(
+                    ui.tooltip(
+                        ui.markdown('Acquisition targets'),
+                        'Gaia targets within 80" of science target',
+                        id="gaia_tooltip",
+                        placement="top",
+                    ),
+                    ui.layout_column_wrap(
+                        ui.input_action_button(
+                            id="search_gaia_ta",
+                            label="Search nearby targets",
+                            class_='btn btn-outline-secondary btn-sm',
+                        ),
+                        ui.p("Select TA's SED:"),
+                        ui.input_select(
+                            id="ta_sed",
+                            label="",
+                            choices=[],
+                            selected='',
+                        ),
+                        ui.input_action_button(
+                            id="perform_ta_calculation",
+                            label="Run TA Pandeia",
+                            class_='btn btn-outline-secondary btn-sm',
+                            # TBD: set a style from CSS file independently of id
+                        ),
+                        ui.input_action_button(
+                            id="get_acquisition_target",
+                            label="Print acq. target data",
+                            class_='btn btn-outline-secondary btn-sm',
+                        ),
+                        width=1,
+                        heights_equal='row',
+                        gap='7px',
+                        class_="px-0 py-0 mx-0 my-0",
+                    ),
+                    class_="px-2 pt-2 pb-2 m-0",
+                ),
+            ),
             body_args=dict(class_="p-2 m-0"),
         ),
 
@@ -1322,7 +1362,7 @@ def server(input, output, session):
             )
 
         return ui.span(
-            'Known target? ',
+            'Science target ',
             info_tooltip,
             ui.tooltip(
                 ui.tags.a(
@@ -1794,43 +1834,6 @@ def server(input, output, session):
             return
         ui.update_numeric('integrations', value=integs)
 
-    @render.ui
-    @reactive.event(input.mode)
-    def target_acq_input():
-        mode = input.mode.get()
-        if mode != 'target_acq':
-            return None
-
-        return ui.panel_well(
-            ui.tooltip(
-                ui.markdown('Acquisition targets'),
-                'Gaia targets within 80" from science target',
-                id="gaia_tooltip",
-                placement="top",
-            ),
-            ui.layout_column_wrap(
-                ui.input_action_button(
-                    id="search_gaia_ta",
-                    label="Search nearby targets",
-                    class_='btn btn-outline-secondary btn-sm',
-                ),
-                ui.input_action_button(
-                    id="perform_ta_calculation",
-                    label="Run TA Pandeia",
-                    class_='btn btn-outline-secondary btn-sm',
-                    # TBD: set a style from CSS file independently of id
-                ),
-                ui.input_action_button(
-                    id="get_acquisition_target",
-                    label="Print acq. target data",
-                    class_='btn btn-outline-secondary btn-sm',
-                ),
-                width=1,
-                gap='5px',
-                class_="px-0 py-0 mx-0 my-0",
-            ),
-            class_="px-2 pt-2 pb-2 m-0",
-        )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Viewers
@@ -2036,11 +2039,13 @@ def server(input, output, session):
     @reactive.event(input.search_gaia_ta, input.target)
     def acquisition_targets():
         name = input.target.get()
-        # if change of input.target was the trigger:
+        # Change of input.target was the trigger:
         if name != current_science_target.get() and name != '':
             current_science_target.set(name)
             acq_target_list.set(None)
+            ui.update_select('ta_sed', choices=[])
             return
+
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
@@ -2065,6 +2070,25 @@ def server(input, output, session):
             height='370px',
             summary=True,
         )
+
+    @reactive.effect
+    def rows():
+        target_list = acq_target_list.get()
+        if target_list is None:
+            ui.update_select('ta_sed', choices=[])
+            return
+        selected = acquisition_targets.cell_selection()['rows']
+        if len(selected) == 0:
+            ui.update_select('ta_sed', choices=[])
+            return
+
+        idx = selected[0]
+        teff = target_list[2][idx]
+        log_g = target_list[3][idx]
+        idx = jwst.find_closest_sed(p_teff, p_logg, teff, log_g)
+        chosen_sed = p_models[idx]
+        ui.update_select('ta_sed', choices=list(p_models), selected=chosen_sed)
+
 
     @reactive.effect
     @reactive.event(input.perform_ta_calculation)
@@ -2102,13 +2126,17 @@ def server(input, output, session):
             f"dec = {dec[idx]}"
         )
         print(text)
+        chosen_sed = input.ta_sed.get()
+        print(chosen_sed)
 
 
     @reactive.effect
     @reactive.event(input.get_acquisition_target)
     def _():
         # TBD: print to screen, or open ui.modal, or both?
-        print('OK, work now!')
+        ui.update_select('ta_sed', choices=[])
+        acq_target_list.set(None)
+        #print(f'OK, work now')
 
 app = App(app_ui, server)
 
