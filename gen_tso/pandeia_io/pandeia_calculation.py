@@ -97,7 +97,6 @@ class PandeiaCalculation():
         self.calc['configuration']['instrument']['filter'] = filter
         self.calc['configuration']['detector']['subarray'] = subarray
         self.calc['configuration']['detector']['readout_pattern'] = readout
-        self.calc['strategy']['reference_wavelength'] = -1.0
         self._ensure_wl_reference_in_range()
 
 
@@ -193,6 +192,11 @@ class PandeiaCalculation():
         """
         Make sure that reference wavelength is in the range of the detector
         """
+        if self.mode == 'target_acq':
+            return
+        if 'reference_wavelength' not in self.calc['strategy']:
+            self.calc['strategy']['reference_wavelength'] = -1.0
+
         ref_wl = self.calc['strategy']['reference_wavelength']
         wl_ranges = self.wl_ranges()
         if isinstance(wl_ranges, tuple):
@@ -203,6 +207,7 @@ class PandeiaCalculation():
         ])
         if in_range:
             return
+
         subarray = self.calc['configuration']['detector']['subarray']
         if self.mode == 'bots' and subarray != 'sub2048':
             ref_wl = np.mean(wl_ranges[0])
