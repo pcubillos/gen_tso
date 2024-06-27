@@ -767,15 +767,22 @@ def get_auto_sed(input):
     return m_models, chosen_sed
 
 
-def parse_sed(input):
+def parse_sed(input, target_acq_mag=None):
     """Extract SED parameters"""
-    # Safety to prevent hanging when initalizing the app:
-    if not input.sed.is_set():
-        return None, None, None, None, None
+    if target_acq_mag is None:
+        sed_type = input.sed_type()
+        norm_band = bands_dict[input.magnitude_band()]
+        norm_magnitude = float(input.magnitude())
+    else:
+        sed_type = 'phoenix'
+        norm_band = 'gaia,g'
+        norm_magnitude = target_acq_mag
 
-    sed_type = input.sed_type()
     if sed_type in ['phoenix', 'kurucz']:
-        sed = input.sed.get()
+        if target_acq_mag is None:
+            sed = input.sed.get()
+        else:
+            sed = input.ta_sed.get()
         if sed not in sed_dict[sed_type]:
             return None, None, None, None, None
         sed_model = sed_dict[sed_type][sed]
@@ -786,16 +793,13 @@ def parse_sed(input):
     elif sed_type == 'input':
         model_label = sed_model
 
-    norm_band = bands_dict[input.magnitude_band()]
-    norm_magnitude = float(input.magnitude())
-
     if sed_type == 'kurucz':
         sed_type = 'k93models'
 
     # Make a label
     for name,band in bands_dict.items():
         if band == norm_band:
-            band_label = f'{norm_magnitude}_{name.split()[0]}'
+            band_label = f'{norm_magnitude:.2f}_{name.split()[0]}'
     sed_label = f'{model_label}_{band_label}'
 
     return sed_type, sed_model, norm_band, norm_magnitude, sed_label
@@ -2026,6 +2030,10 @@ def server(input, output, session):
             return 'No warnings'
         text = ''
         for warn_label, warn_text in warnings.items():
+            warn_text = warn_text.replace(
+                '<font color=red><b>TA MAY FAIL</b></font>',
+                'TA MAY FAIL',
+            )
             warn = textwrap.fill(
                 f'- {warn_text}',
                 subsequent_indent='  ',
@@ -2113,9 +2121,108 @@ def server(input, output, session):
             )
             ui.notification_show(error_msg, type="warning", duration=5)
             return
+
+        idx = selected[0]
+        gaia_mag = np.round(target_list[1][idx], 3)
+
+        inst = input.instrument.get().lower()
+        mode = 'target_acq'
+        detector = get_detector(inst, mode, detectors)
+        aperture = input.disperser.get()
+        disperser = None
+        filter = input.filter.get()
+        subarray = input.subarray.get()
+        readout = input.readout.get()
+        order = None
+        ngroup = int(input.groups.get())
+        nint = 1
+
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
+            input, target_acq_mag=gaia_mag,
+        )
+        pando = jwst.PandeiaCalculation(inst, mode)
+        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+        tso = pando.perform_calculation(
+            ngroup, nint, disperser, filter, subarray, readout, aperture,
+        )
+
+        success = "Pandeia calculation done!"
+        ui.notification_show(success, type="message", duration=2)
+
+        obs_geometry = 'acquisition'
+        depth_label = ''
+        detector_label = make_detector_label(
+            inst, mode, disperser, filter, subarray, readout, order,
+        )
+        group_ints = f'({ngroup} G, {nint} I)'
+        pretty_label = (
+            f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
+        )
+        tso_label = f'{obs_geometry} {pretty_label}'
+
+        inst_label = detector.instrument_label(disperser, filter)
+        tso_run = dict(
+            # The detector
+            inst=inst,
+            mode=mode,
+            inst_label=inst_label,
+            label=pretty_label,
+            # The SED
+            sed_type=sed_type,
+            sed_model=sed_model,
+            norm_band=norm_band,
+            norm_mag=norm_mag,
+            obs_type=obs_geometry,
+            # The instrumental setting
+            aperture=aperture,
+            disperser=disperser,
+            filter=filter,
+            subarray=subarray,
+            readout=readout,
+            order=order,
+            ngroup=ngroup,
+            # The outputs
+            tso=tso,
+        )
+
+        warnings = tso['warnings']
+        tso_runs[tso_label] = tso_run
+        tso_labels = make_tso_labels(tso_runs)
+        ui.update_select('display_tso_run', choices=tso_labels)
+
+        if len(warnings) > 0:
+            warning_text.set(warnings)
+        else:
+            warning_text.set('')
+
+
+    # TBD: rename
+    @reactive.effect
+    @reactive.event(input.get_acquisition_target)
+    def _():
+        # TBD: also open ui.modal, or both?
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+        target_list = acq_target_list.get()
+        if target_list is None:
+            error_msg = ui.markdown(
+                "First click the '*Search nearby targets*' button, then select "
+                "a target from the '*Acquisition targets*' tab"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            return
+
+        selected = acquisition_targets.cell_selection()['rows']
+        if len(selected) == 0:
+            error_msg = ui.markdown(
+                "First select a target from the '*Acquisition targets*' tab"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            return
         names, G_mag, teff, log_g, ra, dec, separation = target_list
         idx = selected[0]
-        # TBD: get SED and run pandeia
         text = (
             f"acq_target = {repr(names[idx])}\n"
             f"gaia_mag = {G_mag[idx]}\n"
@@ -2126,17 +2233,6 @@ def server(input, output, session):
             f"dec = {dec[idx]}"
         )
         print(text)
-        chosen_sed = input.ta_sed.get()
-        print(chosen_sed)
-
-
-    @reactive.effect
-    @reactive.event(input.get_acquisition_target)
-    def _():
-        # TBD: print to screen, or open ui.modal, or both?
-        ui.update_select('ta_sed', choices=[])
-        acq_target_list.set(None)
-        #print(f'OK, work now')
 
 app = App(app_ui, server)
 
