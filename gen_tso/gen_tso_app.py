@@ -60,7 +60,11 @@ detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 filter_throughputs = jwst.filter_throughputs()
 
-tso_runs = {}
+tso_runs = {
+    'Transit': {},
+    'Eclipse': {},
+    'Acquisition': {},
+}
 
 def make_tso_labels(tso_runs):
     tso_labels = dict(
@@ -68,9 +72,10 @@ def make_tso_labels(tso_runs):
         Eclipse={},
         Acquisition={},
     )
-    for tso_label, tso_run in tso_runs.items():
-        obs_type = tso_run['obs_type'].capitalize()
-        tso_labels[obs_type][tso_label] = tso_run['label']
+    for key, runs in tso_runs.items():
+        for tso_label, tso_run in runs.items():
+            tso_key = f'{key}_{tso_label}'
+            tso_labels[key][tso_key] = tso_run['label']
     return tso_labels
 
 
@@ -1025,9 +1030,8 @@ def server(input, output, session):
         if not run_is_tso:
             tso = pando.perform_calculation(
                 ngroup, nint, disperser, filter, subarray, readout, aperture,
-                order,
             )
-            obs_geometry = 'acquisition'
+            run_type = 'Acquisition'
             depth_label = ''
         else:
             depth_label, wl, depth = parse_depth_model(input)
@@ -1038,6 +1042,7 @@ def server(input, output, session):
                 )
                 ui.notification_show(error_msg, type="error", duration=5)
                 return
+            run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
                 spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
                 bookmarked_spectra[obs_geometry].append(depth_label)
@@ -1075,7 +1080,6 @@ def server(input, output, session):
             sed_model=sed_model,
             norm_band=norm_band,
             norm_mag=norm_mag,
-            obs_type=obs_geometry,
             # The instrumental setting
             aperture=aperture,
             disperser=disperser,
@@ -1111,7 +1115,7 @@ def server(input, output, session):
             warnings = tso['warnings']
 
         if run_is_tso or mode=='target_acq':
-            tso_runs[tso_label] = tso_run
+            tso_runs[run_type][tso_label] = tso_run
             tso_labels = make_tso_labels(tso_runs)
             ui.update_select('display_tso_run', choices=tso_labels)
 
@@ -1143,9 +1147,11 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.delete_button)
     def _():
-        tso_label = input.display_tso_run.get()
-        #tso_labels[obs_geometry][tso_label] = pretty_label
-        del tso_runs[tso_label]
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        del tso_runs[key][tso_label]
         tso_labels = make_tso_labels(tso_runs)
         ui.update_select('display_tso_run', choices=tso_labels)
 
@@ -1154,8 +1160,11 @@ def server(input, output, session):
     @reactive.event(input.save_button)
     def _():
         # Make a filename from current TSO
-        tso_label = input.display_tso_run.get()
-        tso = tso_runs[tso_label]
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
         inst = tso['inst']
         filename = f'tso_{inst}.pickle'
 
@@ -1189,8 +1198,11 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.tso_save_button)
     def _():
-        tso_label = input.display_tso_run.get()
-        tso_run = tso_runs[tso_label]
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso_run = tso_runs[key][tso_label]
 
         filename = input.tso_save_file.get()
         if filename.strip() == '':
@@ -1937,7 +1949,10 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_tso():
-        tso_label = input.display_tso_run.get()
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return go.Figure()
+        key, tso_label = tso_key.split('_', maxsplit=1)
         n_obs = input.n_obs.get()
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
@@ -1948,19 +1963,16 @@ def server(input, output, session):
         else:
             wl_range = [0.6, 13.0]
 
-        if tso_label in tso_runs:
-            tso_run = tso_runs[tso_label]
-            planet = tso_run['depth_model_name']
-            fig = tplots.plotly_tso_spectra(
-                tso_run['tso'], resolution, n_obs,
-                model_label=planet,
-                instrument_label=tso_run['inst_label'],
-                bin_widths=None,
-                units=units, wl_range=wl_range, wl_scale=wl_scale,
-                obs_geometry='transit',
-            )
-        else:
-            fig = go.Figure()
+        tso_run = tso_runs[key][tso_label]
+        planet = tso_run['depth_model_name']
+        fig = tplots.plotly_tso_spectra(
+            tso_run['tso'], resolution, n_obs,
+            model_label=planet,
+            instrument_label=tso_run['inst_label'],
+            bin_widths=None,
+            units=units, wl_range=wl_range, wl_scale=wl_scale,
+            obs_geometry='transit',
+        )
         return fig
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -2186,7 +2198,7 @@ def server(input, output, session):
         )
 
         warnings = tso['warnings']
-        tso_runs[tso_label] = tso_run
+        tso_runs['Acquisition'][tso_label] = tso_run
         tso_labels = make_tso_labels(tso_runs)
         ui.update_select('display_tso_run', choices=tso_labels)
 
