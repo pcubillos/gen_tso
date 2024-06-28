@@ -1064,17 +1064,16 @@ def server(input, output, session):
             inst, mode, disperser, filter, subarray, readout, order,
         )
         group_ints = f'({ngroup} G, {nint} I)'
-        pretty_label = (
+        tso_label = (
             f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
         )
-        tso_label = f'{obs_geometry} {pretty_label}'
 
         tso_run = dict(
             # The detector
             inst=inst,
             mode=mode,
             inst_label=inst_label,
-            label=pretty_label,
+            label=tso_label,
             # The SED
             sed_type=sed_type,
             sed_model=sed_model,
@@ -2167,10 +2166,9 @@ def server(input, output, session):
             inst, mode, disperser, filter, subarray, readout, order,
         )
         group_ints = f'({ngroup} G, {nint} I)'
-        pretty_label = (
+        tso_label = (
             f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
         )
-        tso_label = f'{obs_geometry} {pretty_label}'
 
         inst_label = detector.instrument_label(disperser, filter)
         tso_run = dict(
@@ -2178,7 +2176,7 @@ def server(input, output, session):
             inst=inst,
             mode=mode,
             inst_label=inst_label,
-            label=pretty_label,
+            label=tso_label,
             # The SED
             sed_type=sed_type,
             sed_model=sed_model,
