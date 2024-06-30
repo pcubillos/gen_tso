@@ -863,6 +863,199 @@ def server(input, output, session):
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
 
+    def run_pandeia(input, target='science'):
+        """
+        Perform a pandeia calculation on  science or acquisition target.
+        This might be a transit/eclipse TSO or a Pandeia perform_calculation
+        call.
+        """
+        # Instrumental setup:
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
+        subarray = input.subarray.get()
+        readout = input.readout.get()
+        order = input.order.get()
+        ngroup = int(input.groups.get())
+        nint = input.integrations.get()
+        aperture = None
+
+        detector = get_detector(inst, mode, detectors)
+        inst_label = detector.instrument_label(disperser, filter)
+
+        run_is_tso = True
+        # Front-end to back-end exceptions:
+        if mode == 'bots':
+            disperser, filter = filter.split('/')
+        if mode == 'soss':
+            order = [int(val) for val in order.split()]
+        else:
+            order = None
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'target_acq':
+            aperture = input.disperser.get()
+            disperser = None
+            nint = 1
+            run_is_tso = False
+            run_type = 'Acquisition'
+
+        # Target setup:
+        if target == 'acquisition':
+            selected = acquisition_targets.cell_selection()['rows'][0]
+            target_list = acq_target_list.get()
+            target_acq_mag = np.round(target_list[1][selected], 3)
+        elif target == 'science':
+            obs_geometry = input.geometry.get()
+            transit_dur = float(input.t_dur.get())
+            obs_dur = float(input.obs_dur.get())
+            exp_time = jwst.exposure_time(
+                inst, subarray, readout, ngroup, nint,
+            )
+            in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
+                inst, subarray, readout, ngroup, transit_dur,
+            )
+            target_acq_mag = None
+
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
+            input, target_acq_mag=target_acq_mag,
+        )
+
+        if run_is_tso and in_transit_integs > nint:
+            error_msg = ui.markdown(
+                f"**Warning:**<br>observation time for **{nint} integration"
+                f"(s)** is less than the {obs_geometry} time.  Running "
+                "a perform_calculation()"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            run_is_tso = False
+            run_type = 'Pandeia_SNR'
+
+        pando = jwst.PandeiaCalculation(inst, mode)
+        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+
+        if not run_is_tso:
+            depth_label = ''
+            tso = pando.perform_calculation(
+                ngroup, nint,
+                disperser, filter, subarray, readout, aperture, order,
+            )
+        else:
+            depth_label, wl, depth = parse_depth_model(input)
+            if depth_label is None:
+                error_msg = ui.markdown(
+                    f"**Error:**<br>no {obs_geometry} depth model "
+                    "to simulate"
+                )
+                ui.notification_show(error_msg, type="error", duration=5)
+                return
+            run_type = obs_geometry.capitalize()
+            if depth_label not in spectra:
+                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+                bookmarked_spectra[obs_geometry].append(depth_label)
+            depth_model = [wl, depth]
+
+            obs_dur = exp_time / 3600.0
+            tso = pando.tso_calculation(
+                obs_geometry, transit_dur, obs_dur, depth_model,
+                ngroup, disperser, filter, subarray, readout, aperture, order,
+            )
+
+        if run_is_tso:
+            success = "TSO model simulated!"
+        else:
+            success = "Pandeia calculation done!"
+        ui.notification_show(success, type="message", duration=2)
+
+        detector_label = make_detector_label(
+            inst, mode, disperser, filter, subarray, readout, order,
+        )
+        group_ints = f'({ngroup} G, {nint} I)'
+        tso_label = (
+            f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
+        )
+
+        tso_run = dict(
+            # The detector
+            inst=inst,
+            mode=mode,
+            inst_label=inst_label,
+            label=tso_label,
+            # The SED
+            sed_type=sed_type,
+            sed_model=sed_model,
+            norm_band=norm_band,
+            norm_mag=norm_mag,
+            # The instrumental setting
+            aperture=aperture,
+            disperser=disperser,
+            filter=filter,
+            subarray=subarray,
+            readout=readout,
+            order=order,
+            ngroup=ngroup,
+            # The outputs
+            tso=tso,
+        )
+        if run_is_tso:
+            # The planet
+            tso_run['t_dur'] = transit_dur
+            tso_run['obs_dur'] = obs_dur
+            tso_run['depth_model_name'] = depth_label
+            tso_run['depth_model'] = depth_model
+            if isinstance(tso, list):
+                reports = (
+                    [report['report_in']['scalar'] for report in tso],
+                    [report['report_out']['scalar'] for report in tso],
+                )
+                warnings = tso[0]['report_in']['warnings']
+                # TBD: Consider warnings in other TSO reports?
+            else:
+                reports = (
+                    tso['report_in']['scalar'],
+                    tso['report_out']['scalar'],
+                )
+                warnings = tso['report_in']['warnings']
+        else:
+            reports = tso['scalar'], None
+            warnings = tso['warnings']
+
+        if run_is_tso or mode=='target_acq':
+            tso_runs[run_type][tso_label] = tso_run
+            tso_labels = make_tso_labels(tso_runs)
+            ui.update_select(
+                id='display_tso_run',
+                choices=tso_labels,
+                #selected=tso_label,
+                selected=f'{run_type}_{tso_label}',
+            )
+
+        # Update report
+        sat_label = make_saturation_label(
+            mode, disperser, filter, subarray, order, sed_label,
+        )
+        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+        cache_saturation[sat_label] = dict(
+            brightest_pixel_rate=pixel_rate,
+            full_well=full_well,
+            inst=inst,
+            mode=mode,
+            reports=reports,
+            warnings=warnings,
+        )
+        saturation_label.set(sat_label)
+
+        if len(warnings) > 0:
+            warning_text.set(warnings)
+        else:
+            warning_text.set('')
+
+        print(inst, mode, disperser, filter, subarray, readout, order)
+        print(sed_type, sed_model, norm_band, repr(norm_mag))
+        print('~~ TSO done! ~~')
+
+
     @render.image
     def tso_logo():
         dir = Path(__file__).resolve().parent.parent
@@ -973,173 +1166,8 @@ def server(input, output, session):
 
     @reactive.Effect
     @reactive.event(input.run_pandeia)
-    def run_pandeia():
-        inst = input.instrument.get().lower()
-        mode = input.mode.get()
-        disperser = input.disperser.get()
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        readout = input.readout.get()
-        order = input.order.get()
-        ngroup = int(input.groups.get())
-        nint = input.integrations.get()
-        aperture = None
-
-        detector = get_detector(inst, mode, detectors)
-        inst_label = detector.instrument_label(disperser, filter)
-
-        run_is_tso = True
-        # Front-end to back-end exceptions:
-        if mode == 'bots':
-            disperser, filter = filter.split('/')
-        if mode == 'soss':
-            order = [int(val) for val in order.split()]
-        else:
-            order = None
-        if mode == 'mrs_ts':
-            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-        if mode == 'target_acq':
-            aperture = input.disperser.get()
-            disperser = None
-            nint = 1
-            run_is_tso = False
-
-        obs_geometry = input.geometry.get()
-        transit_dur = float(input.t_dur.get())
-        obs_dur = float(input.obs_dur.get())
-        exp_time = jwst.exposure_time(
-            inst, subarray, readout, ngroup, nint,
-        )
-        in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
-            inst, subarray, readout, ngroup, transit_dur,
-        )
-        if mode != 'target_acq' and in_transit_integs > nint:
-            error_msg = ui.markdown(
-                f"**Warning:**<br>observation time for **{nint} integration"
-                f"(s)** is less than the {obs_geometry} time.  Running "
-                "a perform_calculation()"
-            )
-            ui.notification_show(error_msg, type="warning", duration=5)
-            run_is_tso = False
-
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        pando = jwst.PandeiaCalculation(inst, mode)
-        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-
-        if not run_is_tso:
-            tso = pando.perform_calculation(
-                ngroup, nint, disperser, filter, subarray, readout, aperture,
-            )
-            run_type = 'Acquisition'
-            depth_label = ''
-        else:
-            depth_label, wl, depth = parse_depth_model(input)
-            if depth_label is None:
-                error_msg = ui.markdown(
-                    f"**Error:**<br>no {obs_geometry} depth model "
-                    "to simulate"
-                )
-                ui.notification_show(error_msg, type="error", duration=5)
-                return
-            run_type = obs_geometry.capitalize()
-            if depth_label not in spectra:
-                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
-                bookmarked_spectra[obs_geometry].append(depth_label)
-            depth_model = [wl, depth]
-
-            obs_dur = exp_time / 3600.0
-            tso = pando.tso_calculation(
-                obs_geometry, transit_dur, obs_dur, depth_model,
-                ngroup, disperser, filter, subarray, readout, aperture, order,
-            )
-
-        if run_is_tso:
-            success = "TSO model simulated!"
-        else:
-            success = "Pandeia calculation done!"
-        ui.notification_show(success, type="message", duration=2)
-
-        detector_label = make_detector_label(
-            inst, mode, disperser, filter, subarray, readout, order,
-        )
-        group_ints = f'({ngroup} G, {nint} I)'
-        tso_label = (
-            f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
-        )
-
-        tso_run = dict(
-            # The detector
-            inst=inst,
-            mode=mode,
-            inst_label=inst_label,
-            label=tso_label,
-            # The SED
-            sed_type=sed_type,
-            sed_model=sed_model,
-            norm_band=norm_band,
-            norm_mag=norm_mag,
-            # The instrumental setting
-            aperture=aperture,
-            disperser=disperser,
-            filter=filter,
-            subarray=subarray,
-            readout=readout,
-            order=order,
-            ngroup=ngroup,
-            # The outputs
-            tso=tso,
-        )
-        if run_is_tso:
-            # The planet
-            tso_run['t_dur'] = transit_dur
-            tso_run['obs_dur'] = obs_dur
-            tso_run['depth_model_name'] = depth_label
-            tso_run['depth_model'] = depth_model
-            if isinstance(tso, list):
-                reports = (
-                    [report['report_in']['scalar'] for report in tso],
-                    [report['report_out']['scalar'] for report in tso],
-                )
-                warnings = tso[0]['report_in']['warnings']
-                # TBD: Consider warnings in other TSO reports?
-            else:
-                reports = (
-                    tso['report_in']['scalar'],
-                    tso['report_out']['scalar'],
-                )
-                warnings = tso['report_in']['warnings']
-        else:
-            reports = tso['scalar'], None
-            warnings = tso['warnings']
-
-        if run_is_tso or mode=='target_acq':
-            tso_runs[run_type][tso_label] = tso_run
-            tso_labels = make_tso_labels(tso_runs)
-            ui.update_select('display_tso_run', choices=tso_labels)
-
-        # Update report
-        sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, order, sed_label,
-        )
-        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
-        cache_saturation[sat_label] = dict(
-            brightest_pixel_rate=pixel_rate,
-            full_well=full_well,
-            inst=inst,
-            mode=mode,
-            reports=reports,
-            warnings=warnings,
-        )
-        saturation_label.set(sat_label)
-
-        if len(warnings) > 0:
-            warning_text.set(warnings)
-        else:
-            warning_text.set('')
-
-        print(inst, mode, disperser, filter, subarray, readout, order)
-        print(sed_type, sed_model, norm_band, repr(norm_mag))
-        print('~~ TSO done! ~~')
+    def _():
+        run_pandeia(input, target='science')
 
 
     @reactive.effect
@@ -2148,77 +2176,7 @@ def server(input, output, session):
             ui.notification_show(error_msg, type="warning", duration=5)
             return
 
-        selected = acquisition_targets.cell_selection()['rows'][0]
-        gaia_mag = np.round(target_list[1][selected], 3)
-
-        inst = input.instrument.get().lower()
-        mode = 'target_acq'
-        detector = get_detector(inst, mode, detectors)
-        aperture = input.disperser.get()
-        disperser = None
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        readout = input.readout.get()
-        order = None
-        ngroup = int(input.groups.get())
-        nint = 1
-
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-            input, target_acq_mag=gaia_mag,
-        )
-        pando = jwst.PandeiaCalculation(inst, mode)
-        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-        tso = pando.perform_calculation(
-            ngroup, nint, disperser, filter, subarray, readout, aperture,
-        )
-
-        success = "Pandeia calculation done!"
-        ui.notification_show(success, type="message", duration=4)
-
-        obs_geometry = 'acquisition'
-        depth_label = ''
-        detector_label = make_detector_label(
-            inst, mode, disperser, filter, subarray, readout, order,
-        )
-        group_ints = f'({ngroup} G, {nint} I)'
-        tso_label = (
-            f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
-        )
-
-        inst_label = detector.instrument_label(disperser, filter)
-        tso_run = dict(
-            # The detector
-            inst=inst,
-            mode=mode,
-            inst_label=inst_label,
-            label=tso_label,
-            # The SED
-            sed_type=sed_type,
-            sed_model=sed_model,
-            norm_band=norm_band,
-            norm_mag=norm_mag,
-            obs_type=obs_geometry,
-            # The instrumental setting
-            aperture=aperture,
-            disperser=disperser,
-            filter=filter,
-            subarray=subarray,
-            readout=readout,
-            order=order,
-            ngroup=ngroup,
-            # The outputs
-            tso=tso,
-        )
-
-        warnings = tso['warnings']
-        tso_runs['Acquisition'][tso_label] = tso_run
-        tso_labels = make_tso_labels(tso_runs)
-        ui.update_select('display_tso_run', choices=tso_labels)
-
-        if len(warnings) > 0:
-            warning_text.set(warnings)
-        else:
-            warning_text.set('')
+        run_pandeia(input, target='acquisition')
 
 
     # TBD: rename
