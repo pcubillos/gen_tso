@@ -501,9 +501,10 @@ app_ui = ui.page_fluid(
                         placement="top",
                     ),
                     ui.layout_column_wrap(
-                        ui.input_action_button(
+                        ui.input_task_button(
                             id="search_gaia_ta",
                             label="Search nearby targets",
+                            label_busy="processing...",
                             class_='btn btn-outline-secondary btn-sm',
                         ),
                         ui.p("Select TA's SED:"),
@@ -513,7 +514,7 @@ app_ui = ui.page_fluid(
                             choices=[],
                             selected='',
                         ),
-                        ui.input_action_button(
+                        ui.input_task_button(
                             id="perform_ta_calculation",
                             label="Run TA Pandeia",
                             class_='btn btn-outline-secondary btn-sm',
@@ -860,7 +861,7 @@ def server(input, output, session):
     warning_text = reactive.Value('')
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
-    current_science_target = reactive.Value(None)
+    current_acq_science_target = reactive.Value(None)
 
     @render.image
     def tso_logo():
@@ -884,9 +885,7 @@ def server(input, output, session):
                 spec_modes[det.mode] = det.mode_label
         choices = {}
         choices['Spectroscopy'] = spec_modes
-
         #choices['Photometry'] = photo_modes  TBD
-
         acq_modes = {}
         for det in detectors:
             if det.instrument == inst and det.obs_type=='acquisition':
@@ -2054,17 +2053,10 @@ def server(input, output, session):
         return text
 
 
-    @render.data_frame
-    @reactive.event(input.search_gaia_ta, input.target)
-    def acquisition_targets():
+    @reactive.Effect
+    @reactive.event(input.search_gaia_ta)
+    def _():
         name = input.target.get()
-        # Change of input.target was the trigger:
-        if name != current_science_target.get() and name != '':
-            current_science_target.set(name)
-            acq_target_list.set(None)
-            ui.update_select('ta_sed', choices=[])
-            return
-
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
@@ -2073,6 +2065,25 @@ def server(input, output, session):
             target.ra, target.dec, max_separation=80.0,
         )
         acq_target_list.set([names, G_mag, teff, log_g, ra, dec, separation])
+        current_acq_science_target.set(name)
+        success = "Nearby targets found!  Open the '*Acquisition targets*' tab"
+        ui.notification_show(ui.markdown(success), type="message", duration=5)
+
+
+    @render.data_frame
+    @reactive.event(acq_target_list, input.target)
+    def acquisition_targets():
+        name = input.target.get()
+        current_name = current_acq_science_target.get()
+        # Change of input.target was the trigger:
+        if current_name != name:
+            ui.update_select('ta_sed', choices=[])
+            return
+
+        ta_list = acq_target_list.get()
+        if ta_list is None:
+            return
+        names, G_mag, teff, log_g, ra, dec, separation = ta_list
         data_df = {
             'Gaia DR3 target': [name[9:] for name in names],
             'G_mag': [f'{mag:5.2f}' for mag in G_mag],
@@ -2116,8 +2127,9 @@ def server(input, output, session):
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
+        current_name = current_acq_science_target.get()
         target_list = acq_target_list.get()
-        if target_list is None:
+        if target_list is None or current_name != name:
             error_msg = ui.markdown(
                 "First click the '*Search nearby targets*' button, then select "
                 "a target from the '*Acquisition targets*' tab"
@@ -2125,16 +2137,19 @@ def server(input, output, session):
             ui.notification_show(error_msg, type="warning", duration=5)
             return
 
-        selected = acquisition_targets.cell_selection()['rows']
-        if len(selected) == 0:
+        # Cannot check acquisition_targets.cell_selection() because
+        # the TA table may not be rendered yet. But input.ta_sed gets
+        # defined when the user selects a row from the table:
+        selected_ta_sed = input.ta_sed.get()
+        if selected_ta_sed is None:
             error_msg = ui.markdown(
                 "First select a target from the '*Acquisition targets*' tab"
             )
             ui.notification_show(error_msg, type="warning", duration=5)
             return
 
-        idx = selected[0]
-        gaia_mag = np.round(target_list[1][idx], 3)
+        selected = acquisition_targets.cell_selection()['rows'][0]
+        gaia_mag = np.round(target_list[1][selected], 3)
 
         inst = input.instrument.get().lower()
         mode = 'target_acq'
@@ -2158,7 +2173,7 @@ def server(input, output, session):
         )
 
         success = "Pandeia calculation done!"
-        ui.notification_show(success, type="message", duration=2)
+        ui.notification_show(success, type="message", duration=4)
 
         obs_geometry = 'acquisition'
         depth_label = ''
