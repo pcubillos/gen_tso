@@ -26,7 +26,7 @@ from gen_tso.utils import (
 import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
     get_detector,
-    make_detector_label,
+    make_obs_label,
     make_saturation_label,
 )
 
@@ -59,6 +59,24 @@ bands_dict = {
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
 filter_throughputs = jwst.filter_throughputs()
+
+modes = {}
+for inst in instruments:
+    spec_modes = {}
+    for det in detectors:
+        if det.instrument == inst and det.obs_type=='spectroscopy':
+            spec_modes[det.mode] = det.mode_label
+    choices = {}
+    choices['Spectroscopy'] = spec_modes
+    #choices['Photometry'] = photo_modes  TBD
+    acq_modes = {}
+    for det in detectors:
+        if det.instrument == inst and det.obs_type=='acquisition':
+            acq_modes[det.mode] = 'Target Acquisition'
+    choices['Acquisition'] = acq_modes
+    modes[inst] = choices
+
+
 
 tso_runs = {
     'Transit': {},
@@ -167,6 +185,7 @@ app_ui = ui.page_fluid(
     # Instrument and detector modes:
     ui.layout_columns(
         cs.navset_card_tab_jwst(
+            #instruments,
             ['MIRI', 'NIRCam', 'NIRISS', 'NIRSpec'],
             id="instrument",
             selected='NIRCam',
@@ -174,7 +193,7 @@ app_ui = ui.page_fluid(
             footer=ui.input_select(
                 "mode",
                 "",
-                choices = {},
+                choices=modes['NIRCam'],
                 width='425px',
             ),
         ),
@@ -851,6 +870,21 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
+def is_consistent(inst, mode, disperser=None, filter=None):
+    """
+    """
+    detector = get_detector(inst, mode, detectors)
+    if detector is None:
+        return False
+    if disperser is not None:
+        if disperser not in detector.dispersers:
+            return False
+    if filter is not None:
+        if filter not in detector.filters:
+            return False
+    return True
+
+
 def server(input, output, session):
     sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
@@ -862,6 +896,11 @@ def server(input, output, session):
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
+    preset_mode = reactive.Value(None)
+    preset_filter = reactive.Value(None)
+    preset_disperser = reactive.Value(None)
+    preset_subarray = reactive.Value(None)
+    preset_readout = reactive.Value(None)
 
     def run_pandeia(input, target='science'):
         """
@@ -967,13 +1006,9 @@ def server(input, output, session):
         else:
             success = "Pandeia calculation done!"
         ui.notification_show(success, type="message", duration=2)
-
-        detector_label = make_detector_label(
+        tso_label = make_obs_label(
             inst, mode, disperser, filter, subarray, readout, order,
-        )
-        group_ints = f'({ngroup} G, {nint} I)'
-        tso_label = (
-            f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
+            ngroup, nint, run_type, sed_label, depth_label,
         )
 
         tso_run = dict(
@@ -1027,7 +1062,6 @@ def server(input, output, session):
             ui.update_select(
                 id='display_tso_run',
                 choices=tso_labels,
-                #selected=tso_label,
                 selected=f'{run_type}_{tso_label}',
             )
 
@@ -1051,9 +1085,104 @@ def server(input, output, session):
         else:
             warning_text.set('')
 
-        print(inst, mode, disperser, filter, subarray, readout, order)
+        print(inst, mode, aperture, disperser, filter, subarray, readout, order)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
+
+
+    @reactive.Effect
+    @reactive.event(input.display_tso_run)
+    def update_full_state():
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
+        current_inst = input.instrument.get()
+        current_mode = input.mode.get()
+        current_disperser = input.disperser.get()
+        current_filter = input.filter.get()
+        current_subarray = input.subarray.get()
+        current_readout = input.readout.get()
+
+        inst = tso['inst']
+        mode = tso['mode']
+        detector = get_detector(inst, mode, detectors)
+        instrument = detector.instrument
+
+        # The instrumental setting
+        if mode == 'bots':
+            filter = f"{tso['disperser']}/{tso['filter']}"
+            disperser = None
+        elif mode == 'target_acq':
+            filter = tso['filter']
+            disperser = tso['aperture']
+        else:
+            filter = tso['filter']
+            disperser = tso['disperser']
+        subarray = tso['subarray']
+        readout = tso['readout']
+
+        # Schedule preset values for invalidation:
+        if instrument != current_inst and mode != current_mode:
+            preset_mode.set(mode)
+
+        updating = instrument != current_inst or mode != current_mode
+        if updating and filter != current_filter:
+            preset_filter.set(filter)
+            updating = True
+        if updating and disperser != current_disperser:
+            preset_disperser.set(disperser)
+
+        update_filter = updating or filter != current_filter
+        if update_filter and subarray != current_subarray:
+            preset_subarray.set(subarray)
+        if updating and readout != current_readout:
+            preset_readout.set(readout)
+
+        if instrument != current_inst:
+            ui.update_navs('instrument', selected=instrument)
+        elif mode != current_mode:
+            mode_choices = modes[instrument]
+            choices = []
+            for m in mode_choices.values():
+                choices += list(m)
+            ui.update_select('mode', choices=mode_choices, selected=mode)
+        elif filter != current_filter or disperser != current_disperser:
+            if disperser != current_disperser:
+                ui.update_select(
+                    'disperser',
+                    label=detector.disperser_label,
+                    choices=detector.dispersers,
+                    selected=disperser,
+                )
+            if filter != current_filter:
+                ui.update_select(
+                    'filter',
+                    label=detector.filter_label,
+                    choices=detector.filters,
+                    selected=filter,
+                )
+        else:
+            if subarray != current_subarray:
+                choices = detector.get_constrained_val(
+                    'subarrays', disperser=disperser,
+                )
+                ui.update_select(
+                    'subarray',
+                    choices=choices,
+                    selected=subarray,
+                )
+            if readout != current_readout:
+                choices = detector.get_constrained_val(
+                    'readouts', disperser=disperser,
+                )
+                ui.update_select(
+                    'readout',
+                    choices=choices,
+                    selected=readout,
+                )
+
 
 
     @render.image
@@ -1065,46 +1194,69 @@ def server(input, output, session):
         }
         return img
 
+
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
-    @reactive.Effect
+    @reactive.Effect(priority=3)
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
-        print(f"You selected me: {inst}")
-        spec_modes = {}
-        for det in detectors:
-            if det.instrument == inst and det.obs_type=='spectroscopy':
-                spec_modes[det.mode] = det.mode_label
-        choices = {}
-        choices['Spectroscopy'] = spec_modes
-        #choices['Photometry'] = photo_modes  TBD
-        acq_modes = {}
-        for det in detectors:
-            if det.instrument == inst and det.obs_type=='acquisition':
-                acq_modes[det.mode] = 'Target Acquisition'
-        choices['Acquisition'] = acq_modes
-        ui.update_select('mode', choices=choices)
+        print(f"    You selected me: {inst}")
+        mode_choices = modes[inst]
+        choices = []
+        for m in mode_choices.values():
+            choices += list(m)
+
+        if preset_mode.get() is None:
+            mode = input.mode.get()
+        else:
+            mode = preset_mode.get()
+            preset_mode.set(None)
+        selected = mode if mode in choices else choices[0]
+        ui.update_select('mode', choices=mode_choices, selected=selected)
 
 
-    @reactive.Effect
-    @reactive.event(input.mode)
+    @reactive.Effect(priority=2)
+    @reactive.event(input.instrument, input.mode)
     def _():
-        inst = req(input.instrument).get()
+        inst = input.instrument.get()
         mode = input.mode.get()
+        if not is_consistent(inst, mode):
+            return
         detector = get_detector(inst, mode, detectors)
 
+        # The disperser
+        choices = detector.dispersers
+        preset = preset_disperser.get()
+        if preset is None or preset not in choices:
+            disperser = input.disperser.get()
+        else:
+            disperser = preset
+            preset_disperser.set(None)
+        if disperser not in choices:
+            disperser = detector.default_disperser
         ui.update_select(
             'disperser',
             label=detector.disperser_label,
-            choices=detector.dispersers,
-            selected=detector.default_disperser,
+            choices=choices,
+            selected=disperser,
         )
+
+        # The filter
+        choices = detector.filters
+        preset = preset_filter.get()
+        if preset is None or preset not in choices:
+            filter = input.filter.get()
+        else:
+            filter = preset
+            preset_filter.set(None)
+        if filter not in choices:
+            filter = detector.default_filter
         ui.update_select(
             'filter',
             label=detector.filter_label,
-            choices=detector.filters,
-            selected=detector.default_filter,
+            choices=choices,
+            selected=filter,
         )
 
         selected = input.filter_filter.get()
@@ -1121,43 +1273,58 @@ def server(input, output, session):
             selected=selected,
         )
 
-    @reactive.Effect
-    @reactive.event(input.disperser, input.filter)
+
+    @reactive.Effect(priority=1)
+    @reactive.event(input.instrument, input.mode, input.disperser, input.filter)
     def update_subarray():
-        inst = req(input.instrument).get()
+        inst = input.instrument.get()
         mode = input.mode.get()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
+        if not is_consistent(inst, mode, disperser, filter):
+            return
         detector = get_detector(inst, mode, detectors)
 
         if mode == 'bots':
             disperser = input.filter.get().split('/')[0]
         else:
             disperser = input.disperser.get()
-        choices = detector.get_constrained_val('subarrays', disperser=disperser)
 
-        subarray = input.subarray.get()
+        choices = detector.get_constrained_val('subarrays', disperser=disperser)
+        preset = preset_subarray.get()
+        if preset is None or preset not in choices:
+            subarray = input.subarray.get()
+        else:
+            subarray = preset
+            preset_subarray.set(None)
         if subarray not in choices:
             subarray = detector.default_subarray
-
         ui.update_select(
             'subarray',
             choices=choices,
             selected=subarray,
         )
 
-    @reactive.Effect
-    @reactive.event(input.disperser)
+
+    @reactive.Effect(priority=1)
+    @reactive.event(input.instrument, input.mode, input.disperser)
     def update_readout():
-        inst = req(input.instrument).get()
+        inst = input.instrument.get()
         mode = input.mode.get()
+        disperser = input.disperser.get()
+        if not is_consistent(inst, mode, disperser):
+            return
         detector = get_detector(inst, mode, detectors)
 
-        disperser = input.disperser.get()
         choices = detector.get_constrained_val('readouts', disperser=disperser)
-
-        readout = input.readout.get()
+        preset = preset_readout.get()
+        if preset is None or preset not in choices:
+            readout = input.readout.get()
+        else:
+            readout = preset
+            preset_readout.set(None)
         if readout not in choices:
             readout = detector.default_readout
-
         ui.update_select(
             'readout',
             choices=choices,
@@ -1443,6 +1610,7 @@ def server(input, output, session):
             f'https://sky.esa.int/esasky/?target={target.ra}%20{target.dec}'
             '&fov=0.2&sci=true'
         )
+
 
     @render.ui
     @reactive.event(input.sed_type, input.teff, input.logg)
@@ -2043,10 +2211,14 @@ def server(input, output, session):
         if cached:
             pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
             full_well = cache_saturation[sat_label]['full_well']
-            saturation_text = jwst._print_pandeia_saturation(
-                inst, subarray, readout, ngroup, pixel_rate, full_well,
-                format='html',
-            )
+            # TBD: check inst setting consistency
+            try:
+                saturation_text = jwst._print_pandeia_saturation(
+                    inst, subarray, readout, ngroup, pixel_rate, full_well,
+                    format='html',
+                )
+            except OverflowError as e:
+                return
             report_text += f'<br>{saturation_text}'
 
         if cached and 'reports' in cache_saturation[sat_label]:
@@ -2216,6 +2388,7 @@ def server(input, output, session):
             f"dec = {dec[idx]}"
         )
         print(text)
+
 
 app = App(app_ui, server)
 
