@@ -1,17 +1,17 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
+import json
 import os
-import sys
-import pickle
 from pathlib import Path
+import pickle
+import sys
 import textwrap
 
 import numpy as np
 import scipy.interpolate as si
 import pandas as pd
 import faicons as fa
-from htmltools import HTML
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
@@ -927,6 +927,7 @@ def server(input, output, session):
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
     preset_ngroup = reactive.Value(None)
+    esasky_command = reactive.Value(None)
 
     def run_pandeia(input, target='science'):
         """
@@ -1593,18 +1594,19 @@ def server(input, output, session):
         ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
         ui.update_text('t_dur', value=t_dur)
 
-    @reactive.effect
-    @reactive.event(input.target)
-    async def _():
-        name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
-        if target is None:
-            return
-        command = (
-            '{"event":"goToRaDec",'
-            f'"content":{{"ra":"{target.ra}","dec":"{target.dec}"}}}}'
-        )
-        await session.send_custom_message("update_esasky", {"command": command})
+        delete_catalog = {
+            "event": 'deleteCatalogue',
+            "content": { 'overlayName': 'Nearby Gaia sources'}
+        }
+        delete_footprint = {
+            "event": 'deleteFootprintsOverlay',
+            "content": {'overlayName': 'visit splitting distance'}
+        }
+        goto = {
+            "event": "goToRaDec",
+            "content":{"ra": f"{target.ra}", "dec": f"{target.dec}"}
+        }
+        esasky_command.set([delete_catalog, delete_footprint, goto])
 
 
     @render.ui
@@ -2209,7 +2211,7 @@ def server(input, output, session):
                     inst, subarray, readout, ngroup, pixel_rate, full_well,
                     format='html',
                 )
-            except OverflowError as e:
+            except OverflowError:
                 return
             report_text += f'<br>{saturation_text}'
 
@@ -2253,13 +2255,33 @@ def server(input, output, session):
         if target is None:
             return
 
-        names, G_mag, teff, log_g, ra, dec, separation = cat.fetch_gaia_targets(
+        query = cat.fetch_gaia_targets(
             target.ra, target.dec, max_separation=80.0,
         )
-        acq_target_list.set([names, G_mag, teff, log_g, ra, dec, separation])
+        acq_target_list.set(query)
         current_acq_science_target.set(name)
         success = "Nearby targets found!  Open the '*Acquisition targets*' tab"
         ui.notification_show(ui.markdown(success), type="message", duration=5)
+
+        circle = u.esasky_js_circle(target.ra, target.dec, radius=80.0)
+        ta_catalog = u.esasky_js_catalog(query)
+        esasky_command.set([ta_catalog, circle])
+
+
+    @reactive.effect
+    @reactive.event(esasky_command)
+    async def _():
+        commands = esasky_command.get()
+        if commands is None:
+            return
+        if not isinstance(commands, list):
+            commands = [commands]
+        for command in commands:
+            command = json.dumps(command)
+            await session.send_custom_message(
+                "update_esasky",
+                {"command": command},
+            )
 
 
     @render.data_frame
