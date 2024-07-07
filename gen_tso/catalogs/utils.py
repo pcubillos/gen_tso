@@ -6,6 +6,8 @@ A collection of low-level routines to handle catalogs.
 """
 
 __all__ = [
+    'esasky_js_circle',
+    'esasky_js_catalog',
     'normalize_name',
     'is_letter',
     'is_candidate',
@@ -20,6 +22,150 @@ __all__ = [
 import re
 
 import numpy as np
+
+
+def esasky_js_circle(ra, dec, radius, color='#15B01A'):
+    """
+    Construct a JS command to draw a circle footprint for ESASky
+
+    Parameters
+    ----------
+    ra: Float
+        Right ascention of the center of the circle footprint (deg).
+    dec: Float
+        Declination of the center of the circle footprint (deg).
+    radius: Float
+        Radius of the circle footprint (deg).
+
+    Returns
+    -------
+    footprint: Dictionary
+        A dictionary with the command to draw a circle footprint
+        when converted to JSON format, e.g.:
+        command = json.dumps(footprint)
+
+    For details on the ESASky JS API see:
+    https://www.cosmos.esa.int/web/esdc/esasky-javascript-api
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs.utils as u
+    >>> ra = 315.0259661
+    >>> dec = -5.094857
+    >>> radius = 80.0
+    >>> circle = u.esasky_js_circle(ra, dec, radius)
+    """
+    footprint = {
+        'event': 'overlayFootprints',
+        'content': {
+            'overlaySet': {
+                'type': 'FootprintListOverlay',
+                'overlayName': 'visit splitting distance',
+                'cooframe': 'J2000',
+                'color': color,
+                'lineWidth': 5,
+                'skyObjectList': [
+                    {'name': 'visit splitting distance',
+                     'id': 1,
+                     'stcs': f'CIRCLE ICRS {ra:.8f} {dec:.8f} {radius/3600:.4f}',
+                     'ra_deg': f'{ra:.8f}',
+                     'dec_deg': f'{dec:.8f}',
+                    }
+                ]
+            }
+        }
+    }
+    return footprint
+
+
+def json_target_property(name, value, format):
+    """
+    Create a json dictionary of a target's property (to be used on
+    an overlayCatalog for ESASky).
+    """
+    prop = {
+        'name': name,
+        'value': f'{value:{format}}',
+        'type': 'STRING'
+    }
+    return prop
+
+
+def json_target(index, name, ra, dec, g_mag, teff, logg, separation):
+    """
+    Create a json dictionary of a target (to be used on an overlayCatalog
+    for ESASky).
+    """
+    # G, teff, logg, sep
+    data = [
+        json_target_property('G mag', g_mag[index], '.2f'),
+        json_target_property('T eff', teff[index], '.1f'),
+        json_target_property('log(g)', logg[index], '.2f'),
+        json_target_property('Separation', separation[index], '.3f'),
+    ]
+
+    target = {
+        'name': name[index],
+        'id': index+1,
+        'ra': f'{ra[index]:.8f}',
+        'dec': f'{dec[index]:.8f}',
+        'data': data,
+    }
+    return target
+
+
+def esasky_js_catalog(query):
+    """
+    Construct a JS command to draw an overlayCatalog footprint for ESASky
+
+    Parameters
+    ----------
+    query: List of arrays
+        A list of arrays containing the names, g_mag, teff, logg,
+        ra, dec, and separation of a set of targets (see Examples).
+
+    Returns
+    -------
+    command: Dictionary
+        A dictionary with the command to draw an overlayCatalog
+        when converted to JSON format, e.g.:
+        js_command = json.dumps(command)
+
+    For details on the ESASky JS API see:
+    https://www.cosmos.esa.int/web/esdc/esasky-javascript-api
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> import gen_tso.catalogs.utils as u
+
+    >>> # Stellar sources around WASP-69:
+    >>> ra_source = 315.0259661
+    >>> dec_source = -5.094857
+    >>> query = cat.fetch_gaia_targets(ra_source, dec_source)
+    >>> circle = u.esasky_js_catalog(query)
+    """
+    names, g_mag, teff, logg, ra, dec, separation = query
+    ntargets = len(names)
+    targets = []
+    for i in range(ntargets):
+        target = json_target(i, names, ra, dec, g_mag, teff, logg, separation)
+        targets.append(target)
+
+    command = {
+        "event": 'overlayCatalogue',
+        'content': {
+            'overlaySet': {
+                'type': 'SourceListOverlay',
+                'overlayName': 'Nearby Gaia sources',
+                'cooframe': 'J2000',
+                'color': '#ee2345',
+                'lineWidth': 10,
+                'skyObjectList': targets,
+            }
+        }
+    }
+    return command
 
 
 def normalize_name(target):
