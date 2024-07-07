@@ -231,6 +231,15 @@ def get_configs(instrument=None, obs_type=None):
             for slit in slits
         }
 
+        if inst_dict['mode'] == 'soss':
+            inst_dict['orders'] = {
+                '1': '1',
+                '2': '2',
+                '1 2': '1 and 2',
+            }
+        else:
+            inst_dict['orders'] = None
+
         if obs_type == 'acquisition':
             groups = inst_config['mode_config'][mode]['enum_ngroups']
             if not isinstance(groups, list):
@@ -239,6 +248,7 @@ def get_configs(instrument=None, obs_type=None):
             # Integrations and exposures are always one (so far)
             #print(inst_config['mode_config'][mode]['enum_nexps'])
             #print(inst_config['mode_config'][mode]['enum_nints'])
+
 
         # Special constraints
         inst_dict['constraints'] = {}
@@ -256,6 +266,14 @@ def get_configs(instrument=None, obs_type=None):
                     subs.remove('sub1024a')
                 constraints[disperser] = subs
             inst_dict['constraints']['subarrays'] = {'dispersers': constraints}
+
+        if mode == 'soss':
+            constraints = {
+                'substrip96': ['1'],
+                'substrip256': ['1', '2', '1 2'],
+                'sossfull': ['1', '2', '1 2'],
+            }
+            inst_dict['constraints']['orders'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
             group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
@@ -347,7 +365,7 @@ class Detector:
     def __init__(
             self, mode, label, instrument, obs_type,
             disperser_label, dispersers, filter_label, filters,
-            subarrays, readouts, apertures,
+            subarrays, readouts, apertures, orders=None,
             groups=None, default_indices=None,
             constraints={},
         ):
@@ -376,6 +394,8 @@ class Detector:
         self.apertures = apertures
         self.groups = groups
         self.constraints = constraints
+        if self.mode == 'soss':
+            self.orders = orders
 
         telescope = 'jwst'
         self.ins_config = get_instrument_config(telescope, instrument.lower())
@@ -396,7 +416,7 @@ class Detector:
         ):
         """
         det = generate_all_instruments()[5]
-        get_constrained_val(det, 'filters', disperser='nrm')
+        det.get_constrained_val('filters', disperser='nrm')
         get_constrained_val(det, 'readouts', disperser='nrm')
         get_constrained_val(det, 'readouts', disperser='imager')
         get_constrained_val(det, 'readouts', filter='imager')
@@ -523,6 +543,7 @@ def generate_all_instruments():
         subarrays = inst['subarrays']
         readouts = inst['readouts']
         apertures = inst['apertures']
+        orders = inst['orders']
         constraints = inst['constraints']
 
         if mode == 'lrsslitless':
@@ -571,6 +592,7 @@ def generate_all_instruments():
             subarrays,
             readouts,
             apertures,
+            orders=orders,
             default_indices=default_indices,
             constraints=constraints,
         )
@@ -657,9 +679,9 @@ def generate_all_instruments():
             subarrays,
             readouts,
             apertures,
-            inst['groups'],
-            default_indices,
-            constraints,
+            groups=inst['groups'],
+            default_indices=default_indices,
+            constraints=constraints,
         )
         detectors.append(det)
 
@@ -690,16 +712,20 @@ def get_detector(instrument=None, mode=None, detectors=None):
 
 
 def make_detector_label(
-        inst, mode, disperser, filter, subarray, readout, order,
+        inst, mode, aperture, disperser, filter, subarray, readout, order,
     ):
     """
     Generate a pretty and (as succinct as possible) label for the
     detector configuration.
     """
     if mode == 'target_acq':
+        if inst == 'niriss':
+            aper = 'Bright' if aperture == 'nrm' else 'Faint'
+            return f'{inst_names[inst]} {aper}'
         return inst_names[inst]
+
     if mode == 'mrs_ts':
-        return 'MIRI MRS'
+        return f'MIRI MRS {disperser.upper()}'
     if mode == 'lrsslitless':
         return 'MIRI LRS'
     if mode == 'soss':
@@ -729,4 +755,22 @@ def make_saturation_label(mode, disperser, filter, subarray, order, sed_label):
         sat_label = f'{sat_label}_{disperser}'
     sat_label = f'{sat_label}_{sed_label}'
     return sat_label
+
+
+def make_obs_label(
+        inst, mode, aperture, disperser, filter, subarray, readout, order,
+        ngroup, nint, run_type, sed_label, depth_label,
+    ):
+    detector_label = make_detector_label(
+        inst, mode, aperture, disperser, filter, subarray, readout, order,
+    )
+    if run_type == 'Acquisition':
+        group_ints = f'({ngroup} G)'
+        depth_label = 'acquisition'
+    else:
+        group_ints = f'({ngroup} G, {nint} I)'
+    label = (
+        f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
+    )
+    return label
 
