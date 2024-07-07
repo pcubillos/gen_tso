@@ -97,6 +97,7 @@ def make_tso_labels(tso_runs):
     return tso_labels
 
 
+cache_target = {}
 cache_saturation = {}
 
 # Planet and stellar spectra
@@ -971,6 +972,9 @@ def server(input, output, session):
             run_type = 'Acquisition'
 
         # Target setup:
+        target_name = input.target.get()
+        teff = input.teff.get()
+        logg = input.logg.get()
         if target == 'acquisition':
             selected = acquisition_targets.cell_selection()['rows'][0]
             target_list = acq_target_list.get()
@@ -1048,6 +1052,10 @@ def server(input, output, session):
             inst_label=inst_label,
             label=tso_label,
             # The SED
+            target=target_name,
+            teff=teff,
+            logg=logg,
+            transit_dur=transit_dur,
             sed_type=sed_type,
             sed_model=sed_model,
             norm_band=norm_band,
@@ -1190,6 +1198,29 @@ def server(input, output, session):
             else:
                 ui.update_numeric('ngroup', value=ngroup)
 
+        # The target:
+        current_target = input.target.get()
+        target = tso['target']
+        ui.update_selectize('target', selected=target)
+        sed_type = tso['sed_type']
+        if sed_type == 'k93models':
+            sed_type = 'kurucz'
+        ui.update_select('sed_type', selected=sed_type)
+        if target != current_target:
+            if target not in cache_target:
+                cache_target[target] = {}
+            cache_target[target]['teff'] = tso['teff']
+            cache_target[target]['logg'] = tso['logg']
+            cache_target[target]['tdur'] = tso['transit_dur']
+        else:
+            ui.update_text('teff', value=tso['teff'])
+            ui.update_text('logg', value=tso['logg'])
+            ui.update_text('t_dur', value=tso['transit_dur'])
+        # sed_model=sed_model,
+        # norm_band=norm_band,
+        # norm_mag=norm_mag,
+
+
     @render.image
     def tso_logo():
         dir = Path(__file__).resolve().parent.parent
@@ -1206,8 +1237,7 @@ def server(input, output, session):
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
-        #print(f'\n< Updated inst ({inst}) >')
-        print(f"    You selected me: {inst}")
+        print(f"You selected me: {inst}")
         mode_choices = modes[inst]
         choices = []
         for m in mode_choices.values():
@@ -1226,7 +1256,6 @@ def server(input, output, session):
         if not is_consistent(inst, mode):
             return
         detector = get_detector(inst, mode, detectors)
-        #print(f'<< Updated mode/inst ({inst}, {mode}) >>')
 
         # The disperser
         choices = detector.dispersers
@@ -1276,10 +1305,6 @@ def server(input, output, session):
         filter = input.filter.get()
         if not is_consistent(inst, mode, disperser, filter):
             return
-        #print(
-        #    f'<<< Updated disp/filter --> subarray ({inst}, {mode}, '
-        #    f'{repr(disperser)}, {repr(filter)}) >>>'
-        #)
         detector = get_detector(inst, mode, detectors)
 
         if mode == 'bots':
@@ -1307,7 +1332,6 @@ def server(input, output, session):
         if not is_consistent(inst, mode, disperser):
             return
         detector = get_detector(inst, mode, detectors)
-        #print(f'<<< Updated disperser --> readout ({inst}, {mode}, {disperser}) >>>')
 
         choices = detector.get_constrained_val('readouts', disperser=disperser)
         readout = input.readout.get()
@@ -1584,9 +1608,14 @@ def server(input, output, session):
             return
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
-        teff = u.as_str(target.teff, '.1f', '')
-        log_g = u.as_str(target.logg_star, '.2f', '')
-        t_dur = u.as_str(target.transit_dur, '.3f', '')
+        if target.planet in cache_target:
+            teff  = cache_target[target.planet]['teff']
+            log_g = cache_target[target.planet]['logg']
+            t_dur = cache_target[target.planet]['tdur']
+        else:
+            teff = u.as_str(target.teff, '.1f', '')
+            log_g = u.as_str(target.logg_star, '.2f', '')
+            t_dur = u.as_str(target.transit_dur, '.3f', '')
 
         ui.update_text('teff', value=teff)
         ui.update_text('logg', value=log_g)
