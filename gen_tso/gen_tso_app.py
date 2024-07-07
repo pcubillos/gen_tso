@@ -487,7 +487,7 @@ app_ui = ui.page_fluid(
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
-            # groups / integs
+            # groups and integrations
             ui.panel_well(
                 cs.label_tooltip_button(
                     label='Groups per integration ',
@@ -505,7 +505,11 @@ app_ui = ui.page_fluid(
                         value=1,
                         min=1, max=100000,
                     ),
-                    ui.input_switch("integs_switch", "Match obs. duration", False),
+                    ui.input_switch(
+                        "integs_switch",
+                        "Match obs. duration",
+                        False,
+                    ),
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
@@ -872,6 +876,8 @@ def parse_depth_model(input):
 
 def is_consistent(inst, mode, disperser=None, filter=None):
     """
+    Check that detector configuration settings are consistent
+    between them.
     """
     detector = get_detector(inst, mode, detectors)
     if detector is None:
@@ -896,11 +902,7 @@ def server(input, output, session):
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
-    preset_mode = reactive.Value(None)
-    preset_filter = reactive.Value(None)
-    preset_disperser = reactive.Value(None)
-    preset_subarray = reactive.Value(None)
-    preset_readout = reactive.Value(None)
+    preset_ngroup = reactive.Value(None)
 
     def run_pandeia(input, target='science'):
         """
@@ -1007,7 +1009,7 @@ def server(input, output, session):
             success = "Pandeia calculation done!"
         ui.notification_show(success, type="message", duration=2)
         tso_label = make_obs_label(
-            inst, mode, disperser, filter, subarray, readout, order,
+            inst, mode, aperture, disperser, filter, subarray, readout, order,
             ngroup, nint, run_type, sed_label, depth_label,
         )
 
@@ -1096,14 +1098,9 @@ def server(input, output, session):
         tso_key = input.display_tso_run.get()
         if tso_key is None:
             return
+        print('\nNew display')
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
-        current_inst = input.instrument.get()
-        current_mode = input.mode.get()
-        current_disperser = input.disperser.get()
-        current_filter = input.filter.get()
-        current_subarray = input.subarray.get()
-        current_readout = input.readout.get()
 
         inst = tso['inst']
         mode = tso['mode']
@@ -1122,68 +1119,43 @@ def server(input, output, session):
             disperser = tso['disperser']
         subarray = tso['subarray']
         readout = tso['readout']
+        ngroup = tso['ngroup']
+
+        #print(
+        #    '> Goal:    ', instrument, mode, disperser, filter,
+        #    subarray, readout,
+        #)
 
         # Schedule preset values for invalidation:
-        if instrument != current_inst and mode != current_mode:
-            preset_mode.set(mode)
+        if mode != input.mode.get() or subarray != input.subarray.get():
+            preset_ngroup.set(
+                {'mode':mode, 'subarray':subarray, 'ngroup':ngroup}
+            )
 
-        updating = instrument != current_inst or mode != current_mode
-        if updating and filter != current_filter:
-            preset_filter.set(filter)
-            updating = True
-        if updating and disperser != current_disperser:
-            preset_disperser.set(disperser)
-
-        update_filter = updating or filter != current_filter
-        if update_filter and subarray != current_subarray:
-            preset_subarray.set(subarray)
-        if updating and readout != current_readout:
-            preset_readout.set(readout)
-
-        if instrument != current_inst:
-            ui.update_navs('instrument', selected=instrument)
-        elif mode != current_mode:
-            mode_choices = modes[instrument]
-            choices = []
-            for m in mode_choices.values():
-                choices += list(m)
-            ui.update_select('mode', choices=mode_choices, selected=mode)
-        elif filter != current_filter or disperser != current_disperser:
-            if disperser != current_disperser:
-                ui.update_select(
-                    'disperser',
-                    label=detector.disperser_label,
-                    choices=detector.dispersers,
-                    selected=disperser,
-                )
-            if filter != current_filter:
-                ui.update_select(
-                    'filter',
-                    label=detector.filter_label,
-                    choices=detector.filters,
-                    selected=filter,
-                )
-        else:
-            if subarray != current_subarray:
-                choices = detector.get_constrained_val(
-                    'subarrays', disperser=disperser,
-                )
-                ui.update_select(
-                    'subarray',
-                    choices=choices,
-                    selected=subarray,
-                )
-            if readout != current_readout:
-                choices = detector.get_constrained_val(
-                    'readouts', disperser=disperser,
-                )
-                ui.update_select(
-                    'readout',
-                    choices=choices,
-                    selected=readout,
-                )
-
-
+        ui.update_navs('instrument', selected=instrument)
+        mode_choices = modes[instrument]
+        ui.update_select('mode', choices=mode_choices, selected=mode)
+        ui.update_select(
+            'disperser',
+            label=detector.disperser_label,
+            choices=detector.dispersers,
+            selected=disperser,
+        )
+        ui.update_select(
+            'filter',
+            label=detector.filter_label,
+            choices=detector.filters,
+            selected=filter,
+        )
+        choices = detector.get_constrained_val('subarrays', disperser=disperser)
+        ui.update_select('subarray', choices=choices, selected=subarray)
+        choices = detector.get_constrained_val('readouts', disperser=disperser)
+        ui.update_select('readout', choices=choices, selected=readout)
+        if ngroup != input.groups.get():
+            if mode == 'target_acq':
+                ui.update_select('groups', selected=ngroup)
+            else:
+                ui.update_numeric('groups', value=ngroup)
 
     @render.image
     def tso_logo():
@@ -1201,17 +1173,14 @@ def server(input, output, session):
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
+        #print(f'\n< Updated inst ({inst}) >')
         print(f"    You selected me: {inst}")
         mode_choices = modes[inst]
         choices = []
         for m in mode_choices.values():
             choices += list(m)
 
-        if preset_mode.get() is None:
-            mode = input.mode.get()
-        else:
-            mode = preset_mode.get()
-            preset_mode.set(None)
+        mode = input.mode.get()
         selected = mode if mode in choices else choices[0]
         ui.update_select('mode', choices=mode_choices, selected=selected)
 
@@ -1224,15 +1193,11 @@ def server(input, output, session):
         if not is_consistent(inst, mode):
             return
         detector = get_detector(inst, mode, detectors)
+        #print(f'<< Updated mode/inst ({inst}, {mode}) >>')
 
         # The disperser
         choices = detector.dispersers
-        preset = preset_disperser.get()
-        if preset is None or preset not in choices:
-            disperser = input.disperser.get()
-        else:
-            disperser = preset
-            preset_disperser.set(None)
+        disperser = input.disperser.get()
         if disperser not in choices:
             disperser = detector.default_disperser
         ui.update_select(
@@ -1244,12 +1209,7 @@ def server(input, output, session):
 
         # The filter
         choices = detector.filters
-        preset = preset_filter.get()
-        if preset is None or preset not in choices:
-            filter = input.filter.get()
-        else:
-            filter = preset
-            preset_filter.set(None)
+        filter = input.filter.get()
         if filter not in choices:
             filter = detector.default_filter
         ui.update_select(
@@ -1283,20 +1243,19 @@ def server(input, output, session):
         filter = input.filter.get()
         if not is_consistent(inst, mode, disperser, filter):
             return
+        #print(
+        #    f'<<< Updated disp/filter --> subarray ({inst}, {mode}, '
+        #    f'{repr(disperser)}, {repr(filter)}) >>>'
+        #)
         detector = get_detector(inst, mode, detectors)
 
         if mode == 'bots':
             disperser = input.filter.get().split('/')[0]
         else:
             disperser = input.disperser.get()
-
         choices = detector.get_constrained_val('subarrays', disperser=disperser)
-        preset = preset_subarray.get()
-        if preset is None or preset not in choices:
-            subarray = input.subarray.get()
-        else:
-            subarray = preset
-            preset_subarray.set(None)
+
+        subarray = input.subarray.get()
         if subarray not in choices:
             subarray = detector.default_subarray
         ui.update_select(
@@ -1315,14 +1274,10 @@ def server(input, output, session):
         if not is_consistent(inst, mode, disperser):
             return
         detector = get_detector(inst, mode, detectors)
+        #print(f'<<< Updated disperser --> readout ({inst}, {mode}, {disperser}) >>>')
 
         choices = detector.get_constrained_val('readouts', disperser=disperser)
-        preset = preset_readout.get()
-        if preset is None or preset not in choices:
-            readout = input.readout.get()
-        else:
-            readout = preset
-            preset_readout.set(None)
+        readout = input.readout.get()
         if readout not in choices:
             readout = detector.default_readout
         ui.update_select(
@@ -1950,23 +1905,36 @@ def server(input, output, session):
     @render.ui
     @reactive.event(input.mode, input.subarray)
     def groups_input():
+        inst = input.instrument.get()
         mode = input.mode.get()
+        subarray = input.subarray.get()
+        preset = preset_ngroup.get()
+        has_preset = (
+            preset is not None and
+            preset['mode'] == mode and
+            preset['subarray'] == subarray
+        )
+        if has_preset:
+            value = preset['ngroup']
+            preset_ngroup.set(None)
+        else:
+            value = 2
+        print(f'<<<< Update group ({inst}, {mode}, {subarray}) >>>>')
         if mode == 'target_acq':
-            inst = req(input.instrument).get()
             detector = get_detector(inst, mode, detectors)
-            subarray = input.subarray.get()
             choices = detector.get_constrained_val('groups', subarray=subarray)
 
             return ui.input_select(
                 id="groups",
                 label="",
                 choices=choices,
+                selected=value,
             )
         else:
             return ui.input_numeric(
                 id="groups",
                 label='',
-                value=2,
+                value=value,
                 min=2, max=10000,
             )
 
