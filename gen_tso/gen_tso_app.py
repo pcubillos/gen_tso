@@ -180,13 +180,24 @@ app_ui = ui.page_fluid(
         fill=False,
         fillable=True,
     ),
+    ui.tags.script(
+        """
+        $(function() {
+            Shiny.addCustomMessageHandler("update_esasky", function(message) {
+                var esaskyFrame = document.getElementById("esasky");
+                esaskyFrame.contentWindow.postMessage(
+                    JSON.parse(message.command), 'https://sky.esa.int'
+                );
+            });
+        });
+        """
+    ),
     ui.include_css(css_file),
 
     # Instrument and detector modes:
     ui.layout_columns(
         cs.navset_card_tab_jwst(
-            #instruments,
-            ['MIRI', 'NIRCam', 'NIRISS', 'NIRSpec'],
+            instruments,
             id="instrument",
             selected='NIRCam',
             header="Select an instrument and detector",
@@ -591,7 +602,20 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Sky view",
-                    ui.output_ui('esasky_card'),
+                    cs.custom_card(
+                        ui.HTML(
+                            '<iframe id="esasky" '
+                            'height="100%" '
+                            'width="100%" '
+                            'style="overflow" '
+                            'src="https://sky.esa.int/esasky/?target=0.0%200.0'
+                            '&fov=0.2&sci=true&hide_welcome=true" '
+                            'frameborder="0" allowfullscreen></iframe>',
+                        ),
+                        body_args=dict(class_='m-0 p-0'),
+                        full_screen=True,
+                        height='350px',
+                    )
                 ),
                 ui.nav_panel(
                     "Stellar SED",
@@ -893,7 +917,6 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
 
 
 def server(input, output, session):
-    sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
@@ -1570,10 +1593,18 @@ def server(input, output, session):
         ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
         ui.update_text('t_dur', value=t_dur)
 
-        sky_view_src.set(
-            f'https://sky.esa.int/esasky/?target={target.ra}%20{target.dec}'
-            '&fov=0.2&sci=true'
+    @reactive.effect
+    @reactive.event(input.target)
+    async def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+        command = (
+            '{"event":"goToRaDec",'
+            f'"content":{{"ra":"{target.ra}","dec":"{target.dec}"}}}}'
         )
+        await session.send_custom_message("update_esasky", {"command": command})
 
 
     @render.ui
@@ -1932,7 +1963,6 @@ def server(input, output, session):
             preset_ngroup.set(None)
         else:
             value = 2
-        print(f'<<<< Update group ({inst}, {mode}, {subarray}) >>>>')
         if mode == 'target_acq':
             detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
@@ -2052,25 +2082,6 @@ def server(input, output, session):
         )
         return fig
 
-
-    @render.ui
-    @reactive.event(sky_view_src)
-    def esasky_card():
-        src = sky_view_src.get()
-        return cs.custom_card(
-            HTML(
-                '<iframe '
-                'height="100%" '
-                'width="100%" '
-                'style="overflow" '
-                f'src="{src}" '
-                'frameborder="0" allowfullscreen></iframe>',
-                #id=resolve_id(id),
-            ),
-            body_args=dict(class_='m-0 p-0', id='esasky'),
-            full_screen=True,
-            height='350px',
-        )
 
     @render_plotly
     def plotly_sed():
