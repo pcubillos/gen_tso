@@ -50,11 +50,11 @@ sed_dict = {
 }
 
 bands_dict = {
-    'J mag': '2mass,j',
-    'H mag': '2mass,h',
-    'Ks mag': '2mass,ks',
-    'Gaia mag': 'gaia,g',
-    'V mag': 'johnson,v',
+    '2mass,j': 'J mag',
+    '2mass,h': 'H mag',
+    '2mass,ks': 'Ks mag',
+    'gaia,g': 'Gaia mag',
+    'johnson,v': 'V mag',
 }
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
@@ -303,8 +303,8 @@ app_ui = ui.page_fluid(
                     ui.input_select(
                         id='magnitude_band',
                         label='',
-                        choices=list(bands_dict.keys()),
-                        selected='Ks mag',
+                        choices=bands_dict,
+                        selected='2mass,ks',
                     ),
                     ui.input_text(
                         id="magnitude",
@@ -826,7 +826,7 @@ def parse_sed(input, target_acq_mag=None):
     """Extract SED parameters"""
     if target_acq_mag is None:
         sed_type = input.sed_type()
-        norm_band = bands_dict[input.magnitude_band()]
+        norm_band = input.magnitude_band.get()
         norm_magnitude = float(input.magnitude())
     else:
         sed_type = 'phoenix'
@@ -852,9 +852,8 @@ def parse_sed(input, target_acq_mag=None):
         sed_type = 'k93models'
 
     # Make a label
-    for name,band in bands_dict.items():
-        if band == norm_band:
-            band_label = f'{norm_magnitude:.2f}_{name.split()[0]}'
+    band_name = bands_dict[norm_band].split()[0]
+    band_label = f'{norm_magnitude:.2f}_{band_name}'
     sed_label = f'{model_label}_{band_label}'
 
     return sed_type, sed_model, norm_band, norm_magnitude, sed_label
@@ -1212,13 +1211,16 @@ def server(input, output, session):
             cache_target[target]['t_eff'] = tso['t_eff']
             cache_target[target]['log_g'] = tso['log_g']
             cache_target[target]['t_dur'] = tso['transit_dur']
+            cache_target[target]['norm_band'] = tso['norm_band']
+            cache_target[target]['norm_mag'] = tso['norm_mag']
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
             ui.update_text('t_dur', value=tso['transit_dur'])
+            ui.update_select('magnitude_band', selected=tso['norm_band'])
+            ui.update_text('magnitude', value=tso['norm_mag'])
         # sed_model=sed_model,
         # norm_band=norm_band,
-        # norm_mag=norm_mag,
 
 
     @render.image
@@ -1612,15 +1614,19 @@ def server(input, output, session):
             t_eff  = cache_target[target.planet]['t_eff']
             log_g = cache_target[target.planet]['log_g']
             t_dur = cache_target[target.planet]['t_dur']
+            band = cache_target[target.planet]['norm_band']
+            magnitude = cache_target[target.planet]['norm_mag']
         else:
             t_eff = u.as_str(target.teff, '.1f', '')
             log_g = u.as_str(target.logg_star, '.2f', '')
             t_dur = u.as_str(target.transit_dur, '.3f', '')
+            band = '2mass,ks'
+            magnitude = f'{target.ks_mag:.3f}'
 
         ui.update_text('t_eff', value=t_eff)
         ui.update_text('log_g', value=log_g)
-        ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
+        ui.update_select('magnitude_band', selected=band)
+        ui.update_text('magnitude', value=magnitude)
         ui.update_text('t_dur', value=t_dur)
 
         delete_catalog = {
