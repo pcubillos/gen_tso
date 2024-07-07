@@ -295,10 +295,10 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_text("teff", "", value='1400.0'),
+                    ui.input_text("t_eff", "", value='1400.0'),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_text("logg", "", value='4.5'),
+                    ui.input_text("log_g", "", value='4.5'),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
@@ -813,11 +813,11 @@ def get_auto_sed(input):
         m_models, m_teff, m_logg = p_models, p_teff, p_logg
 
     try:
-        teff = float(input.teff.get())
-        logg = float(input.logg.get())
+        t_eff = float(input.t_eff.get())
+        log_g = float(input.log_g.get())
     except ValueError:
         return m_models, None
-    idx = jwst.find_closest_sed(m_teff, m_logg, teff, logg)
+    idx = jwst.find_closest_sed(m_teff, m_logg, t_eff, log_g)
     chosen_sed = m_models[idx]
     return m_models, chosen_sed
 
@@ -843,7 +843,7 @@ def parse_sed(input, target_acq_mag=None):
         sed_model = sed_dict[sed_type][sed]
         model_label = f'{sed_type}_{sed_model}'
     elif sed_type == 'blackbody':
-        sed_model = float(input.teff.get())
+        sed_model = float(input.t_eff.get())
         model_label = f'{sed_type}_{sed_model:.0f}K'
     elif sed_type == 'input':
         model_label = sed_model
@@ -973,8 +973,8 @@ def server(input, output, session):
 
         # Target setup:
         target_name = input.target.get()
-        teff = input.teff.get()
-        logg = input.logg.get()
+        t_eff = input.t_eff.get()
+        log_g = input.log_g.get()
         if target == 'acquisition':
             selected = acquisition_targets.cell_selection()['rows'][0]
             target_list = acq_target_list.get()
@@ -1053,8 +1053,8 @@ def server(input, output, session):
             label=tso_label,
             # The SED
             target=target_name,
-            teff=teff,
-            logg=logg,
+            t_eff=t_eff,
+            log_g=log_g,
             transit_dur=transit_dur,
             sed_type=sed_type,
             sed_model=sed_model,
@@ -1209,12 +1209,12 @@ def server(input, output, session):
         if target != current_target:
             if target not in cache_target:
                 cache_target[target] = {}
-            cache_target[target]['teff'] = tso['teff']
-            cache_target[target]['logg'] = tso['logg']
-            cache_target[target]['tdur'] = tso['transit_dur']
+            cache_target[target]['t_eff'] = tso['t_eff']
+            cache_target[target]['log_g'] = tso['log_g']
+            cache_target[target]['t_dur'] = tso['transit_dur']
         else:
-            ui.update_text('teff', value=tso['teff'])
-            ui.update_text('logg', value=tso['logg'])
+            ui.update_text('t_eff', value=tso['t_eff'])
+            ui.update_text('log_g', value=tso['log_g'])
             ui.update_text('t_dur', value=tso['transit_dur'])
         # sed_model=sed_model,
         # norm_band=norm_band,
@@ -1609,16 +1609,16 @@ def server(input, output, session):
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
         if target.planet in cache_target:
-            teff  = cache_target[target.planet]['teff']
-            log_g = cache_target[target.planet]['logg']
-            t_dur = cache_target[target.planet]['tdur']
+            t_eff  = cache_target[target.planet]['t_eff']
+            log_g = cache_target[target.planet]['log_g']
+            t_dur = cache_target[target.planet]['t_dur']
         else:
-            teff = u.as_str(target.teff, '.1f', '')
+            t_eff = u.as_str(target.teff, '.1f', '')
             log_g = u.as_str(target.logg_star, '.2f', '')
             t_dur = u.as_str(target.transit_dur, '.3f', '')
 
-        ui.update_text('teff', value=teff)
-        ui.update_text('logg', value=log_g)
+        ui.update_text('t_eff', value=t_eff)
+        ui.update_text('log_g', value=log_g)
         ui.update_select('magnitude_band', selected='Ks mag')
         ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
         ui.update_text('t_dur', value=t_dur)
@@ -1639,7 +1639,7 @@ def server(input, output, session):
 
 
     @render.ui
-    @reactive.event(input.sed_type, input.teff, input.logg)
+    @reactive.event(input.sed_type, input.t_eff, input.log_g)
     def choose_sed():
         sed_type = input.sed_type.get()
         if sed_type in ['phoenix', 'kurucz']:
@@ -1647,11 +1647,11 @@ def server(input, output, session):
             choices = list(m_models)
             selected = chosen_sed
         elif sed_type == 'blackbody':
-            if input.teff.get() == '':
-                teff = 0.0
+            if input.t_eff.get() == '':
+                t_eff = 0.0
             else:
-                teff = float(input.teff.get())
-            selected = f' Blackbody (Teff={teff:.0f} K)'
+                t_eff = float(input.t_eff.get())
+            selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
             choices = list(spectra['sed'])
@@ -1667,7 +1667,7 @@ def server(input, output, session):
     @render.ui
     @reactive.event(
         bookmarked_sed, input.sed,
-        input.teff, input.magnitude_band, input.magnitude,
+        input.t_eff, input.magnitude_band, input.magnitude,
     )
     def stellar_sed_label():
         """Check current SED is bookmarked"""
@@ -2326,12 +2326,12 @@ def server(input, output, session):
         ta_list = acq_target_list.get()
         if ta_list is None:
             return
-        names, G_mag, teff, log_g, ra, dec, separation = ta_list
+        names, G_mag, t_eff, log_g, ra, dec, separation = ta_list
         data_df = {
             'Gaia DR3 target': [name[9:] for name in names],
             'G_mag': [f'{mag:5.2f}' for mag in G_mag],
             'separation (")': [f'{sep:.3f}' for sep in separation],
-            'T_eff (K)': [f'{temp:.1f}' for temp in teff],
+            'T_eff (K)': [f'{temp:.1f}' for temp in t_eff],
             'log(g)': [f'{grav:.2f}' for grav in log_g],
             'RA (deg)': [f'{r:.4f}' for r in ra],
             'dec (deg)': [f'{d:.4f}' for d in dec],
@@ -2356,9 +2356,9 @@ def server(input, output, session):
             return
 
         idx = selected[0]
-        teff = target_list[2][idx]
+        t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        idx = jwst.find_closest_sed(p_teff, p_logg, teff, log_g)
+        idx = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
         chosen_sed = p_models[idx]
         ui.update_select('ta_sed', choices=list(p_models), selected=chosen_sed)
 
@@ -2419,13 +2419,13 @@ def server(input, output, session):
             )
             ui.notification_show(error_msg, type="warning", duration=5)
             return
-        names, G_mag, teff, log_g, ra, dec, separation = target_list
+        names, G_mag, t_eff, log_g, ra, dec, separation = target_list
         idx = selected[0]
         text = (
             f"acq_target = {repr(names[idx])}\n"
             f"gaia_mag = {G_mag[idx]}\n"
             f"separation = {separation[idx]}\n"
-            f"teff = {teff[idx]}\n"
+            f"t_eff = {t_eff[idx]}\n"
             f"log_g = {log_g[idx]}\n"
             f"ra = {ra[idx]}\n"
             f"dec = {dec[idx]}"
