@@ -482,7 +482,8 @@ app_ui = ui.page_fluid(
                     ui.input_select(
                         id="order",
                         label="Order",
-                        choices={},
+                        choices=['1'],
+                        selected='1',
                     ),
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
@@ -874,7 +875,7 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def is_consistent(inst, mode, disperser=None, filter=None):
+def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
     """
     Check that detector configuration settings are consistent
     between them.
@@ -882,12 +883,12 @@ def is_consistent(inst, mode, disperser=None, filter=None):
     detector = get_detector(inst, mode, detectors)
     if detector is None:
         return False
-    if disperser is not None:
-        if disperser not in detector.dispersers:
-            return False
-    if filter is not None:
-        if filter not in detector.filters:
-            return False
+    if disperser is not None and disperser not in detector.dispersers:
+        return False
+    if filter is not None and filter not in detector.filters:
+        return False
+    if subarray is not None and subarray not in detector.subarrays:
+        return False
     return True
 
 
@@ -930,7 +931,10 @@ def server(input, output, session):
         if mode == 'bots':
             disperser, filter = filter.split('/')
         if mode == 'soss':
-            order = [int(val) for val in order.split()]
+            if filter == 'f277w':
+                order = [1]
+            else:
+                order = [int(val) for val in order.split()]
         else:
             order = None
         if mode == 'mrs_ts':
@@ -1119,6 +1123,7 @@ def server(input, output, session):
             disperser = tso['disperser']
         subarray = tso['subarray']
         readout = tso['readout']
+        order = tso['order']
         ngroup = tso['ngroup']
 
         #print(
@@ -1151,6 +1156,10 @@ def server(input, output, session):
         ui.update_select('subarray', choices=choices, selected=subarray)
         choices = detector.get_constrained_val('readouts', disperser=disperser)
         ui.update_select('readout', choices=choices, selected=readout)
+        if mode == 'soss':
+            choices = detector.get_constrained_val('orders', subarray=subarray)
+            order = ' '.join([str(val) for val in order])
+            ui.update_select('order', choices=choices, selected=order)
         if ngroup != input.groups.get():
             if mode == 'target_acq':
                 ui.update_select('groups', selected=ngroup)
@@ -1891,15 +1900,19 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.subarray)
     def set_soss_orders():
-        if input.subarray.get() == 'substrip96':
-            orders = {'1': '1'}
-        else:
-            orders = {
-                '1': '1',
-                '2': '2',
-                '1 2': '1 and 2',
-            }
-        ui.update_select(id='order', choices=orders)
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        subarray = input.subarray.get()
+        if not is_consistent(inst, mode, subarray=subarray):
+            return
+        if mode != 'soss':
+            return
+        detector = get_detector(inst, mode, detectors)
+        choices = detector.get_constrained_val('orders', subarray=subarray)
+        order = input.order.get()
+        if order not in choices:
+            order = list(choices)[0]
+        ui.update_select(id='order', choices=choices, selected=order)
 
 
     @render.ui
