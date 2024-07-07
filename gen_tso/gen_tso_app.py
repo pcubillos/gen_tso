@@ -943,7 +943,7 @@ def server(input, output, session):
         subarray = input.subarray.get()
         readout = input.readout.get()
         order = input.order.get()
-        ngroup = int(input.groups.get())
+        ngroup = int(input.ngroup.get())
         nint = input.integrations.get()
         aperture = None
 
@@ -1184,11 +1184,11 @@ def server(input, output, session):
             choices = detector.get_constrained_val('orders', subarray=subarray)
             order = ' '.join([str(val) for val in order])
             ui.update_select('order', choices=choices, selected=order)
-        if ngroup != input.groups.get():
+        if ngroup != input.ngroup.get():
             if mode == 'target_acq':
-                ui.update_select('groups', selected=ngroup)
+                ui.update_select('ngroup', selected=ngroup)
             else:
-                ui.update_numeric('groups', value=ngroup)
+                ui.update_numeric('ngroup', value=ngroup)
 
     @render.image
     def tso_logo():
@@ -1970,14 +1970,14 @@ def server(input, output, session):
             choices = detector.get_constrained_val('groups', subarray=subarray)
 
             return ui.input_select(
-                id="groups",
+                id="ngroup",
                 label="",
                 choices=choices,
                 selected=value,
             )
         else:
             return ui.input_numeric(
-                id="groups",
+                id="ngroup",
                 label='',
                 value=value,
                 min=2, max=10000,
@@ -2004,7 +2004,7 @@ def server(input, output, session):
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
-            ngroup = int(input.groups.get())
+            ngroup = int(input.ngroup.get())
             aperture = input.disperser.get()
             disperser = None
         else:
@@ -2032,7 +2032,7 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(
         input.integs_switch, input.obs_dur, input.mode,
-        input.instrument, input.groups, input.readout, input.subarray,
+        input.instrument, input.ngroup, input.readout, input.subarray,
     )
     def _():
         """Switch to make the integrations match observation duration"""
@@ -2045,7 +2045,7 @@ def server(input, output, session):
 
         obs_dur = float(req(input.obs_dur).get())
         inst = input.instrument.get().lower()
-        ngroup = input.groups.get()
+        ngroup = input.ngroup.get()
         readout = input.readout.get()
         subarray = input.subarray.get()
         if ngroup is None:
@@ -2176,7 +2176,7 @@ def server(input, output, session):
         subarray = input.subarray.get()
         readout = input.readout.get()
         order = input.order.get()
-        ngroup = input.groups.get()
+        ngroup = input.ngroup.get()
         nint = input.integrations.get()
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 

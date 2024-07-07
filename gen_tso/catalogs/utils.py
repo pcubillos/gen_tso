@@ -96,7 +96,6 @@ def json_target(index, name, ra, dec, g_mag, teff, logg, separation):
     Create a json dictionary of a target (to be used on an overlayCatalog
     for ESASky).
     """
-    # G, teff, logg, sep
     data = [
         json_target_property('G mag', g_mag[index], '.2f'),
         json_target_property('T eff', teff[index], '.1f'),
