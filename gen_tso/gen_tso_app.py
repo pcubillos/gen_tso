@@ -935,9 +935,11 @@ def server(input, output, session):
     warning_text = reactive.Value('')
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
+    #selected_acq_target = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
     preset_ngroup = reactive.Value(None)
     preset_sed = reactive.Value(None)
+    preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
 
     def run_pandeia(input, target='science'):
@@ -1039,9 +1041,9 @@ def server(input, output, session):
                 bookmarked_spectra[obs_geometry].append(depth_label)
             depth_model = [wl, depth]
 
-            obs_dur = exp_time / 3600.0
+            observation_dur = exp_time / 3600.0
             tso = pando.tso_calculation(
-                obs_geometry, transit_dur, obs_dur, depth_model,
+                obs_geometry, transit_dur, observation_dur, depth_model,
                 ngroup, disperser, filter, subarray, readout, aperture, order,
             )
 
@@ -1066,11 +1068,12 @@ def server(input, output, session):
             t_eff=t_eff,
             log_g=log_g,
             transit_dur=transit_dur,
-            obs_dur=obs_dur,
             sed_type=sed_type,
             sed_model=sed_model,
             norm_band=norm_band,
             norm_mag=norm_mag,
+            obs_geometry=obs_geometry,
+            obs_dur=obs_dur,
             # The instrumental setting
             aperture=aperture,
             disperser=disperser,
@@ -1079,6 +1082,7 @@ def server(input, output, session):
             readout=readout,
             order=order,
             ngroup=ngroup,
+            nint=nint,
             # The outputs
             tso=tso,
         )
@@ -1209,7 +1213,10 @@ def server(input, output, session):
 
         # The target:
         current_target = input.target.get()
+        current_tdur = input.t_dur.get()
+
         target = tso['target']
+        t_dur = str(tso['transit_dur'])
         ui.update_selectize('target', selected=target)
         sed_type = tso['sed_type']
         if sed_type == 'k93models':
@@ -1220,13 +1227,13 @@ def server(input, output, session):
                 cache_target[target] = {}
             cache_target[target]['t_eff'] = tso['t_eff']
             cache_target[target]['log_g'] = tso['log_g']
-            cache_target[target]['t_dur'] = str(tso['transit_dur'])
+            cache_target[target]['t_dur'] = t_dur
             cache_target[target]['norm_band'] = tso['norm_band']
             cache_target[target]['norm_mag'] = str(tso['norm_mag'])
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
-            ui.update_text('t_dur', value=str(tso['transit_dur']))
+            ui.update_text('t_dur', value=t_dur)
             ui.update_select('magnitude_band', selected=tso['norm_band'])
             ui.update_text('magnitude', value=str(tso['norm_mag']))
 
@@ -1242,6 +1249,13 @@ def server(input, output, session):
                 choices = sed_dict[sed_type]
                 selected = tso['sed_model']
                 ui.update_select("sed", choices=choices, selected=selected)
+
+        # The observation
+        ui.update_select('geometry', selected=tso['obs_geometry'])
+        if t_dur != current_tdur:
+            preset_obs_dur.set(tso['obs_dur'])
+        else:
+            ui.update_text('obs_dur', value=tso['obs_dur']) 
 
 
     @render.image
@@ -1846,6 +1860,11 @@ def server(input, output, session):
     )
     def _():
         """Set observation time based on transit dur and popover settings"""
+        if preset_obs_dur.get() is not None:
+            obs_dur = preset_obs_dur.get()
+            preset_obs_dur.set(None)
+            ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
+            return
         t_dur = req(input.t_dur).get()
         if t_dur == '':
             ui.update_text('obs_dur', value='0.0')
@@ -1856,8 +1875,8 @@ def server(input, output, session):
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
         # Tdwell = T_start + T_settle + T14 + 2*max(1, T14/2)
-        t_total = 1.0 + settling + transit_dur + 2.0*baseline
-        ui.update_text('obs_dur', value=f'{t_total:.2f}')
+        obs_dur = 1.0 + settling + transit_dur + 2.0*baseline
+        ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
 
 
     @reactive.Effect
@@ -2310,6 +2329,11 @@ def server(input, output, session):
         query = cat.fetch_gaia_targets(
             target.ra, target.dec, max_separation=80.0,
         )
+        if query is None:
+            msg = "The astroquery request failed :("
+            ui.notification_show(msg, type="error", duration=5)
+            return
+
         acq_target_list.set(query)
         current_acq_science_target.set(name)
         success = "Nearby targets found!  Open the '*Acquisition targets*' tab"
@@ -2379,12 +2403,20 @@ def server(input, output, session):
             return
 
         idx = selected[0]
+        #target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        idx = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
-        chosen_sed = p_models[idx]
-        ui.update_select('ta_sed', choices=list(p_models), selected=chosen_sed)
-
+        i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
+        chosen_sed = p_models[i]
+        ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
+        #select_acq_target = {
+        #    'event': 'selectShape',
+        #    'content': {
+        #        'overlayName': 'Nearby Gaia sources',
+        #        'shapeName': target_name
+        #    }
+        #}
+        #esasky_command.set(select_acq_target)
 
     @reactive.effect
     @reactive.event(input.perform_ta_calculation)
@@ -2445,7 +2477,7 @@ def server(input, output, session):
         names, G_mag, t_eff, log_g, ra, dec, separation = target_list
         idx = selected[0]
         text = (
-            f"acq_target = {repr(names[idx])}\n"
+            f"\nacq_target = {repr(names[idx])}\n"
             f"gaia_mag = {G_mag[idx]}\n"
             f"separation = {separation[idx]}\n"
             f"t_eff = {t_eff[idx]}\n"
