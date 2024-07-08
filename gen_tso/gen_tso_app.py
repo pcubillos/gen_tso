@@ -42,8 +42,8 @@ is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
 k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
-phoenix_dict = {model:key for key,model in zip(p_keys, p_models)}
-kurucz_dict = {model:key for key,model in zip(k_keys, k_models)}
+phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
+kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
 sed_dict = {
     'phoenix': phoenix_dict,
     'kurucz': kurucz_dict,
@@ -328,8 +328,14 @@ app_ui = ui.page_fluid(
                         "blackbody",
                         "input",
                     ],
+                    selected='phoenix',
                 ),
-                ui.output_ui('choose_sed'),
+                ui.input_select(
+                    id="sed",
+                    label="",
+                    choices=sed_dict['phoenix'],
+                    selected='g0v',
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             # The planet
@@ -806,20 +812,25 @@ def get_throughput(input):
 
 
 def get_auto_sed(input):
+    """
+    Guess the model closest to the available options given a T_eff
+    and log_g pair.
+    """
     sed_type = input.sed_type()
+    sed_models = sed_dict[sed_type]
     if sed_type == 'kurucz':
-        m_models, m_teff, m_logg = k_models, k_teff, k_logg
+        m_teff, m_logg = k_teff, k_logg
     elif sed_type == 'phoenix':
-        m_models, m_teff, m_logg = p_models, p_teff, p_logg
+        m_teff, m_logg = p_teff, p_logg
 
     try:
         t_eff = float(input.t_eff.get())
         log_g = float(input.log_g.get())
     except ValueError:
-        return m_models, None
+        return sed_models, None
     idx = jwst.find_closest_sed(m_teff, m_logg, t_eff, log_g)
-    chosen_sed = m_models[idx]
-    return m_models, chosen_sed
+    chosen_sed = list(sed_models)[idx]
+    return sed_models, chosen_sed
 
 
 def parse_sed(input, target_acq_mag=None):
@@ -835,16 +846,15 @@ def parse_sed(input, target_acq_mag=None):
 
     if sed_type in ['phoenix', 'kurucz']:
         if target_acq_mag is None:
-            sed = input.sed.get()
+            sed_model = input.sed.get()
         else:
-            sed = input.ta_sed.get()
-        if sed not in sed_dict[sed_type]:
+            sed_model = input.ta_sed.get()
+        if sed_model not in sed_dict[sed_type]:
             return None, None, None, None, None
-        sed_model = sed_dict[sed_type][sed]
         model_label = f'{sed_type}_{sed_model}'
     elif sed_type == 'blackbody':
         sed_model = float(input.t_eff.get())
-        model_label = f'{sed_type}_{sed_model:.0f}K'
+        model_label = f'bb_{sed_model:.0f}K'
     elif sed_type == 'input':
         model_label = sed_model
 
@@ -927,6 +937,7 @@ def server(input, output, session):
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
     preset_ngroup = reactive.Value(None)
+    preset_sed = reactive.Value(None)
     esasky_command = reactive.Value(None)
 
     def run_pandeia(input, target='science'):
@@ -1218,7 +1229,19 @@ def server(input, output, session):
             ui.update_text('t_dur', value=str(tso['transit_dur']))
             ui.update_select('magnitude_band', selected=tso['norm_band'])
             ui.update_text('magnitude', value=str(tso['norm_mag']))
-        # sed_model=sed_model,
+
+        reset_sed = (
+            sed_type != input.sed_type.get() or
+            tso['t_eff']!=input.t_eff.get() or
+            tso['log_g'] != input.log_g.get()
+        )
+        if sed_type in ['kurucz', 'phoenix']:
+            if reset_sed:
+                preset_sed.set(tso['sed_model'])
+            else:
+                choices = sed_dict[sed_type]
+                selected = tso['sed_model']
+                ui.update_select("sed", choices=choices, selected=selected)
 
 
     @render.image
@@ -1642,14 +1665,15 @@ def server(input, output, session):
         esasky_command.set([delete_catalog, delete_footprint, goto])
 
 
-    @render.ui
+    @reactive.Effect
     @reactive.event(input.sed_type, input.t_eff, input.log_g)
     def choose_sed():
         sed_type = input.sed_type.get()
         if sed_type in ['phoenix', 'kurucz']:
-            m_models, chosen_sed = get_auto_sed(input)
-            choices = list(m_models)
-            selected = chosen_sed
+            choices, selected = get_auto_sed(input)
+            if preset_sed.get() is not None:
+                selected = preset_sed.get()
+                preset_sed.set(None)
         elif sed_type == 'blackbody':
             if input.t_eff.get() == '':
                 t_eff = 0.0
@@ -1661,12 +1685,7 @@ def server(input, output, session):
             choices = list(spectra['sed'])
             selected = None
 
-        return ui.input_select(
-            id="sed",
-            label="",
-            choices=choices,
-            selected=selected,
-        )
+        ui.update_select("sed", choices=choices, selected=selected)
 
     @render.ui
     @reactive.event(
