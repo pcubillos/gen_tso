@@ -827,7 +827,7 @@ def parse_sed(input, target_acq_mag=None):
     if target_acq_mag is None:
         sed_type = input.sed_type()
         norm_band = input.magnitude_band.get()
-        norm_magnitude = float(input.magnitude())
+        norm_magnitude = float(input.magnitude.get())
     else:
         sed_type = 'phoenix'
         norm_band = 'gaia,g'
@@ -974,14 +974,14 @@ def server(input, output, session):
         target_name = input.target.get()
         t_eff = input.t_eff.get()
         log_g = input.log_g.get()
+        obs_geometry = input.geometry.get()
+        transit_dur = float(input.t_dur.get())
+        obs_dur = float(input.obs_dur.get())
         if target == 'acquisition':
             selected = acquisition_targets.cell_selection()['rows'][0]
             target_list = acq_target_list.get()
             target_acq_mag = np.round(target_list[1][selected], 3)
         elif target == 'science':
-            obs_geometry = input.geometry.get()
-            transit_dur = float(input.t_dur.get())
-            obs_dur = float(input.obs_dur.get())
             exp_time = jwst.exposure_time(
                 inst, subarray, readout, ngroup, nint,
             )
@@ -1055,6 +1055,7 @@ def server(input, output, session):
             t_eff=t_eff,
             log_g=log_g,
             transit_dur=transit_dur,
+            obs_dur=obs_dur,
             sed_type=sed_type,
             sed_model=sed_model,
             norm_band=norm_band,
@@ -1072,8 +1073,6 @@ def server(input, output, session):
         )
         if run_is_tso:
             # The planet
-            tso_run['t_dur'] = transit_dur
-            tso_run['obs_dur'] = obs_dur
             tso_run['depth_model_name'] = depth_label
             tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
@@ -1210,17 +1209,16 @@ def server(input, output, session):
                 cache_target[target] = {}
             cache_target[target]['t_eff'] = tso['t_eff']
             cache_target[target]['log_g'] = tso['log_g']
-            cache_target[target]['t_dur'] = tso['transit_dur']
+            cache_target[target]['t_dur'] = str(tso['transit_dur'])
             cache_target[target]['norm_band'] = tso['norm_band']
-            cache_target[target]['norm_mag'] = tso['norm_mag']
+            cache_target[target]['norm_mag'] = str(tso['norm_mag'])
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
-            ui.update_text('t_dur', value=tso['transit_dur'])
+            ui.update_text('t_dur', value=str(tso['transit_dur']))
             ui.update_select('magnitude_band', selected=tso['norm_band'])
-            ui.update_text('magnitude', value=tso['norm_mag'])
+            ui.update_text('magnitude', value=str(tso['norm_mag']))
         # sed_model=sed_model,
-        # norm_band=norm_band,
 
 
     @render.image
