@@ -385,7 +385,7 @@ app_ui = ui.page_fluid(
                     # Row 1
                     ui.p("Type:"),
                     ui.input_select(
-                        id='geometry',
+                        id='obs_geometry',
                         label='',
                         choices={
                             'transit': 'Transit',
@@ -876,7 +876,7 @@ def parse_depth_model(input):
     """
     model_type = input.planet_model_type.get()
     depth_label = planet_model_name(input)
-    obs_geometry = input.geometry.get()
+    obs_geometry = input.obs_geometry.get()
 
     if model_type == 'Input':
         if depth_label is None:
@@ -935,7 +935,7 @@ def server(input, output, session):
     warning_text = reactive.Value('')
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
-    #selected_acq_target = reactive.Value(None)
+    selected_acq_target = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
     preset_ngroup = reactive.Value(None)
     preset_sed = reactive.Value(None)
@@ -987,7 +987,7 @@ def server(input, output, session):
         target_name = input.target.get()
         t_eff = input.t_eff.get()
         log_g = input.log_g.get()
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get()
         transit_dur = float(input.t_dur.get())
         obs_dur = float(input.obs_dur.get())
         if target == 'acquisition':
@@ -1251,11 +1251,11 @@ def server(input, output, session):
                 ui.update_select("sed", choices=choices, selected=selected)
 
         # The observation
-        ui.update_select('geometry', selected=tso['obs_geometry'])
+        ui.update_select('obs_geometry', selected=tso['obs_geometry'])
         if t_dur != current_tdur:
             preset_obs_dur.set(tso['obs_dur'])
         else:
-            ui.update_text('obs_dur', value=tso['obs_dur']) 
+            ui.update_text('obs_dur', value=tso['obs_dur'])
 
 
     @render.image
@@ -1751,12 +1751,12 @@ def server(input, output, session):
 
     @render.ui
     @reactive.event(
-        bookmarked_depth, input.geometry, input.planet_model_type,
+        bookmarked_depth, input.obs_geometry, input.planet_model_type,
         input.depth, input.transit_depth, input.eclipse_depth, input.tplanet,
     )
     def depth_label_text():
         """Set depth model label"""
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
 
         is_bookmarked = depth_label in bookmarked_spectra[obs_geometry]
@@ -1782,7 +1782,7 @@ def server(input, output, session):
     @reactive.event(input.bookmark_depth)
     def _():
         """Toggle bookmarked depth model"""
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
         if depth_label is None:
             ui.notification_show(
@@ -1804,9 +1804,9 @@ def server(input, output, session):
 
 
     @reactive.effect
-    @reactive.event(input.geometry, update_depth_flag)
+    @reactive.event(input.obs_geometry, update_depth_flag)
     def _():
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get()
 
         selected = input.planet_model_type.get()
         if obs_geometry == 'transit':
@@ -1833,15 +1833,15 @@ def server(input, output, session):
 
 
     @render.text
-    @reactive.event(input.geometry)
+    @reactive.event(input.obs_geometry)
     def transit_dur_label():
-        obs_geometry = input.geometry.get().capitalize()
+        obs_geometry = input.obs_geometry.get().capitalize()
         return f"{obs_geometry[0]}_dur (h):"
 
     @render.text
-    @reactive.event(input.geometry)
+    @reactive.event(input.obs_geometry)
     def transit_depth_label():
-        obs_geometry = input.geometry.get().capitalize()
+        obs_geometry = input.obs_geometry.get().capitalize()
         return f"{obs_geometry} depth"
 
     @render.ui
@@ -1932,7 +1932,7 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.upload_depth)
     def _():
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get()
         m = ui.modal(
             ui.input_file(
                 id="upload_file",
@@ -1986,7 +1986,7 @@ def server(input, output, session):
             label = label[0:-4]
 
         if units in depth_units:
-            obs_geometry = input.geometry.get()
+            obs_geometry = input.obs_geometry.get()
             # TBD: convert depth units
             spectra[obs_geometry][label] = {'wl': wl, 'depth': depth}
             user_spectra[obs_geometry].append(label)
@@ -2185,7 +2185,7 @@ def server(input, output, session):
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get()
         model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
         if nmodels == 0:
@@ -2403,20 +2403,21 @@ def server(input, output, session):
             return
 
         idx = selected[0]
-        #target_name = target_list[0][idx]
+        target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
         i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
         chosen_sed = p_models[i]
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
-        #select_acq_target = {
-        #    'event': 'selectShape',
-        #    'content': {
-        #        'overlayName': 'Nearby Gaia sources',
-        #        'shapeName': target_name
-        #    }
-        #}
-        #esasky_command.set(select_acq_target)
+        # TBD:  unselect previous
+        select_acq_target = {
+            'event': 'selectShape',
+            'content': {
+                'overlayName': 'Nearby Gaia sources',
+                'shapeName': target_name
+            }
+        }
+        esasky_command.set(select_acq_target)
 
     @reactive.effect
     @reactive.event(input.perform_ta_calculation)
