@@ -77,6 +77,10 @@ for inst in instruments:
     modes[inst] = choices
 
 
+depth_choices = {
+    'transit': ['Flat', 'Input'],
+    'eclipse': ['Blackbody', 'Input']
+}
 
 tso_runs = {
     'Transit': {},
@@ -766,6 +770,21 @@ app_ui = ui.page_fluid(
 )
 
 
+def parse_obs(input):
+    planet_model_type = input.planet_model_type.get()
+    depth_model = None
+    rprs_sq = None
+    teq_planet = None
+    if planet_model_type == 'Input':
+        depth_model = input.depth.get()
+    elif planet_model_type == 'Flat':
+        rprs_sq = input.transit_depth.get()
+    elif planet_model_type == 'Blackbody':
+        rprs_sq = input.eclipse_depth.get()
+        teq_planet = input.tplanet.get()
+    return planet_model_type, depth_model, rprs_sq, teq_planet
+
+
 def planet_model_name(input):
     """
     Get the planet model name based on the transit/eclipse depth values.
@@ -775,13 +794,13 @@ def planet_model_name(input):
     depth_label: String
         A string representation of the depth model.
     """
-    model_type = input.planet_model_type.get()
-    if model_type == 'Input':
+    planet_model_type = input.planet_model_type.get()
+    if planet_model_type == 'Input':
         return input.depth.get()
-    elif model_type == 'Flat':
+    elif planet_model_type == 'Flat':
         transit_depth = input.transit_depth.get()
         return f'Flat transit ({transit_depth:.3f}%)'
-    elif model_type == 'Blackbody':
+    elif planet_model_type == 'Blackbody':
         eclipse_depth = input.eclipse_depth.get()
         t_planet = input.tplanet.get()
         return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
@@ -990,6 +1009,8 @@ def server(input, output, session):
         obs_geometry = input.obs_geometry.get()
         transit_dur = float(input.t_dur.get())
         obs_dur = float(input.obs_dur.get())
+        planet_model_type, depth_model, rprs_sq, teq_planet = parse_obs(input)
+
         if target == 'acquisition':
             selected = acquisition_targets.cell_selection()['rows'][0]
             target_list = acq_target_list.get()
@@ -1074,6 +1095,10 @@ def server(input, output, session):
             norm_mag=norm_mag,
             obs_geometry=obs_geometry,
             obs_dur=obs_dur,
+            planet_model_type=planet_model_type,
+            depth_model=depth_model,
+            rprs_sq=rprs_sq,
+            teq_planet=teq_planet,
             # The instrumental setting
             aperture=aperture,
             disperser=disperser,
@@ -1171,11 +1196,6 @@ def server(input, output, session):
         order = tso['order']
         ngroup = tso['ngroup']
 
-        #print(
-        #    '> Goal:    ', instrument, mode, disperser, filter,
-        #    subarray, readout,
-        #)
-
         # Schedule preset values for invalidation:
         if mode != input.mode.get() or subarray != input.subarray.get():
             preset_ngroup.set(
@@ -1217,6 +1237,7 @@ def server(input, output, session):
 
         target = tso['target']
         t_dur = str(tso['transit_dur'])
+        planet_model_type = tso['planet_model_type']
         ui.update_selectize('target', selected=target)
         sed_type = tso['sed_type']
         if sed_type == 'k93models':
@@ -1230,6 +1251,9 @@ def server(input, output, session):
             cache_target[target]['t_dur'] = t_dur
             cache_target[target]['norm_band'] = tso['norm_band']
             cache_target[target]['norm_mag'] = str(tso['norm_mag'])
+            cache_target[target]['depth_model'] = tso['depth_model']
+            cache_target[target]['rprs_sq'] = tso['rprs_sq']
+            cache_target[target]['teq_planet'] = tso['teq_planet']
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
@@ -1251,11 +1275,26 @@ def server(input, output, session):
                 ui.update_select("sed", choices=choices, selected=selected)
 
         # The observation
-        ui.update_select('obs_geometry', selected=tso['obs_geometry'])
+        obs_geometry = tso['obs_geometry']
+        ui.update_select('obs_geometry', selected=obs_geometry)
         if t_dur != current_tdur:
             preset_obs_dur.set(tso['obs_dur'])
         else:
             ui.update_text('obs_dur', value=tso['obs_dur'])
+
+        choices = depth_choices[obs_geometry]
+        ui.update_select(
+            "planet_model_type", choices=choices, selected=planet_model_type,
+        )
+        if planet_model_type == 'Input':
+            choices = user_spectra[obs_geometry]
+            selected = tso['depth_model']
+            ui.update_select("depth", choices=choices, selected=selected)
+        elif planet_model_type == 'Flat':
+            ui.update_numeric("transit_depth", value=tso['rprs_sq'])
+        elif planet_model_type == 'Blackbody':
+            ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
+            ui.update_numeric("tplanet", value=tso['teq_planet'])
 
 
     @render.image
@@ -1807,23 +1846,30 @@ def server(input, output, session):
     @reactive.event(input.obs_geometry, update_depth_flag)
     def _():
         obs_geometry = input.obs_geometry.get()
-
-        selected = input.planet_model_type.get()
-        if obs_geometry == 'transit':
-            choices = ['Flat', 'Input']
-        elif obs_geometry == 'eclipse':
-            choices = ['Blackbody', 'Input']
-        if selected not in choices:
-            selected = choices[0]
+        choices = depth_choices[obs_geometry]
+        model_type = input.planet_model_type.get()
+        if model_type not in choices:
+            model_type = choices[0]
         ui.update_select(
-            id="planet_model_type",
-            choices=choices,
-            selected=selected,
+            "planet_model_type", choices=choices, selected=model_type,
         )
 
-        ui.update_select(id="depth", choices=user_spectra[obs_geometry])
+        spectra = user_spectra[obs_geometry]
+        name = input.target.get()
+        cached = (
+            name in cache_target and
+            cache_target[name]['depth_model'] is not None
+        )
+        selected = input.depth.get()
+        if cached:
+            selected = cache_target[name]['depth_model']
+            cache_target[name]['depth_model'] = None
+        elif selected not in spectra:
+            selected = None if len(spectra) == 0 else spectra[0]
+        #print(f'Updating input [cached={cached}]: {repr(selected)}')
+        ui.update_select("depth", choices=spectra, selected=selected)
 
-        if len(user_spectra[obs_geometry]) > 0:
+        if len(spectra) > 0:
             tooltip_text = ''
         elif obs_geometry == 'transit':
             tooltip_text = f'Upload a {obs_geometry} depth spectrum'
@@ -1884,20 +1930,29 @@ def server(input, output, session):
     def _():
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
-        if target is None:
-            rprs_square = 0.0
-            teq_planet = 1000.0
+        planet_model_type = input.planet_model_type.get()
+
+        if name in cache_target and cache_target[name]['rprs_sq'] is not None:
+            rprs_square_percent = cache_target[name]['rprs_sq']
+            teq_planet = cache_target[name]['teq_planet']
+            cache_target[name]['rprs_sq'] = None
+            cache_target[name]['teq_planet'] = None
         else:
+            if target is None:
+                return
             teq_planet = np.round(target.eq_temp, decimals=1)
             if np.isnan(teq_planet):
                 teq_planet = 0.0
             rprs_square = target.rprs**2.0
             if np.isnan(rprs_square):
                 rprs_square = 0.0
-        rprs_square_percent = np.round(100*rprs_square, decimals=4)
-        ui.update_numeric(id="transit_depth", value=rprs_square_percent)
-        ui.update_numeric(id="eclipse_depth", value=rprs_square_percent)
-        ui.update_numeric(id='tplanet', value=teq_planet)
+            rprs_square_percent = np.round(100*rprs_square, decimals=4)
+
+        if rprs_square_percent is not None:
+            ui.update_numeric("transit_depth", value=rprs_square_percent)
+            ui.update_numeric("eclipse_depth", value=rprs_square_percent)
+        if teq_planet is not None:
+            ui.update_numeric('tplanet', value=teq_planet)
 
 
     @reactive.effect
@@ -1969,7 +2024,6 @@ def server(input, output, session):
     def _():
         new_model = input.upload_file.get()
         if not new_model:
-            print('No new model!')
             return
 
         # The units tell this function SED or depth spectrum:
@@ -2318,6 +2372,22 @@ def server(input, output, session):
         return text
 
 
+    @reactive.effect
+    @reactive.event(esasky_command)
+    async def _():
+        commands = esasky_command.get()
+        if commands is None:
+            return
+        if not isinstance(commands, list):
+            commands = [commands]
+        for command in commands:
+            command = json.dumps(command)
+            await session.send_custom_message(
+                "update_esasky",
+                {"command": command},
+            )
+
+
     @reactive.Effect
     @reactive.event(input.search_gaia_ta)
     def _():
@@ -2342,22 +2412,6 @@ def server(input, output, session):
         circle = u.esasky_js_circle(target.ra, target.dec, radius=80.0)
         ta_catalog = u.esasky_js_catalog(query)
         esasky_command.set([ta_catalog, circle])
-
-
-    @reactive.effect
-    @reactive.event(esasky_command)
-    async def _():
-        commands = esasky_command.get()
-        if commands is None:
-            return
-        if not isinstance(commands, list):
-            commands = [commands]
-        for command in commands:
-            command = json.dumps(command)
-            await session.send_custom_message(
-                "update_esasky",
-                {"command": command},
-            )
 
 
     @render.data_frame
