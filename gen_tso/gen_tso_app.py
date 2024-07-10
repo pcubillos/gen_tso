@@ -2422,11 +2422,11 @@ def server(input, output, session):
         # Change of input.target was the trigger:
         if current_name != name:
             ui.update_select('ta_sed', choices=[])
-            return
+            return render.DataGrid(pd.DataFrame([]))
 
         ta_list = acq_target_list.get()
         if ta_list is None:
-            return
+            return render.DataGrid(pd.DataFrame([]))
         names, G_mag, t_eff, log_g, ra, dec, separation = ta_list
         data_df = {
             'Gaia DR3 target': [name[9:] for name in names],
@@ -2446,24 +2446,21 @@ def server(input, output, session):
         )
 
     @reactive.effect
-    def rows():
+    def select_ta_row():
         target_list = acq_target_list.get()
-        if target_list is None:
-            ui.update_select('ta_sed', choices=[])
-            return
-        selected = acquisition_targets.cell_selection()['rows']
-        if len(selected) == 0:
+        df = acquisition_targets.cell_selection()
+        if target_list is None or df is None or len(df['rows'])==0:
             ui.update_select('ta_sed', choices=[])
             return
 
-        idx = selected[0]
+        idx = df['rows'][0]
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
         i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
-        chosen_sed = p_models[i]
+        chosen_sed = p_keys[i]
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
-        # TBD:  unselect previous
+        deselect_targets = {'event': 'deselectAllShapes'}
         select_acq_target = {
             'event': 'selectShape',
             'content': {
@@ -2471,7 +2468,7 @@ def server(input, output, session):
                 'shapeName': target_name
             }
         }
-        esasky_command.set(select_acq_target)
+        esasky_command.set([deselect_targets, select_acq_target])
 
     @reactive.effect
     @reactive.event(input.perform_ta_calculation)
