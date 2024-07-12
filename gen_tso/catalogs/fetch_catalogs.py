@@ -184,7 +184,7 @@ def curate_aliases():
         tess_aliases = pickle.load(handle)
     aliases.update(tess_aliases)
 
-    jwst_names = list(load_trexolists())
+    jwst_names = list(load_trexolists()['target'])
     # Ensure to match against NEA host names for jwst targets
     for host,system in aliases.items():
         is_in = np.in1d(system['host_aliases'], jwst_names)
@@ -545,8 +545,12 @@ def fetch_aliases(hosts, output_file=None):
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
     # Keep track of trexolists aliases to cross-check:
-    jwst_names = load_trexolists()
-    jwst_aliases = load_trexolists(grouped=True)
+    trexo_data = load_trexolists(grouped=True)
+    jwst_aliases = [
+        list(np.unique(jwst_target['target']))
+        for jwst_target in trexo_data
+    ]
+    jwst_names = np.unique(np.concatenate(jwst_aliases))
 
     aliases = {}
     nhosts = len(hosts)
@@ -942,6 +946,12 @@ def fetch_gaia_targets(ra_source, dec_source, max_separation=80.0):
          CIRCLE({ra_source}, {dec_source}, {max_sep_degrees}))=1;""",
             dump_to_file=False,
         )
+    except requests.exceptions.HTTPError:
+        print(
+            'Gaia astroquery request failed raising a '
+            'requests.exceptions.HTTPError'
+        )
+        return None
     #except SSLCertVerificationError as e:
     except Exception as e:
         print(

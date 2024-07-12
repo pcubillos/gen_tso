@@ -1631,7 +1631,8 @@ def server(input, output, session):
         )
 
         if target.is_jwst:
-            ra, dec = target.trexo_ra_dec
+            ra = target.trexo_data['truncated_ra']
+            dec = target.trexo_data['truncated_dec']
             url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
                 ui.tags.a(
