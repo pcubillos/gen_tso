@@ -169,15 +169,27 @@ layout_kwargs = dict(
     class_="pb-2 pt-0 m-0",
 )
 
+
 app_ui = ui.page_fluid(
     #ui.markdown("""
     #    This app is based on [shiny][0].
     #    [0]: https://shiny.posit.co/py/api/core
     #    """),
     ui.layout_columns(
-        ui.markdown(
-            "## **Gen TSO**: A general exoplanet ETC for JWST "
-            "time-series observations",
+        ui.span(
+            ui.HTML("<b>Gen TSO</b>: A general exoplanet ETC for JWST "
+            "time-series observations ("),
+            ui.tooltip(
+                ui.tags.a(
+                    fa.icon_svg("book", fill='black'),
+                    href='https://pcubillos.github.io/gen_tso',
+                    target="_blank",
+                ),
+                "documentation",
+                placement='bottom',
+            ),
+            ')',
+            style="font-size: 28px;",
         ),
         ui.output_image("tso_logo", height='50px', inline=True),
         col_widths=(11,1),
@@ -767,6 +779,7 @@ app_ui = ui.page_fluid(
         ),
         col_widths=[3, 3, 6],
     ),
+    title='Gen TSO',
 )
 
 
