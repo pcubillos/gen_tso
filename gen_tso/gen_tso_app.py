@@ -384,7 +384,7 @@ app_ui = ui.page_fluid(
                     placement="right",
                     id="obs_popover",
                 ),
-                "Observation",
+                ui.markdown("Observation"),
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("Type:"),
@@ -452,7 +452,7 @@ app_ui = ui.page_fluid(
                         ),
                         ui.p("Temp (K):"),
                         ui.input_numeric(
-                            id="tplanet",
+                            id="teq_planet",
                             label="",
                             value=2000.0,
                             step=100,
@@ -749,12 +749,12 @@ app_ui = ui.page_fluid(
                 ui.nav_panel(
                     "Results",
                     ui.span(
-                        ui.output_ui(id="exp_time"),
+                        ui.output_ui(id="results"),
                         style="font-family: monospace; font-size:medium;",
                     ),
                 ),
                 ui.nav_panel(
-                    ui.output_ui('warnings_label'),
+                    ui.output_ui(id='warnings_label'),
                     ui.output_text_verbatim(id="warnings"),
                 ),
                 ui.nav_panel(
@@ -781,7 +781,7 @@ def parse_obs(input):
         rprs_sq = input.transit_depth.get()
     elif planet_model_type == 'Blackbody':
         rprs_sq = input.eclipse_depth.get()
-        teq_planet = input.tplanet.get()
+        teq_planet = input.teq_planet.get()
     return planet_model_type, depth_model, rprs_sq, teq_planet
 
 
@@ -802,7 +802,7 @@ def planet_model_name(input):
         return f'Flat transit ({transit_depth:.3f}%)'
     elif planet_model_type == 'Blackbody':
         eclipse_depth = input.eclipse_depth.get()
-        t_planet = input.tplanet.get()
+        t_planet = input.teq_planet.get()
         return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 
@@ -910,7 +910,7 @@ def parse_depth_model(input):
         depth = np.tile(transit_depth, nwave)
     elif model_type == 'Blackbody':
         transit_depth = input.eclipse_depth.get() * 0.01
-        t_planet = input.tplanet.get()
+        t_planet = input.teq_planet.get()
         # Un-normalized planet and star SEDs
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
@@ -1294,7 +1294,7 @@ def server(input, output, session):
             ui.update_numeric("transit_depth", value=tso['rprs_sq'])
         elif planet_model_type == 'Blackbody':
             ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
-            ui.update_numeric("tplanet", value=tso['teq_planet'])
+            ui.update_numeric("teq_planet", value=tso['teq_planet'])
 
 
     @render.image
@@ -1791,7 +1791,7 @@ def server(input, output, session):
     @render.ui
     @reactive.event(
         bookmarked_depth, input.obs_geometry, input.planet_model_type,
-        input.depth, input.transit_depth, input.eclipse_depth, input.tplanet,
+        input.depth, input.transit_depth, input.eclipse_depth, input.teq_planet,
     )
     def depth_label_text():
         """Set depth model label"""
@@ -1952,7 +1952,7 @@ def server(input, output, session):
             ui.update_numeric("transit_depth", value=rprs_square_percent)
             ui.update_numeric("eclipse_depth", value=rprs_square_percent)
         if teq_planet is not None:
-            ui.update_numeric('tplanet', value=teq_planet)
+            ui.update_numeric('teq_planet', value=teq_planet)
 
 
     @reactive.effect
@@ -2150,7 +2150,7 @@ def server(input, output, session):
             brightest_pixel_rate=pixel_rate,
             full_well=full_well,
         )
-        # This reactive variable enforces a re-rendering of exp_time
+        # This reactive variable enforces a re-rendering of results
         saturation_label.set(sat_label)
 
 
@@ -2291,8 +2291,8 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
     @render.ui
-    def exp_time():
-        saturation_label.get()  # enforce calc_saturation renders exp_time
+    def results():
+        saturation_label.get()  # enforce calc_saturation renders results
         inst = input.instrument.get().lower()
         mode = input.mode.get()
         detector = get_detector(inst, mode, detectors)
@@ -2323,6 +2323,7 @@ def server(input, output, session):
             inst, subarray, readout, ngroup, nint,
         )
 
+        # TBD: detect TA runs
         sat_label = make_saturation_label(
             mode, disperser, filter, subarray, order, sed_label,
         )
