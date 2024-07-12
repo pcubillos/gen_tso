@@ -9,6 +9,7 @@ __all__ = [
     'load_aliases',
 ]
 
+from datetime import datetime
 from astropy.io import ascii
 import numpy as np
 import prompt_toolkit as ptk
@@ -78,20 +79,19 @@ class Catalog():
         self.targets = nea_targets + tess_targets
 
         # JWST targets
-        jwst_hosts, trexo_ra, trexo_dec = load_trexolists(extract='coords')
-        njwst = len(jwst_hosts)
+        trexo_data = load_trexolists(grouped=True)
+        njwst = len(trexo_data)
         host_aliases = load_aliases(as_hosts=True)
-        #hosts = [target.host for target in self.targets]
-        #hosts_aka = u.invert_aliases(host_aliases)
-        for i in range(njwst):
-            if jwst_hosts[i] in host_aliases:
-                jwst_hosts[i] = host_aliases[jwst_hosts[i]]
-            # if host NEA name != planet NEA name
-            #if jwst_hosts[i] not in hosts:
-            #    print(jwst_hosts[i])
-            #    for host in hosts_aka[jwst_hosts[i]]:
-            #        if host in self.hosts:
-            #            jwst_hosts[i] = host
+
+        jwst_hosts = []
+        for jwst_target in trexo_data:
+            hosts = np.unique([
+                host_aliases[host] if host in host_aliases else host
+                for host in jwst_target['target']
+            ])
+            jwst_target['nea_hosts'] = hosts
+            jwst_hosts += list(hosts)
+        jwst_hosts = np.unique(jwst_hosts)
 
         planet_aliases = load_aliases()
         planets_aka = u.invert_aliases(planet_aliases)
@@ -99,8 +99,10 @@ class Catalog():
         for target in self.targets:
             target.is_jwst = target.host in jwst_hosts and target.is_transiting
             if target.is_jwst:
-                j = list(jwst_hosts).index(target.host)
-                target.trexo_ra_dec = (trexo_ra[j], trexo_dec[j])
+                for j in range(njwst):
+                    if target.host in trexo_data[j]['nea_hosts']:
+                        break
+                target.trexo_data = trexo_data[j]
 
             if target.planet in planets_aka:
                 target.aliases = planets_aka[target.planet]
@@ -221,25 +223,56 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
     return targets
 
 
-def load_trexolists(grouped=False, trexo_file=None, extract='target'):
+def load_trexolists(grouped=False, trexo_file=None):
     """
-    Get the target names from the trexolists.csv file.
+    Get the data from the trexolists.csv file.
+    Note that trexolists know targets by their host star, not by
+    individual planets in a given system.
 
     Parameters
     ----------
     grouped: Bool
-        If False, return a 1D list of names.
-        If True, return a nested list of lists, with each item the
-        set of names for a same object.
-    trexo_list: String
+        - If False, return the a dictionary where each item contains
+          a 1D list for each individual program.
+        - If True, return list for each individual host, where each entry
+          contains a dictionary of 1D lists of all programs for the target.
+    trexo_file: String
         If None, extract data from default Gen TSO location.
         Otherwise, a path to a trexolists.csv file.
-    extract: String
-        If 'target' extract only the target names.
-        If 'coords' extract the RA and dec in addition to the target names.
-        Note that these coordinates are intentionally truncated so
-        that a same object has a unique RA,dec (and thus can be used
-        to identify the same target with the trexolists filters).
+
+    >>> import gen_tso.catalogs as cat
+
+    >>> # Get data as lists of individual programs:
+    >>> trexo = cat.load_trexolists()
+    >>> print(trexo['target'])
+    ['L 168-9' 'HAT-P-14' 'WASP-80' 'WASP-80' 'WASP-69' 'GJ 436' ...]
+
+    >>> print(list(trexo))
+    ['target', 'trexo_name', 'program', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
+
+    >>> # Get data as lists of (host) targets:
+    >>> trexo = cat.load_trexolists(grouped=True)
+    >>> trexo[19]
+    {'target': array(['WASP-43', 'WASP-43'], dtype='<U23'),
+    'trexo_name': array(['WASP-43', 'WASP-43'], dtype='<U23'),
+    'program': array(['GTO 1224 Birkmann', 'ERS 1366 Batalha'], dtype='<U22'),
+    'ra': array(['10:19:37.9634', '10:19:37.9649'], dtype='<U13'),
+    'dec': array(['-09:48:23.21', '-09:48:23.19'], dtype='<U12'),
+    'event': array(['phase', 'phase'], dtype='<U9'),
+    'mode': array(['NIRSPEC BOTS+G395H', 'MIRI LRS'], dtype='<U20'),
+    'subarray': array(['SUB2048', 'SLITLESSPRISM'], dtype='<U13'),
+    'readout': array(['NRSRAPID', 'FASTR1'], dtype='<U8'),
+    'groups': array([20, 64]),
+    'phase_start': array([0.18394, 0.13912]),
+    'phase_end': array([0.20955, 0.16473]),
+    'duration': array([28.57, 31.82]),
+    'date_start': array([datetime.datetime(2023, 5, 14, 9, 3, 30),
+           datetime.datetime(2022, 11, 30, 23, 36, 1)], dtype=object),
+    'plan_window': array(['X', 'X'], dtype='<U21'),
+    'proprietary_period': array([12,  0]),
+    'status': array(['Archived', 'Archived'], dtype='<U14'),
+    'truncated_ra': array('10:19', dtype='<U5'),
+    'truncated_dec': array('-09:48', dtype='<U6')}
     """
     if trexo_file is None:
         trexo_file = f'{ROOT}data/trexolists.csv'
@@ -249,49 +282,101 @@ def load_trexolists(grouped=False, trexo_file=None, extract='target'):
         format='csv', guess=False, fast_reader=False, comment='#',
     )
 
-    targets = trexolist_data['Target'].data
-    norm_targets = [
+    norm_targets = np.array([
         u.normalize_name(target)
-        for target in targets
-    ]
+        for target in trexolist_data['Target']
+    ])
+    trexo_data = {
+        'target': norm_targets,
+        'trexo_name': np.array(trexolist_data['Target'])
+    }
 
-    ra = trexolist_data['R.A. 2000'].data
-    dec = trexolist_data['Dec. 2000'].data
-    truncated_ra = np.array([r[0:7] for r in ra])
-    truncated_dec = np.array([d[0:6] for d in dec])
+    category = trexolist_data['Category']
+    programs = trexolist_data['Program']
+    pi = trexolist_data['PI name']
+    trexo_data['program'] = np.array([
+        f"{categ} {prog} {name}"
+        for categ,prog,name in zip(category, programs, pi)
+    ])
+
+    trexo_data['ra'] = np.array(trexolist_data['R.A. 2000'])
+    trexo_data['dec'] = np.array(trexolist_data['Dec. 2000'])
+
+    trexo_data['event'] = np.array([
+        event.lower().replace('phasec', 'phase')
+        for event in trexolist_data['Event']
+    ])
+    # see_phase?
+
+    trexo_data['mode'] = np.array([
+        obs.replace('.', ' ')
+        for obs in trexolist_data['Mode']
+    ])
+    trexo_data['subarray'] = np.array(trexolist_data['Subarray'])
+    trexo_data['readout'] = np.array(trexolist_data['Readout pattern'])
+    trexo_data['groups'] = np.array(trexolist_data['Groups'])
+
+    trexo_data['phase_start'] = np.array([
+        np.nan if phase=='N/A' else float(phase)
+        for phase in trexolist_data['Start.Phase']
+    ])
+    trexo_data['phase_end'] = np.array([
+        np.nan if phase=='N/A' else float(phase)
+        for phase in trexolist_data['End.Phase']
+    ])
+    trexo_data['duration'] = np.array(trexolist_data['Hours'])
+
+    trexo_data['date_start'] = np.array([
+        np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
+        for date in trexolist_data['Start date']
+    ])
+    trexo_data['date_start'] = np.array([
+        np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
+        for date in trexolist_data['Start date']
+    ])
+    trexo_data['plan_window'] = np.array(trexolist_data['Plan Windows'])
+    trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
+
+    trexo_data['status'] = np.array(trexolist_data['Status'])
 
     if not grouped:
-        unique_targets, u_idx = np.unique(norm_targets, return_index=True)
-        if extract == 'coords':
-            trexo_ra = truncated_ra[u_idx]
-            trexo_dec = truncated_dec[u_idx]
-            return unique_targets, trexo_ra, trexo_dec
-        return unique_targets
+        return trexo_data
 
     # Use RA and dec to detect aliases for a same object
+    truncated_ra = np.array([ra[0:5] for ra in trexo_data['ra']])
+    truncated_dec = np.array([dec[0:6] for dec in trexo_data['dec']])
+
+    ntargets = len(trexo_data['target'])
+    taken = np.zeros(ntargets, bool)
     target_sets = []
     trexo_ra = []
     trexo_dec = []
-    ntargets = len(targets)
-    taken = np.zeros(ntargets, bool)
     for i in range(ntargets):
         if taken[i]:
             continue
+        group_indices = [i]
         ra = truncated_ra[i]
         dec = truncated_dec[i]
-        taken[i] = True
-        hosts = [norm_targets[i]]
-        for j in range(i,ntargets):
-            if truncated_ra[j]==ra and truncated_dec[j]==dec and not taken[j]:
-                hosts.append(norm_targets[j])
-                taken[j] = True
-        target_sets.append(list(np.unique(hosts)))
         trexo_ra.append(ra)
         trexo_dec.append(dec)
+        taken[i] = True
+        for j in range(i,ntargets):
+            if truncated_ra[j]==ra and truncated_dec[j]==dec and not taken[j]:
+                group_indices.append(j)
+                taken[j] = True
+        target_sets.append(group_indices)
 
-    if extract == 'coords':
-        return target_sets, trexo_ra, trexo_dec
-    return target_sets
+    grouped_data = []
+    for i,indices in enumerate(target_sets):
+        target = {}
+        for key in trexo_data.keys():
+            target[key] = trexo_data[key][indices]
+        target['truncated_ra'] = np.array(trexo_ra[i])
+        target['truncated_dec'] = np.array(trexo_dec[i])
+        grouped_data.append(target)
+
+    return grouped_data
+
 
 
 def load_aliases(as_hosts=False):
