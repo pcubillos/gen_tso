@@ -240,13 +240,15 @@ def load_trexolists(grouped=False, trexo_file=None):
         If None, extract data from default Gen TSO location.
         Otherwise, a path to a trexolists.csv file.
 
+    Examples
+    --------
     >>> import gen_tso.catalogs as cat
-
+    >>>
     >>> # Get data as lists of individual programs:
     >>> trexo = cat.load_trexolists()
     >>> print(trexo['target'])
     ['L 168-9' 'HAT-P-14' 'WASP-80' 'WASP-80' 'WASP-69' 'GJ 436' ...]
-
+    >>>
     >>> print(list(trexo))
     ['target', 'trexo_name', 'program', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
 

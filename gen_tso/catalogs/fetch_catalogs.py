@@ -24,6 +24,8 @@ import urllib
 import pickle
 import warnings
 import re
+import socket
+import ssl
 
 from astropy.coordinates import SkyCoord
 import numpy as np
@@ -895,7 +897,9 @@ def scrap_nea_kmag(target):
     return kmag
 
 
-def fetch_gaia_targets(ra_source, dec_source, max_separation=80.0):
+def fetch_gaia_targets(
+        ra_source, dec_source, max_separation=80.0, raise_errors=True,
+    ):
     """
     Search for Gaia DR3 stellar sources around a given target.
 
@@ -908,6 +912,11 @@ def fetch_gaia_targets(ra_source, dec_source, max_separation=80.0):
     max_angular_distance: Float
         Maximum angular distance from target to consider (arcsec).
         Consider that the visit splitting distance for NIRSpec TA is 38"
+    raise_errors: Bool
+        If True and there was an error while requesting the data,
+        raise the error.
+        If False and there was an error, print error to screen and
+        return a string identifying some known error types.
 
     Returns
     -------
@@ -939,28 +948,43 @@ def fetch_gaia_targets(ra_source, dec_source, max_separation=80.0):
 
     try:
         job = Gaia.launch_job_async(
-         f"""
-         SELECT * \
-         FROM gaiadr3.gaia_source \
-         WHERE CONTAINS(POINT(gaiadr3.gaia_source.ra,gaiadr3.gaia_source.dec),
-         CIRCLE({ra_source}, {dec_source}, {max_sep_degrees}))=1;""",
+            f"""
+            SELECT * \
+            FROM gaiadr3.gaia_source \
+            WHERE CONTAINS(\
+                POINT(gaiadr3.gaia_source.ra, gaiadr3.gaia_source.dec),
+                CIRCLE({ra_source}, {dec_source}, {max_sep_degrees}))=1;""",
             dump_to_file=False,
         )
-    except requests.exceptions.HTTPError:
-        print(
-            'Gaia astroquery request failed raising a '
-            'requests.exceptions.HTTPError'
-        )
-        return None
-    #except SSLCertVerificationError as e:
     except Exception as e:
-        print(
-            "If you got a 'SSL: CERTIFICATE_VERIFY_FAILED' error on an "
-            "OSX machine, try following the steps on this link: "
-            "https://stackoverflow.com/a/42334357 which will point you "
-            "to the ReadMe.rtf file in your Applications/Python 3.X folder\n"
-        )
-        raise e
+        err_text = f"Gaia astroquery request failed with {e.__class__.__name__}"
+        if isinstance(e, socket.gaierror):
+            print(
+                f"\n{err_text}\n{str(e)}\n"
+                "Likely there's no internet connection at the moment\n"
+            )
+            exception = 'gaierror'
+        elif isinstance(e, requests.exceptions.HTTPError):
+            print(
+                f"\n{err_text}\n{str(e)}\n"
+                f"Probably the ESA server is down at the moment\n"
+            )
+            exception = 'gaierror'
+        elif isinstance(e, ssl.SSLError):
+            print(
+                f"\n{err_text}\n{str(e)}\n"
+                "If you got a 'SSL: CERTIFICATE_VERIFY_FAILED' error on an "
+                "OSX machine, try following the steps on this link: "
+                "https://stackoverflow.com/a/42334357 which will point you to "
+                "the ReadMe.rtf file in your Applications/Python 3.X folder\n"
+            )
+            exception = 'ssl'
+        else:
+            print(f"\n{err_text}\n{str(e)}")
+            exception = 'other'
+        if raise_errors:
+            raise e
+        return exception
 
     resp = job.get_results()
     targets = resp[~resp['teff_gspphot'].mask]
