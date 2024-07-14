@@ -740,7 +740,9 @@ def make_detector_label(
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
 
 
-def make_saturation_label(mode, disperser, filter, subarray, order, sed_label):
+def make_saturation_label(
+        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+    ):
     """
     Make a label of unique saturation setups to identify when and
     when not the saturation level can be estimated.
@@ -753,6 +755,8 @@ def make_saturation_label(mode, disperser, filter, subarray, order, sed_label):
         sat_label = f'{sat_label}_{sed_label}{order}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
+    elif mode == 'target_acq' and inst == 'niriss':
+        sat_label = f'{sat_label}_{aperture}'
     sat_label = f'{sat_label}_{sed_label}'
     return sat_label
 
