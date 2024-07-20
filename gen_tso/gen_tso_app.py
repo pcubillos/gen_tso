@@ -2355,7 +2355,10 @@ def server(input, output, session):
     # Results
     @render.ui
     def results():
-        saturation_label.get()  # enforce calc_saturation renders results
+        # Only read for reactivity reasons:
+        saturation_label.get()
+        ta_sed = input.ta_sed.get()
+
         inst = input.instrument.get().lower()
         mode = input.mode.get()
         detector = get_detector(inst, mode, detectors)
@@ -2389,18 +2392,27 @@ def server(input, output, session):
         report_text = jwst._print_pandeia_exposure(
             inst, subarray, readout, ngroup, nint,
         )
-        target_focus = input.target_focus.get()
+        target_focus = input.target_focus.get().capitalize()
         # TBD: add target name to first line
-        report_text = f'<b>{target_focus.capitalize()} target</b><br>{report_text}'
 
-        if target_focus == 'science':
+        if target_focus == 'Science':
             target_acq_mag = None
+            target_name = f': {target.planet}' if target is not None else ''
         else:
-            if target is None or target.host not in cache_acquisition:
+            no_target = (
+                target is None or
+                target.host not in cache_acquisition or
+                cache_acquisition[target.host]['selected'] is None
+            )
+            if no_target:
+                report_text = f'<b>{target_focus} target</b><br>{report_text}'
                 return ui.HTML(f'<pre>{report_text}</pre>')
             target_list = cache_acquisition[target.host]['targets']
             selected = cache_acquisition[target.host]['selected']
             target_acq_mag = np.round(target_list[1][selected], 3)
+            target_name = f': {target_list[0][selected]}'
+        report_text = f'<b>{target_focus} target{target_name}</b><br>{report_text}'
+
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
             input, target_acq_mag=target_acq_mag,
         )
@@ -2555,18 +2567,13 @@ def server(input, output, session):
         # will leak into the new dataframe, which will de-synchronize
         # cache_acquisition[target.host]['selected']
         df = acquisition_targets.cell_selection()
-        #print(f'df: {repr(df)}')
         if df is None or len(df['rows'])==0:
-            #print(f'No row update: df')
-            #ui.update_select('ta_sed', choices=[])
             return
 
         df_data = acquisition_targets.data()
         current_data = [f'Gaia DR3 {id}' for id in df_data["Gaia DR3 target"]]
         if current_data[0] != target_list[0][0]:
-            #print('No row update !!!')
             acquisition_targets._reset_reactives()
-            #ui.update_select('ta_sed', choices=[])
             return
 
         cache_acquisition[target.host]['selected'] = idx = df['rows'][0]
