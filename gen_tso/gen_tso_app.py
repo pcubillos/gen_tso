@@ -89,11 +89,11 @@ tso_runs = {
 }
 
 def make_tso_labels(tso_runs):
-    tso_labels = dict(
-        Transit={},
-        Eclipse={},
-        Acquisition={},
-    )
+    tso_labels = {
+        'Transit': {},
+        'Eclipse': {},
+        'Acquisition': {},
+    }
     for key, runs in tso_runs.items():
         for tso_label, tso_run in runs.items():
             tso_key = f'{key}_{tso_label}'
@@ -102,6 +102,7 @@ def make_tso_labels(tso_runs):
 
 
 cache_target = {}
+cache_acquisition = {}
 cache_saturation = {}
 
 # Planet and stellar spectra
@@ -145,7 +146,6 @@ for location in loading_folders:
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
-css_file = f'{ROOT}data/style.css'
 
 depth_units = [
     "none",
@@ -171,10 +171,6 @@ layout_kwargs = dict(
 
 
 app_ui = ui.page_fluid(
-    #ui.markdown("""
-    #    This app is based on [shiny][0].
-    #    [0]: https://shiny.posit.co/py/api/core
-    #    """),
     ui.layout_columns(
         ui.span(
             ui.HTML("<b>Gen TSO</b>: A general exoplanet ETC for JWST "
@@ -209,7 +205,6 @@ app_ui = ui.page_fluid(
         });
         """
     ),
-    ui.include_css(css_file),
 
     # Instrument and detector modes:
     ui.layout_columns(
@@ -238,7 +233,7 @@ app_ui = ui.page_fluid(
                     ),
                     choices=make_tso_labels(tso_runs),
                     selected=[''],
-                    #width='450px',
+                    width='100%',
                 ),
                 # TBD: Set disabled based on existing TSOs
                 ui.layout_column_wrap(
@@ -264,10 +259,28 @@ app_ui = ui.page_fluid(
                 fill=True,
                 fillable=True,
             ),
-            ui.input_task_button(
-                id="run_pandeia",
-                label="Run Pandeia",
-                label_busy="processing...",
+            ui.layout_columns(
+                ui.input_task_button(
+                    id="run_pandeia",
+                    label="Run Pandeia",
+                    label_busy="processing...",
+                    width='100%',
+                ),
+                ui.panel_conditional(
+                    "input.mode == 'target_acq'",
+                    ui.input_radio_buttons(
+                        id='target_focus',
+                        label='',
+                        choices={
+                            'science': 'sci target',
+                            'acquisition': 'acq target',
+                        },
+                        selected='science',
+                    ),
+                ),
+                col_widths=(9,3),
+                gap='10px',
+                class_="px-0 py-0 mx-0 my-0",
             ),
         ),
         col_widths=[6,6],
@@ -572,12 +585,6 @@ app_ui = ui.page_fluid(
                             choices=[],
                             selected='',
                         ),
-                        ui.input_task_button(
-                            id="perform_ta_calculation",
-                            label="Run TA Pandeia",
-                            class_='btn btn-outline-secondary btn-sm',
-                            # TBD: set a style from CSS file independently of id
-                        ),
                         ui.input_action_button(
                             id="get_acquisition_target",
                             label="Print acq. target data",
@@ -780,6 +787,7 @@ app_ui = ui.page_fluid(
         col_widths=[3, 3, 6],
     ),
     title='Gen TSO',
+    theme=f'{ROOT}/data/base_theme.css',
 )
 
 
@@ -974,7 +982,8 @@ def server(input, output, session):
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
 
-    def run_pandeia(input, target='science'):
+
+    def run_pandeia(input):
         """
         Perform a pandeia calculation on  science or acquisition target.
         This might be a transit/eclipse TSO or a Pandeia perform_calculation
@@ -1016,19 +1025,20 @@ def server(input, output, session):
             run_type = 'Acquisition'
 
         # Target setup:
+        target_focus = input.target_focus.get()
         target_name = input.target.get()
         t_eff = input.t_eff.get()
         log_g = input.log_g.get()
         obs_geometry = input.obs_geometry.get()
         transit_dur = float(input.t_dur.get())
         obs_dur = float(input.obs_dur.get())
-        planet_model_type, depth_model, rprs_sq, teq_planet = parse_obs(input)
+        planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
-        if target == 'acquisition':
+        if target_focus == 'acquisition':
             selected = acquisition_targets.cell_selection()['rows'][0]
             target_list = acq_target_list.get()
             target_acq_mag = np.round(target_list[1][selected], 3)
-        elif target == 'science':
+        elif target_focus == 'science':
             exp_time = jwst.exposure_time(
                 inst, subarray, readout, ngroup, nint,
             )
@@ -1109,9 +1119,10 @@ def server(input, output, session):
             obs_geometry=obs_geometry,
             obs_dur=obs_dur,
             planet_model_type=planet_model_type,
-            depth_model=depth_model,
+            depth_label=depth_label,
             rprs_sq=rprs_sq,
             teq_planet=teq_planet,
+            target_focus=target_focus,
             # The instrumental setting
             aperture=aperture,
             disperser=disperser,
@@ -1126,7 +1137,7 @@ def server(input, output, session):
         )
         if run_is_tso:
             # The planet
-            tso_run['depth_model_name'] = depth_label
+            #tso_run['depth_model_name'] = depth_label
             tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
                 reports = (
@@ -1149,14 +1160,14 @@ def server(input, output, session):
             tso_runs[run_type][tso_label] = tso_run
             tso_labels = make_tso_labels(tso_runs)
             ui.update_select(
-                id='display_tso_run',
+                'display_tso_run',
                 choices=tso_labels,
                 selected=f'{run_type}_{tso_label}',
             )
 
         # Update report
         sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, order, sed_label,
+            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
         )
         pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
         cache_saturation[sat_label] = dict(
@@ -1182,6 +1193,10 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.display_tso_run)
     def update_full_state():
+        """
+        When a user chooses a run from display_tso_run, update the entire
+        front end to match the run setup.
+        """
         tso_key = input.display_tso_run.get()
         if tso_key is None:
             return
@@ -1248,31 +1263,37 @@ def server(input, output, session):
         current_target = input.target.get()
         current_tdur = input.t_dur.get()
 
-        target = tso['target']
+        target_focus = tso['target_focus']
+        ui.update_radio_buttons('target_focus', selected=target_focus)
+
+        name = tso['target']
         t_dur = str(tso['transit_dur'])
         planet_model_type = tso['planet_model_type']
-        ui.update_selectize('target', selected=target)
+        ui.update_selectize('target', selected=name)
+        norm_band = tso['norm_band']
+        norm_mag = str(tso['norm_mag'])
         sed_type = tso['sed_type']
         if sed_type == 'k93models':
             sed_type = 'kurucz'
         ui.update_select('sed_type', selected=sed_type)
-        if target != current_target:
-            if target not in cache_target:
-                cache_target[target] = {}
-            cache_target[target]['t_eff'] = tso['t_eff']
-            cache_target[target]['log_g'] = tso['log_g']
-            cache_target[target]['t_dur'] = t_dur
-            cache_target[target]['norm_band'] = tso['norm_band']
-            cache_target[target]['norm_mag'] = str(tso['norm_mag'])
-            cache_target[target]['depth_model'] = tso['depth_model']
-            cache_target[target]['rprs_sq'] = tso['rprs_sq']
-            cache_target[target]['teq_planet'] = tso['teq_planet']
+
+        if name != current_target:
+            if name not in cache_target:
+                cache_target[name] = {}
+            cache_target[name]['t_eff'] = tso['t_eff']
+            cache_target[name]['log_g'] = tso['log_g']
+            cache_target[name]['t_dur'] = t_dur
+            cache_target[name]['depth_label'] = tso['depth_label']
+            cache_target[name]['rprs_sq'] = tso['rprs_sq']
+            cache_target[name]['teq_planet'] = tso['teq_planet']
+            cache_target[name]['norm_band'] = norm_band
+            cache_target[name]['norm_mag'] = norm_mag
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
             ui.update_text('t_dur', value=t_dur)
-            ui.update_select('magnitude_band', selected=tso['norm_band'])
-            ui.update_text('magnitude', value=str(tso['norm_mag']))
+            ui.update_select('magnitude_band', selected=norm_band)
+            ui.update_text('magnitude', value=norm_mag)
 
         reset_sed = (
             sed_type != input.sed_type.get() or
@@ -1287,6 +1308,11 @@ def server(input, output, session):
                 selected = tso['sed_model']
                 ui.update_select("sed", choices=choices, selected=selected)
 
+        if target_focus == 'acquisition':
+            selected = tso['sed_model']
+            ui.update_select('ta_sed', choices=phoenix_dict, selected=selected)
+            target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+            selected = cache_acquisition[target.host]['selected']
         # The observation
         obs_geometry = tso['obs_geometry']
         ui.update_select('obs_geometry', selected=obs_geometry)
@@ -1301,7 +1327,7 @@ def server(input, output, session):
         )
         if planet_model_type == 'Input':
             choices = user_spectra[obs_geometry]
-            selected = tso['depth_model']
+            selected = tso['depth_label']
             ui.update_select("depth", choices=choices, selected=selected)
         elif planet_model_type == 'Flat':
             ui.update_numeric("transit_depth", value=tso['rprs_sq'])
@@ -1345,6 +1371,9 @@ def server(input, output, session):
         if not is_consistent(inst, mode):
             return
         detector = get_detector(inst, mode, detectors)
+
+        focus = 'science' if mode!='target_acq' else input.target_focus.get()
+        ui.update_radio_buttons('target_focus', selected=focus)
 
         # The disperser
         choices = detector.dispersers
@@ -1435,7 +1464,31 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.run_pandeia)
     def _():
-        run_pandeia(input, target='science')
+        target_focus = input.target_focus.get()
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        error_msg = None
+        if target_focus=='acquisition':
+            if target is None:
+                error_msg = ui.markdown(
+                    "Need to select a valid **Science target** before searching "
+                    "for nearby acquisition targets"
+                )
+            elif target.host not in cache_acquisition:
+                error_msg = ui.markdown(
+                    "First click the '**Search nearby targets**' button, then "
+                    "select a target from the '**Acquisition targets**' tab"
+                )
+            elif input.ta_sed.get() is None:
+                error_msg = ui.markdown(
+                    "First select a target from the '**Acquisition targets**' tab"
+                )
+
+        if error_msg is None:
+            run_pandeia(input)
+        else:
+            ui.notification_show(error_msg, type="warning", duration=5)
 
 
     @reactive.effect
@@ -1688,16 +1741,19 @@ def server(input, output, session):
             candidate_tooltip,
         )
 
-    @reactive.Effect
+
+    @reactive.effect
     @reactive.event(input.target)
     def _():
-        """Set known-target properties"""
+        """Update target properties"""
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
+
+        # Physical properties:
         if target.planet in cache_target:
             t_eff  = cache_target[target.planet]['t_eff']
             log_g = cache_target[target.planet]['log_g']
@@ -1731,6 +1787,27 @@ def server(input, output, session):
         }
         esasky_command.set([delete_catalog, delete_footprint, goto])
 
+        # Observing properties:
+        if name in cache_target and cache_target[name]['rprs_sq'] is not None:
+            rprs_square_percent = cache_target[name]['rprs_sq']
+            teq_planet = cache_target[name]['teq_planet']
+            cache_target[name]['rprs_sq'] = None
+            cache_target[name]['teq_planet'] = None
+        else:
+            teq_planet = np.round(target.eq_temp, decimals=1)
+            if np.isnan(teq_planet):
+                teq_planet = 0.0
+            rprs_square = target.rprs**2.0
+            if np.isnan(rprs_square):
+                rprs_square = 0.0
+            rprs_square_percent = np.round(100*rprs_square, decimals=4)
+
+        if rprs_square_percent is not None:
+            ui.update_numeric("transit_depth", value=rprs_square_percent)
+            ui.update_numeric("eclipse_depth", value=rprs_square_percent)
+        if teq_planet is not None:
+            ui.update_numeric('teq_planet', value=teq_planet)
+
 
     @reactive.Effect
     @reactive.event(input.sed_type, input.t_eff, input.log_g)
@@ -1753,6 +1830,7 @@ def server(input, output, session):
             selected = None
 
         ui.update_select("sed", choices=choices, selected=selected)
+
 
     @render.ui
     @reactive.event(
@@ -1831,6 +1909,7 @@ def server(input, output, session):
             button_ids=['bookmark_depth', 'upload_depth'],
         )
 
+
     @reactive.Effect
     @reactive.event(input.bookmark_depth)
     def _():
@@ -1872,12 +1951,12 @@ def server(input, output, session):
         name = input.target.get()
         cached = (
             name in cache_target and
-            cache_target[name]['depth_model'] is not None
+            cache_target[name]['depth_label'] is not None
         )
         selected = input.depth.get()
         if cached:
-            selected = cache_target[name]['depth_model']
-            cache_target[name]['depth_model'] = None
+            selected = cache_target[name]['depth_label']
+            cache_target[name]['depth_label'] = None
         elif selected not in spectra:
             selected = None if len(spectra) == 0 else spectra[0]
         #print(f'Updating input [cached={cached}]: {repr(selected)}')
@@ -1937,36 +2016,6 @@ def server(input, output, session):
         # Tdwell = T_start + T_settle + T14 + 2*max(1, T14/2)
         obs_dur = 1.0 + settling + transit_dur + 2.0*baseline
         ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
-
-
-    @reactive.Effect
-    @reactive.event(input.target)
-    def _():
-        name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
-        planet_model_type = input.planet_model_type.get()
-
-        if name in cache_target and cache_target[name]['rprs_sq'] is not None:
-            rprs_square_percent = cache_target[name]['rprs_sq']
-            teq_planet = cache_target[name]['teq_planet']
-            cache_target[name]['rprs_sq'] = None
-            cache_target[name]['teq_planet'] = None
-        else:
-            if target is None:
-                return
-            teq_planet = np.round(target.eq_temp, decimals=1)
-            if np.isnan(teq_planet):
-                teq_planet = 0.0
-            rprs_square = target.rprs**2.0
-            if np.isnan(rprs_square):
-                rprs_square = 0.0
-            rprs_square_percent = np.round(100*rprs_square, decimals=4)
-
-        if rprs_square_percent is not None:
-            ui.update_numeric("transit_depth", value=rprs_square_percent)
-            ui.update_numeric("eclipse_depth", value=rprs_square_percent)
-        if teq_planet is not None:
-            ui.update_numeric('teq_planet', value=teq_planet)
 
 
     @reactive.effect
@@ -2150,7 +2199,7 @@ def server(input, output, session):
             ngroup = 2
 
         sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, order, sed_label,
+            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
         )
 
         pando = jwst.PandeiaCalculation(inst, mode)
@@ -2291,7 +2340,7 @@ def server(input, output, session):
             wl_range = [0.6, 13.0]
 
         tso_run = tso_runs[key][tso_label]
-        planet = tso_run['depth_model_name']
+        planet = tso_run['depth_label']
         fig = tplots.plotly_tso_spectra(
             tso_run['tso'], resolution, n_obs,
             model_label=planet,
@@ -2319,16 +2368,20 @@ def server(input, output, session):
         nint = input.integrations.get()
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
         if ngroup is None or detector is None or sed_label is None:
             return ui.HTML('<pre> </pre>')
 
         # Front-end to back-end exceptions:
+        aperture = None
         if mode == 'bots' and '/' in filter:
             disperser, filter = filter.split('/')
         #if mode == 'mrs_ts':
         #    aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
-            #aperture = input.disperser.get()
+            aperture = input.disperser.get()
             disperser = None
             nint = 1
 
@@ -2336,11 +2389,25 @@ def server(input, output, session):
         report_text = jwst._print_pandeia_exposure(
             inst, subarray, readout, ngroup, nint,
         )
+        target_focus = input.target_focus.get()
+        # TBD: add target name to first line
+        report_text = f'<b>{target_focus.capitalize()} target</b><br>{report_text}'
 
-        # TBD: detect TA runs
-        sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, order, sed_label,
+        if target_focus == 'science':
+            target_acq_mag = None
+        else:
+            if target is None or target.host not in cache_acquisition:
+                return ui.HTML(f'<pre>{report_text}</pre>')
+            target_list = cache_acquisition[target.host]['targets']
+            selected = cache_acquisition[target.host]['selected']
+            target_acq_mag = np.round(target_list[1][selected], 3)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
+            input, target_acq_mag=target_acq_mag,
         )
+        sat_label = make_saturation_label(
+            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        )
+
         cached = sat_label in cache_saturation
         if cached:
             pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
@@ -2412,13 +2479,17 @@ def server(input, output, session):
             return
 
         query = cat.fetch_gaia_targets(
-            target.ra, target.dec, max_separation=80.0,
+            target.ra, target.dec, max_separation=80.0, raise_errors=False,
         )
-        if query is None:
-            msg = "The astroquery request failed :("
+        if isinstance(query, str):
+            msg = ui.HTML(
+                "The Gaia astroquery request failed :(<br>"
+                "Check the terminal for more info"
+            )
             ui.notification_show(msg, type="error", duration=5)
             return
 
+        cache_acquisition[target.host] = {'targets': query, 'selected': None}
         acq_target_list.set(query)
         current_acq_science_target.set(name)
         success = "Nearby targets found!  Open the '*Acquisition targets*' tab"
@@ -2432,16 +2503,20 @@ def server(input, output, session):
     @render.data_frame
     @reactive.event(acq_target_list, input.target)
     def acquisition_targets():
+        """
+        Display TA list, gets triggered only when tab is shown
+        """
         name = input.target.get()
-        current_name = current_acq_science_target.get()
-        # Change of input.target was the trigger:
-        if current_name != name:
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return render.DataGrid(pd.DataFrame([]))
+        if target.host not in cache_acquisition:
+            # Do I need to? gets wiped anyway
             ui.update_select('ta_sed', choices=[])
             return render.DataGrid(pd.DataFrame([]))
 
-        ta_list = acq_target_list.get()
-        if ta_list is None:
-            return render.DataGrid(pd.DataFrame([]))
+        ta_list = cache_acquisition[target.host]['targets']
+        acq_target_list.set(ta_list)
         names, G_mag, t_eff, log_g, ra, dec, separation = ta_list
         data_df = {
             'Gaia DR3 target': [name[9:] for name in names],
@@ -2460,21 +2535,48 @@ def server(input, output, session):
             summary=True,
         )
 
+
     @reactive.effect
     def select_ta_row():
-        target_list = acq_target_list.get()
-        df = acquisition_targets.cell_selection()
-        if target_list is None or df is None or len(df['rows'])==0:
+        """
+        Gets triggrered all the time. Can I limit it to true unser-interactions
+        with acquisition_targets
+        """
+        acq_target_list.get()
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        if target is None or target.host not in cache_acquisition:
             ui.update_select('ta_sed', choices=[])
             return
+        target_list = cache_acquisition[target.host]['targets']
 
-        idx = df['rows'][0]
+        # TBD: if acquisition_targets changed, a previous non-zero cell_selection()
+        # will leak into the new dataframe, which will de-synchronize
+        # cache_acquisition[target.host]['selected']
+        df = acquisition_targets.cell_selection()
+        #print(f'df: {repr(df)}')
+        if df is None or len(df['rows'])==0:
+            #print(f'No row update: df')
+            #ui.update_select('ta_sed', choices=[])
+            return
+
+        df_data = acquisition_targets.data()
+        current_data = [f'Gaia DR3 {id}' for id in df_data["Gaia DR3 target"]]
+        if current_data[0] != target_list[0][0]:
+            #print('No row update !!!')
+            acquisition_targets._reset_reactives()
+            #ui.update_select('ta_sed', choices=[])
+            return
+
+        cache_acquisition[target.host]['selected'] = idx = df['rows'][0]
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
         i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
         chosen_sed = p_keys[i]
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
+
         deselect_targets = {'event': 'deselectAllShapes'}
         select_acq_target = {
             'event': 'selectShape',
@@ -2485,48 +2587,17 @@ def server(input, output, session):
         }
         esasky_command.set([deselect_targets, select_acq_target])
 
-    @reactive.effect
-    @reactive.event(input.perform_ta_calculation)
-    def _():
-        name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
-        if target is None:
-            return
-        current_name = current_acq_science_target.get()
-        target_list = acq_target_list.get()
-        if target_list is None or current_name != name:
-            error_msg = ui.markdown(
-                "First click the '*Search nearby targets*' button, then select "
-                "a target from the '*Acquisition targets*' tab"
-            )
-            ui.notification_show(error_msg, type="warning", duration=5)
-            return
-
-        # Cannot check acquisition_targets.cell_selection() because
-        # the TA table may not be rendered yet. But input.ta_sed gets
-        # defined when the user selects a row from the table:
-        selected_ta_sed = input.ta_sed.get()
-        if selected_ta_sed is None:
-            error_msg = ui.markdown(
-                "First select a target from the '*Acquisition targets*' tab"
-            )
-            ui.notification_show(error_msg, type="warning", duration=5)
-            return
-
-        run_pandeia(input, target='acquisition')
-
 
     # TBD: rename
     @reactive.effect
     @reactive.event(input.get_acquisition_target)
     def _():
-        # TBD: also open ui.modal, or both?
+        return
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
-        target_list = acq_target_list.get()
-        if target_list is None:
+        if target.host not in cache_acquisition:
             error_msg = ui.markdown(
                 "First click the '*Search nearby targets*' button, then select "
                 "a target from the '*Acquisition targets*' tab"
@@ -2541,6 +2612,7 @@ def server(input, output, session):
             )
             ui.notification_show(error_msg, type="warning", duration=5)
             return
+        target_list = cache_acquisition[target.host]['targets']
         names, G_mag, t_eff, log_g, ra, dec, separation = target_list
         idx = selected[0]
         text = (
