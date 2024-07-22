@@ -1,4 +1,4 @@
-shiny>=0.10.2
+shiny>=1.0.0
 pandeia.engine>=3.0.0
 numpy>=1.17
 scipy

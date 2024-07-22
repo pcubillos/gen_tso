@@ -16,7 +16,7 @@ authors = [
   {name = "Patricio Cubillos", email = "pcubillos@fulbrightmail.org"}
 ]
 dependencies = [
-    'shiny>=0.10.2',
+    'shiny>=1.0.0',
     'pandeia.engine>=3.0.0',
     'scipy',
     'numpy>=1.15.1',
