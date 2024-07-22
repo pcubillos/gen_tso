@@ -7,6 +7,8 @@ from pathlib import Path
 import pickle
 import sys
 import textwrap
+from datetime import timedelta, datetime
+
 
 import numpy as np
 import scipy.interpolate as si
@@ -146,6 +148,7 @@ for location in loading_folders:
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
+stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
 
 depth_units = [
     "none",
@@ -981,7 +984,7 @@ def server(input, output, session):
     preset_sed = reactive.Value(None)
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
-
+    trexo_info = reactive.Value(None)
 
     def run_pandeia(input):
         """
@@ -1608,6 +1611,9 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.show_info)
     def _():
+        """
+        Display system parameters
+        """
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         planet_info, star_info, aliases = pretty_print_target(target)
@@ -1632,6 +1638,129 @@ def server(input, output, session):
             ),
         )
         ui.modal_show(m)
+
+
+    @reactive.effect
+    @reactive.event(input.show_observations)
+    def _():
+        """
+        Display JWST observations
+        """
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        trexo_info.set(target.trexo_data)
+
+        keys = ui.HTML(
+            'Keys:<br>'
+            f'<span style="color:#0B980D">Observed, no proprietary period.</span><br>'
+            f'<span>Observed, in proprietary period.</span><br>'
+            f'<span style="color:#FFa500">To be observed, planned window.</span><br>'
+            f'<span style="color:red">Failed, withdrawn, or skipped.</span>'
+        )
+
+        m = ui.modal(
+            ui.output_data_frame('trexo_df'),
+            ui.hr(),
+            keys,
+            title=ui.markdown(f'JWST programs for: **{target.host}**'),
+            size='xl',
+            easy_close=True,
+        )
+        ui.modal_show(m)
+
+
+    @render.data_frame
+    @reactive.event(trexo_info)
+    def trexo_df():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        data = trexo_info.get()
+        nobs = len(data['program'])
+
+        today = datetime.today()
+        status = data['status']
+        date_obs = data['date_start']
+        plan_obs = data['plan_window']
+        propriety = data['proprietary_period']
+        warnings = [
+            i for i in range(nobs)
+            if status[i] in ['Skipped', 'Failed', 'Withdrawn']
+        ]
+        available = []
+        dates = []
+        tbd_dates = []
+        for i in range(nobs):
+            if isinstance(date_obs[i], datetime):
+                release = date_obs[i] + timedelta(days=365.0*propriety[i]/12)
+                if release < today:
+                    available.append(i)
+                dates.append(
+                    date_obs[i].strftime('%Y-%m-%d') +
+                    f' ({propriety[i]} m)'
+                )
+            else:
+                if isinstance(plan_obs[i], datetime):
+                    dates.append(
+                        plan_obs[i].strftime('%Y-%m-%d') +
+                        f' ({propriety[i]} m)'
+                    )
+                else:
+                    dates.append('---')
+                if i not in warnings:
+                    tbd_dates.append(i)
+
+        styles = [
+            {
+                'rows': available,
+                'style': {"color": "#0B980D"},
+            },
+            {
+                'rows': warnings,
+                'style': {"color": "red"},
+            },
+            {
+                'rows': tbd_dates,
+                'cols': [10],
+                'style': {"color": "#FFa500"},
+            },
+        ]
+        programs = [
+            ' '.join(program.split()[0:2])
+            for program in data['program']
+        ]
+        pi = [
+            ' '.join(program.split()[2:])
+            for program in data['program']
+        ]
+        hrefs = [stsci_url.replace('PID', pid.split()[1]) for pid in programs]
+        programs = [
+            ui.tags.a(programs[i], href=hrefs[i], target="_blank")
+            for i in range(nobs)
+        ]
+
+        data_df = {
+            'Program ID': programs,
+            'PI': pi,
+            'Target name': data['trexo_name'],
+            # TBD: fetch which planet(s)
+            #'planet': ['b' for _ in pi],
+            'Event': data['event'],
+            'Status': data['status'],
+            'Instrument / Mode': data['mode'],
+            'Subarray': data['subarray'],
+            'Readout': data['readout'],
+            'Groups': data['groups'],
+            'Duration (h)': data['duration'],
+            'Obs date (prop. period)': dates,
+        }
+        df = pd.DataFrame(data=data_df)
+
+        return render.DataGrid(
+            df,
+            styles=styles,
+            width='100%',
+        )
 
 
     @reactive.Effect
@@ -1701,10 +1830,10 @@ def server(input, output, session):
             dec = target.trexo_data['truncated_dec']
             url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
-                ui.tags.a(
-                    fa.icon_svg("circle-info", fill='goldenrod'),
-                    href=url,
-                    target="_blank",
+                ui.input_action_link(
+                    id='show_observations',
+                    label='',
+                    icon=fa.icon_svg("circle-info", fill='goldenrod'),
                 ),
                 "This target's host is on TrExoLiSTS",
                 placement='top',
