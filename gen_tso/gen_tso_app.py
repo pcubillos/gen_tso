@@ -978,7 +978,6 @@ def server(input, output, session):
     warning_text = reactive.Value('')
     machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
-    selected_acq_target = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
     preset_ngroup = reactive.Value(None)
     preset_sed = reactive.Value(None)
@@ -1138,6 +1137,7 @@ def server(input, output, session):
             # The outputs
             tso=tso,
         )
+
         if run_is_tso:
             # The planet
             #tso_run['depth_model_name'] = depth_label
@@ -1147,17 +1147,20 @@ def server(input, output, session):
                     [report['report_in']['scalar'] for report in tso],
                     [report['report_out']['scalar'] for report in tso],
                 )
-                warnings = tso[0]['report_in']['warnings']
-                # TBD: Consider warnings in other TSO reports?
+                warnings = tso[0]['report_out']['warnings']
             else:
                 reports = (
                     tso['report_in']['scalar'],
                     tso['report_out']['scalar'],
                 )
-                warnings = tso['report_in']['warnings']
+                warnings = tso['report_out']['warnings']
         else:
             reports = tso['scalar'], None
             warnings = tso['warnings']
+        tso_run['stats'] = jwst._print_pandeia_stats(
+            inst, mode, reports[0], reports[1], format='html',
+        )
+        tso_run['warnings'] = warnings
 
         if run_is_tso or mode=='target_acq':
             tso_runs[run_type][tso_label] = tso_run
@@ -1176,17 +1179,10 @@ def server(input, output, session):
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate=pixel_rate,
             full_well=full_well,
-            inst=inst,
-            mode=mode,
-            reports=reports,
             warnings=warnings,
         )
         saturation_label.set(sat_label)
-
-        if len(warnings) > 0:
-            warning_text.set(warnings)
-        else:
-            warning_text.set('')
+        warning_text.set(warnings)
 
         print(inst, mode, aperture, disperser, filter, subarray, readout, order)
         print(sed_type, sed_model, norm_band, repr(norm_mag))
@@ -1203,7 +1199,6 @@ def server(input, output, session):
         tso_key = input.display_tso_run.get()
         if tso_key is None:
             return
-        print('\nNew display')
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
 
@@ -1317,6 +1312,7 @@ def server(input, output, session):
             target = catalog.get_target(name, is_transit=None, is_confirmed=None)
             selected = cache_acquisition[target.host]['selected']
         # The observation
+        warning_text.set(tso['warnings'])
         obs_geometry = tso['obs_geometry']
         ui.update_select('obs_geometry', selected=obs_geometry)
         if t_dur != current_tdur:
@@ -1653,10 +1649,10 @@ def server(input, output, session):
 
         keys = ui.HTML(
             'Keys:<br>'
-            f'<span style="color:#0B980D">Observed, no proprietary period.</span><br>'
-            f'<span>Observed, in proprietary period.</span><br>'
-            f'<span style="color:#FFa500">To be observed, planned window.</span><br>'
-            f'<span style="color:red">Failed, withdrawn, or skipped.</span>'
+            '<span style="color:#0B980D">Observed, no proprietary period.</span>'
+            '<br><span>Observed, in proprietary period.</span><br>'
+            '<span style="color:#FFa500">To be observed, planned window.</span>'
+            '<br><span style="color:red">Failed, withdrawn, or skipped.</span>'
         )
 
         m = ui.modal(
@@ -1673,8 +1669,6 @@ def server(input, output, session):
     @render.data_frame
     @reactive.event(trexo_info)
     def trexo_df():
-        name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         data = trexo_info.get()
         nobs = len(data['program'])
 
@@ -1826,9 +1820,6 @@ def server(input, output, session):
         )
 
         if target.is_jwst:
-            ra = target.trexo_data['truncated_ra']
-            dec = target.trexo_data['truncated_dec']
-            url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
                 ui.input_action_link(
                     id='show_observations',
@@ -2116,7 +2107,7 @@ def server(input, output, session):
     @reactive.event(warning_text)
     def warnings_label():
         warnings = warning_text.get()
-        if warnings == '':
+        if len(warnings) == 0:
             return "Warnings"
         n_warn = len(warnings)
         return ui.HTML(f'<div style="color:red;">Warnings ({n_warn})</div>')
@@ -2484,13 +2475,13 @@ def server(input, output, session):
     # Results
     @render.ui
     def results():
+        warnings = {}
         # Only read for reactivity reasons:
         saturation_label.get()
-        ta_sed = input.ta_sed.get()
+        input.ta_sed.get()
 
         inst = input.instrument.get().lower()
         mode = input.mode.get()
-        detector = get_detector(inst, mode, detectors)
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
@@ -2502,27 +2493,34 @@ def server(input, output, session):
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        depth_label = parse_obs(input)[1]
+        transit_dur = float(input.t_dur.get())
 
-        if ngroup is None or detector is None or sed_label is None:
+        consistent = is_consistent(inst, mode, disperser, filter, subarray)
+        if ngroup is None or not consistent or sed_label is None:
+            warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
 
+        obs_geometry = input.obs_geometry.get()
+        run_type = obs_geometry.capitalize()
         # Front-end to back-end exceptions:
         aperture = None
         if mode == 'bots' and '/' in filter:
             disperser, filter = filter.split('/')
-        #if mode == 'mrs_ts':
-        #    aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None
             nint = 1
+            run_type = 'Acquisition'
+            depth_label = ''
 
         ngroup = int(ngroup)
         report_text = jwst._print_pandeia_exposure(
             inst, subarray, readout, ngroup, nint,
         )
         target_focus = input.target_focus.get().capitalize()
-        # TBD: add target name to first line
 
         if target_focus == 'Science':
             target_acq_mag = None
@@ -2535,6 +2533,7 @@ def server(input, output, session):
             )
             if no_target:
                 report_text = f'<b>{target_focus} target</b><br>{report_text}'
+                warning_text.set(warnings)
                 return ui.HTML(f'<pre>{report_text}</pre>')
             target_list = cache_acquisition[target.host]['targets']
             selected = cache_acquisition[target.host]['selected']
@@ -2548,37 +2547,35 @@ def server(input, output, session):
         sat_label = make_saturation_label(
             inst, mode, aperture, disperser, filter, subarray, order, sed_label,
         )
+        tso_label = make_obs_label(
+            inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint, run_type, sed_label, depth_label,
+        )
 
-        cached = sat_label in cache_saturation
-        if cached:
+        if sat_label in cache_saturation:
             pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
             full_well = cache_saturation[sat_label]['full_well']
-            # TBD: check inst setting consistency
-            try:
-                saturation_text = jwst._print_pandeia_saturation(
-                    inst, subarray, readout, ngroup, pixel_rate, full_well,
-                    format='html',
-                )
-            except OverflowError:
-                return
+            saturation_text = jwst._print_pandeia_saturation(
+                inst, subarray, readout, ngroup, pixel_rate, full_well,
+                format='html',
+            )
             report_text += f'<br>{saturation_text}'
 
-        if cached and 'reports' in cache_saturation[sat_label]:
-            # TBD: check that groups / integs match
-            report_in, report_out = cache_saturation[sat_label]['reports']
-            inst = cache_saturation[sat_label]['inst']
-            mode = cache_saturation[sat_label]['mode']
-            stats_text = jwst._print_pandeia_stats(
-                inst, mode, report_in, report_out, format='html',
-            )
-            report_text += f'<br><br>{stats_text}'
+
+        if tso_label in tso_runs[run_type]:
+            tso_run = tso_runs[run_type][tso_label]
+            warnings = tso_run['warnings']
+            if transit_dur == tso_run['transit_dur']:
+                report_text += f'<br><br>{tso_run["stats"]}'
+        warning_text.set(warnings)
         return ui.HTML(f'<pre>{report_text}</pre>')
+
 
     @render.text
     @reactive.event(warning_text)
     def warnings():
         warnings = warning_text.get()
-        if warnings == '':
+        if len(warnings) == 0:
             return 'No warnings'
         text = ''
         for warn_label, warn_text in warnings.items():
