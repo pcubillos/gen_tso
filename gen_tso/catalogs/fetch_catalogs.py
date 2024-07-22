@@ -10,6 +10,7 @@ __all__ = [
     'fetch_vizier_ks',
     'fetch_aliases',
     'fetch_tess_aliases',
+    'fetch_gaia_targets',
 ]
 
 import sys
@@ -23,8 +24,12 @@ import urllib
 import pickle
 import warnings
 import re
+import socket
+import ssl
 
+from astropy.coordinates import SkyCoord
 import numpy as np
+from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad as simbad
 from astroquery.vizier import Vizier
 from astropy.table import Table
@@ -181,7 +186,7 @@ def curate_aliases():
         tess_aliases = pickle.load(handle)
     aliases.update(tess_aliases)
 
-    jwst_names = list(load_trexolists())
+    jwst_names = list(load_trexolists()['target'])
     # Ensure to match against NEA host names for jwst targets
     for host,system in aliases.items():
         is_in = np.in1d(system['host_aliases'], jwst_names)
@@ -542,8 +547,12 @@ def fetch_aliases(hosts, output_file=None):
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
     # Keep track of trexolists aliases to cross-check:
-    jwst_names = load_trexolists()
-    jwst_aliases = load_trexolists(grouped=True)
+    trexo_data = load_trexolists(grouped=True)
+    jwst_aliases = [
+        list(np.unique(jwst_target['target']))
+        for jwst_target in trexo_data
+    ]
+    jwst_names = np.unique(np.concatenate(jwst_aliases))
 
     aliases = {}
     nhosts = len(hosts)
@@ -887,4 +896,117 @@ def scrap_nea_kmag(target):
                 kmag = float(kmag_text)
     return kmag
 
+
+def fetch_gaia_targets(
+        ra_source, dec_source, max_separation=80.0, raise_errors=True,
+    ):
+    """
+    Search for Gaia DR3 stellar sources around a given target.
+
+    Parameters
+    ----------
+    ra_source: Float
+        Right ascension (deg) of target to query around.
+    dec_source: Float
+        Declination (deg) of target to query around.
+    max_angular_distance: Float
+        Maximum angular distance from target to consider (arcsec).
+        Consider that the visit splitting distance for NIRSpec TA is 38"
+    raise_errors: Bool
+        If True and there was an error while requesting the data,
+        raise the error.
+        If False and there was an error, print error to screen and
+        return a string identifying some known error types.
+
+    Returns
+    -------
+    names: 1D string array
+        Gaia DR3 stellar source names within max_separation from target
+    G_mag: 1D float array
+        Gaia G magnitude of found stellar sources
+    teff: 1D float array
+        Effective temperature (K) of found stellar source
+    log_g: 1D float array
+        log(g) of found stellar sources
+    ra: 1D float array
+        Right ascension (deg) of found stellar sources
+    dec: 1D float array
+        Declination (deg) of found stellar sources
+    separation: 1D float array
+        Angular separation (arcsec) of found stellar sources from target
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+
+    >>> # Stellar sources around WASP-69:
+    >>> ra_source = 315.0259661
+    >>> dec_source = -5.094857
+    >>> cat.fetch_gaia_targets(ra_source, dec_source)
+    """
+    max_sep_degrees = max_separation / 3600.0
+
+    try:
+        job = Gaia.launch_job_async(
+            f"""
+            SELECT * \
+            FROM gaiadr3.gaia_source \
+            WHERE CONTAINS(\
+                POINT(gaiadr3.gaia_source.ra, gaiadr3.gaia_source.dec),
+                CIRCLE({ra_source}, {dec_source}, {max_sep_degrees}))=1;""",
+            dump_to_file=False,
+        )
+    except Exception as e:
+        err_text = f"Gaia astroquery request failed with {e.__class__.__name__}"
+        if isinstance(e, socket.gaierror):
+            print(
+                f"\n{err_text}\n{str(e)}\n"
+                "Likely there's no internet connection at the moment\n"
+            )
+            exception = 'gaierror'
+        elif isinstance(e, requests.exceptions.HTTPError):
+            print(
+                f"\n{err_text}\n{str(e)}\n"
+                f"Probably the ESA server is down at the moment\n"
+            )
+            exception = 'gaierror'
+        elif isinstance(e, ssl.SSLError):
+            print(
+                f"\n{err_text}\n{str(e)}\n"
+                "If you got a 'SSL: CERTIFICATE_VERIFY_FAILED' error on an "
+                "OSX machine, try following the steps on this link: "
+                "https://stackoverflow.com/a/42334357 which will point you to "
+                "the ReadMe.rtf file in your Applications/Python 3.X folder\n"
+            )
+            exception = 'ssl'
+        else:
+            print(f"\n{err_text}\n{str(e)}")
+            exception = 'other'
+        if raise_errors:
+            raise e
+        return exception
+
+    resp = job.get_results()
+    targets = resp[~resp['teff_gspphot'].mask]
+
+    c1 = SkyCoord(ra_source, dec_source, unit='deg', frame='icrs')
+    separation = []
+    for i,target in enumerate(targets):
+        c2 = SkyCoord(target['ra'], target['dec'], unit='deg', frame='icrs')
+        sep = c1.separation(c2).to('arcsec').value
+        separation.append(sep)
+
+    sep_isort = np.argsort(separation)
+    for i,idx in enumerate(sep_isort):
+        target = targets[idx]
+
+    return (
+            targets['DESIGNATION'].data.data[sep_isort],
+            targets['phot_g_mean_mag'].data.data[sep_isort],
+            targets['teff_gspphot'].data.data[sep_isort],
+            targets['logg_gspphot'].data.data[sep_isort],
+            targets['ra'].data.data[sep_isort],
+            targets['dec'].data.data[sep_isort],
+            np.array(separation)[sep_isort],
+    )
 

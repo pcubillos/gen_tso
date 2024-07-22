@@ -1,10 +1,11 @@
-shiny>=0.8.1
+shiny>=1.0.0
 pandeia.engine>=3.0.0
 numpy>=1.17
 scipy
 requests>=2.19.1
 grequests>=0.7.0
 astroquery
+astropy>=5.3.0
 pandas
 plotly
 shinywidgets>=0.3.0

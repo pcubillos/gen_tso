@@ -6,8 +6,6 @@ __all__ = [
     'filter_throughputs',
     'generate_all_instruments',
     'Detector',
-    'detector_label',
-    'instrument_label',
 ]
 
 from itertools import product
@@ -136,8 +134,8 @@ def get_configs(instrument=None, obs_type=None):
     ta_apertures = {
         'miri': ['imager'],
         'nircam': ['lw'],
-        'nirspec': ['s1600a1'],
         'niriss': ['imager', 'nrm'],
+        'nirspec': ['s1600a1'],
     }
     if instrument is None:
         instrument = 'miri nircam nirspec niriss'.split()
@@ -233,6 +231,15 @@ def get_configs(instrument=None, obs_type=None):
             for slit in slits
         }
 
+        if inst_dict['mode'] == 'soss':
+            inst_dict['orders'] = {
+                '1': '1',
+                '2': '2',
+                '1 2': '1 and 2',
+            }
+        else:
+            inst_dict['orders'] = None
+
         if obs_type == 'acquisition':
             groups = inst_config['mode_config'][mode]['enum_ngroups']
             if not isinstance(groups, list):
@@ -241,6 +248,7 @@ def get_configs(instrument=None, obs_type=None):
             # Integrations and exposures are always one (so far)
             #print(inst_config['mode_config'][mode]['enum_nexps'])
             #print(inst_config['mode_config'][mode]['enum_nints'])
+
 
         # Special constraints
         inst_dict['constraints'] = {}
@@ -258,6 +266,14 @@ def get_configs(instrument=None, obs_type=None):
                     subs.remove('sub1024a')
                 constraints[disperser] = subs
             inst_dict['constraints']['subarrays'] = {'dispersers': constraints}
+
+        if mode == 'soss':
+            constraints = {
+                'substrip96': ['1'],
+                'substrip256': ['1', '2', '1 2'],
+                'sossfull': ['1', '2', '1 2'],
+            }
+            inst_dict['constraints']['orders'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
             group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
@@ -349,7 +365,7 @@ class Detector:
     def __init__(
             self, mode, label, instrument, obs_type,
             disperser_label, dispersers, filter_label, filters,
-            subarrays, readouts, apertures,
+            subarrays, readouts, apertures, orders=None,
             groups=None, default_indices=None,
             constraints={},
         ):
@@ -378,6 +394,8 @@ class Detector:
         self.apertures = apertures
         self.groups = groups
         self.constraints = constraints
+        if self.mode == 'soss':
+            self.orders = orders
 
         telescope = 'jwst'
         self.ins_config = get_instrument_config(telescope, instrument.lower())
@@ -398,7 +416,7 @@ class Detector:
         ):
         """
         det = generate_all_instruments()[5]
-        get_constrained_val(det, 'filters', disperser='nrm')
+        det.get_constrained_val('filters', disperser='nrm')
         get_constrained_val(det, 'readouts', disperser='nrm')
         get_constrained_val(det, 'readouts', disperser='imager')
         get_constrained_val(det, 'readouts', filter='imager')
@@ -435,7 +453,38 @@ class Detector:
                 }
         return default_vals
 
+    def instrument_label(self, disperser, filter):
+        """
+        Generate a pretty label with only instrument, mode,
+        and sometimes disperser or filter.
 
+        Examples
+        --------
+        >>> import gen_tso.pandeia_io as jwst
+        >>> detectors = jwst.generate_all_instruments()
+        >>> bots = detectors[4]
+        >>> print(bots.instrument_label(None, 'g395h/f290lp'))
+        """
+        inst = self.instrument
+        mode = self.mode
+        if mode == 'mrs_ts':
+            disperser_label = self.dispersers[disperser]
+            label = f'{inst} / MRS / {disperser_label}'
+        elif mode == 'lrsslitless':
+            label = f'{inst} / LRS'
+        elif mode == 'soss':
+            label = f'{inst} / SOSS'
+        elif mode == 'ssgrism':
+            filter_label = self.filters[filter]
+            label = f'{inst} / {filter_label}'
+        elif mode == 'bots':
+            disperser_label = self.filters[filter]
+            disperser_label = disperser_label[:disperser_label.index('/')]
+            label = f'{inst} / {disperser_label}'
+        elif mode == 'target_acq':
+            label = f'{inst} / acquisition'
+
+        return label
 
 
 def filter_throughputs():
@@ -494,6 +543,7 @@ def generate_all_instruments():
         subarrays = inst['subarrays']
         readouts = inst['readouts']
         apertures = inst['apertures']
+        orders = inst['orders']
         constraints = inst['constraints']
 
         if mode == 'lrsslitless':
@@ -542,10 +592,54 @@ def generate_all_instruments():
             subarrays,
             readouts,
             apertures,
+            orders=orders,
             default_indices=default_indices,
             constraints=constraints,
         )
         detectors.append(det)
+
+    # Photometry observing modes
+    photo_insts = get_configs(obs_type='photometry')
+    # TBD: enable when the front-end app is ready to take these in
+    if False:
+        for inst in photo_insts:
+            mode = inst['mode']
+            # Use pupil in place of 'disperser'
+            dispersers = inst['apertures']
+            filters = inst['filters']
+            subarrays = inst['subarrays']
+            readouts = inst['readouts']
+            apertures = inst['apertures']
+
+            disperser_label = 'Pupil'
+            filter_label = 'Filter'
+            default_indices = 0, 0, 0, 0
+            constraints = {}
+
+            if mode == 'lw_ts':
+                # Constraints for filter depends on pupil
+                pupil_constraints = {'lw': []}
+                for filter,filter_name in inst['filters'].items():
+                    if filter in inst['filter_constraints']:
+                        dispersers[filter] = filter_name
+                        pupil_constraints[filter] = [inst['filter_constraints'][filter]]
+                    else:
+                        pupil_constraints['lw'].append(filter)
+                constraints['filters'] = {'dispersers': pupil_constraints}
+            if mode == 'sw_ts':
+                # Constraints for filter depends on pupil
+                pupil_constraints = {'sw': []}
+                for filter,filter_name in inst['filters'].items():
+                    print(filter, filter_name)
+                    if filter in inst['filter_constraints']:
+                        dispersers[filter] = filter_name
+                        pupil_constraints[filter] = [inst['filter_constraints'][filter]]
+                    else:
+                        pupil_constraints['sw'].append(filter)
+                constraints['filters'] = {'dispersers': pupil_constraints}
+            if mode == 'imaging_ts':
+                disperser_label = ''
+                dispersers = {'':''}
 
     # Acquisition observing modes
     acq_insts = get_configs(obs_type='acquisition')
@@ -585,29 +679,64 @@ def generate_all_instruments():
             subarrays,
             readouts,
             apertures,
-            inst['groups'],
-            default_indices,
-            constraints,
+            groups=inst['groups'],
+            default_indices=default_indices,
+            constraints=constraints,
         )
         detectors.append(det)
-
 
     return detectors
 
 
-def detector_label(inst, mode, disperser, filter, subarray, readout):
+def get_detector(instrument=None, mode=None, detectors=None):
+    """
+    Find the detector matching instrument and mode.
+    """
+    if detectors is None:
+        detectors = generate_all_instruments()
+
+    if instrument is None and mode is None:
+        return None
+
+    if mode is None:
+        # Default to first detector for instrument (spectroscopic mode)
+        for detector in detectors:
+            if detector.instrument.lower() == instrument.lower():
+                return detector
+
+    for det in detectors:
+        if det.mode == mode:
+            if instrument is None or det.instrument.lower()==instrument.lower():
+                return det
+    return None
+
+
+def make_detector_label(
+        inst, mode, aperture, disperser, filter, subarray, readout, order,
+    ):
     """
     Generate a pretty and (as succinct as possible) label for the
     detector configuration.
     """
     if mode == 'target_acq':
-        return inst_names[inst]
+        if inst == 'miri':
+            label = f'{filter.upper()} {subarray.upper()}'
+        if inst == 'nircam':
+            label = f'{filter.upper()} {readout.upper()}'
+        if inst == 'niriss':
+            label = 'Bright' if aperture == 'nrm' else 'Faint'
+            label = f'{label} {readout.upper()}'
+        if inst == 'nirspec':
+            label = f'{filter.upper()} {subarray.upper()} {readout.upper()}'
+        return f'{inst_names[inst]} {label}'
+
     if mode == 'mrs_ts':
-        return 'MIRI MRS'
+        return f'MIRI MRS {disperser.upper()}'
     if mode == 'lrsslitless':
         return 'MIRI LRS'
     if mode == 'soss':
-        return f'NIRISS {mode.upper()} {subarray}'
+        order = f' O{order[0]}' if len(order)==1 else ''
+        return f'NIRISS {mode.upper()} {subarray}{order}'
     if mode == 'ssgrism':
         subarray = subarray.replace('grism', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
@@ -617,29 +746,42 @@ def detector_label(inst, mode, disperser, filter, subarray, readout):
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
 
 
-def instrument_label(detector, disperser, filter):
+def make_saturation_label(
+        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+    ):
     """
-    Generate a pretty label with only instrument, mode,
-    and sometimes disperser or filter.
+    Make a label of unique saturation setups to identify when and
+    when not the saturation level can be estimated.
     """
-    inst = detector.instrument
-    mode = detector.mode
-    if mode == 'mrs_ts':
-        disperser_label = detector.dispersers[disperser]
-        label = f'{inst} / MRS / {disperser_label}'
-    if mode == 'lrsslitless':
-        label = f'{inst} / LRS'
-    if mode == 'soss':
-        label = f'{inst} / SOSS'
-    if mode == 'ssgrism':
-        filter_label = detector.filters[filter]
-        label = f'{inst} / {filter_label}'
-    elif mode == 'bots':
-        disperser_label = detector.filters[filter]
-        disperser_label = disperser_label[:disperser_label.index('/')]
-        label = f'{inst} / {disperser_label}'
-    elif mode == 'target_acq':
-        label = f'{inst} / acquisition'
+    sat_label = f'{mode}_{filter}'
+    if mode == 'bots':
+        sat_label = f'{sat_label}_{disperser}_{subarray}'
+    elif mode == 'soss':
+        order = f'_O{order[0]}' if len(order)==1 else ''
+        sat_label = f'{sat_label}_{sed_label}{order}'
+    elif mode == 'mrs_ts':
+        sat_label = f'{sat_label}_{disperser}'
+    elif mode == 'target_acq' and inst == 'niriss':
+        sat_label = f'{sat_label}_{aperture}'
 
+    sat_label = f'{sat_label}_{sed_label}'
+    return sat_label
+
+
+def make_obs_label(
+        inst, mode, aperture, disperser, filter, subarray, readout, order,
+        ngroup, nint, run_type, sed_label, depth_label,
+    ):
+    detector_label = make_detector_label(
+        inst, mode, aperture, disperser, filter, subarray, readout, order,
+    )
+    if run_type == 'Acquisition':
+        group_ints = f'({ngroup} G)'
+        depth_label = 'acquisition'
+    else:
+        group_ints = f'({ngroup} G, {nint} I)'
+    label = (
+        f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
+    )
     return label
 

@@ -4,7 +4,7 @@
 
 # Pyrat-Bay version:
 TSO_VER = 0  # Major version
-TSO_MIN = 2  # Minor version
+TSO_MIN = 3  # Minor version
 TSO_REV = '0'  # Revision
 
 

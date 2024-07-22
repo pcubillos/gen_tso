@@ -1,18 +1,19 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-from collections.abc import Iterable
+import json
 import os
-import sys
-import pickle
 from pathlib import Path
+import pickle
+import sys
 import textwrap
+from datetime import timedelta, datetime
+
 
 import numpy as np
 import scipy.interpolate as si
-
+import pandas as pd
 import faicons as fa
-from htmltools import HTML
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
@@ -25,7 +26,11 @@ from gen_tso.utils import (
     ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
 )
 import gen_tso.catalogs.utils as u
-
+from gen_tso.pandeia_io.pandeia_defaults import (
+    get_detector,
+    make_obs_label,
+    make_saturation_label,
+)
 
 # Catalog of known exoplanets (and candidate planets)
 catalog = cat.Catalog()
@@ -39,54 +44,85 @@ is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
 k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
 
-phoenix_dict = {model:key for key,model in zip(p_keys, p_models)}
-kurucz_dict = {model:key for key,model in zip(k_keys, k_models)}
+phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
+kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
 sed_dict = {
     'phoenix': phoenix_dict,
     'kurucz': kurucz_dict,
 }
 
 bands_dict = {
-    'J mag': '2mass,j',
-    'H mag': '2mass,h',
-    'Ks mag': '2mass,ks',
-    'Gaia mag': 'gaia,g',
-    'V mag': 'johnson,v',
+    '2mass,j': 'J mag',
+    '2mass,h': 'H mag',
+    '2mass,ks': 'Ks mag',
+    'gaia,g': 'Gaia mag',
+    'johnson,v': 'V mag',
 }
-
-inst_names = [
-    'MIRI',
-    'NIRCam',
-    'NIRISS',
-    'NIRSpec',
-]
-
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
-
-def get_detector(mode=None, instrument=None):
-    if mode is not None:
-        for det in detectors:
-            if det.mode == mode:
-                if instrument is None or det.instrument==instrument:
-                    return det
-        return None
-
 filter_throughputs = jwst.filter_throughputs()
 
-tso_runs = {}
-tso_labels = {}
-tso_labels['Transit'] = {}
-tso_labels['Eclipse'] = {}
-tso_labels['Acquisition'] = {}
+modes = {}
+for inst in instruments:
+    spec_modes = {}
+    for det in detectors:
+        if det.instrument == inst and det.obs_type=='spectroscopy':
+            spec_modes[det.mode] = det.mode_label
+    choices = {}
+    choices['Spectroscopy'] = spec_modes
+    #choices['Photometry'] = photo_modes  TBD
+    acq_modes = {}
+    for det in detectors:
+        if det.instrument == inst and det.obs_type=='acquisition':
+            acq_modes[det.mode] = 'Target Acquisition'
+    choices['Acquisition'] = acq_modes
+    modes[inst] = choices
 
+
+depth_choices = {
+    'transit': ['Flat', 'Input'],
+    'eclipse': ['Blackbody', 'Input']
+}
+
+tso_runs = {
+    'Transit': {},
+    'Eclipse': {},
+    'Acquisition': {},
+}
+
+def make_tso_labels(tso_runs):
+    tso_labels = {
+        'Transit': {},
+        'Eclipse': {},
+        'Acquisition': {},
+    }
+    for key, runs in tso_runs.items():
+        for tso_label, tso_run in runs.items():
+            tso_key = f'{key}_{tso_label}'
+            tso_labels[key][tso_key] = tso_run['label']
+    return tso_labels
+
+
+cache_target = {}
+cache_acquisition = {}
 cache_saturation = {}
-spectrum_choices = {
+
+# Planet and stellar spectra
+spectra = {
+    'transit': {},
+    'eclipse': {},
+    'sed': {},
+}
+bookmarked_spectra = {
     'transit': [],
     'eclipse': [],
     'sed': [],
 }
-spectra = {}
+user_spectra = {
+    'transit': [],
+    'eclipse': [],
+    'sed': [],
+}
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
@@ -99,21 +135,20 @@ current_dir = os.path.realpath(os.getcwd())
 for location in loading_folders:
     t_models, e_models, sed_models = collect_spectra(location)
     for label, model in t_models.items():
-        spectra[label] = model
-        spectrum_choices['transit'].append(label)
+        spectra['transit'][label] = model
+        user_spectra['transit'].append(label)
     for label, model in e_models.items():
-        spectra[label] = model
-        spectrum_choices['eclipse'].append(label)
+        spectra['eclipse'][label] = model
+        user_spectra['eclipse'].append(label)
     # for label, model in sed_models.items():
         # 'depth' --> 'flux'
-        #spectra[label] = {'wl': wl, 'depth': depth}
-        #spectrum_choices['sed'].append(label)
+        #spectra['sed'][label] = {'wl': wl, 'depth': depth}
+        #user_spectra['sed'].append(label)
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
-
-css_file = f'{ROOT}data/style.css'
+stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
 
 depth_units = [
     "none",
@@ -127,26 +162,64 @@ sed_units = [
     "mJy",
 ]
 
+layout_kwargs = dict(
+    width=1/2,
+    fixed_width=False,
+    heights_equal='all',
+    gap='7px',
+    fill=False,
+    fillable=True,
+    class_="pb-2 pt-0 m-0",
+)
+
 
 app_ui = ui.page_fluid(
-    ui.markdown("## **Gen TSO**: A general ETC for time-series observations"),
-    ui.include_css(css_file),
-    #ui.markdown("""
-    #    This app is based on [shiny][0].
-    #    [0]: https://shiny.posit.co/py/api/core
-    #    """),
+    ui.layout_columns(
+        ui.span(
+            ui.HTML("<b>Gen TSO</b>: A general exoplanet ETC for JWST "
+            "time-series observations ("),
+            ui.tooltip(
+                ui.tags.a(
+                    fa.icon_svg("book", fill='black'),
+                    href='https://pcubillos.github.io/gen_tso',
+                    target="_blank",
+                ),
+                "documentation",
+                placement='bottom',
+            ),
+            ')',
+            style="font-size: 28px;",
+        ),
+        ui.output_image("tso_logo", height='50px', inline=True),
+        col_widths=(11,1),
+        fixed_width=False,
+        fill=False,
+        fillable=True,
+    ),
+    ui.tags.script(
+        """
+        $(function() {
+            Shiny.addCustomMessageHandler("update_esasky", function(message) {
+                var esaskyFrame = document.getElementById("esasky");
+                esaskyFrame.contentWindow.postMessage(
+                    JSON.parse(message.command), 'https://sky.esa.int'
+                );
+            });
+        });
+        """
+    ),
 
     # Instrument and detector modes:
     ui.layout_columns(
         cs.navset_card_tab_jwst(
-            inst_names,
-            id="select_instrument",
+            instruments,
+            id="instrument",
             selected='NIRCam',
             header="Select an instrument and detector",
             footer=ui.input_select(
-                "select_mode",
+                "mode",
                 "",
-                choices = {},
+                choices=modes['NIRCam'],
                 width='425px',
             ),
         ),
@@ -161,9 +234,9 @@ app_ui = ui.page_fluid(
                         "TSO runs will show here after a 'Run Pandeia' call",
                         placement='right',
                     ),
-                    choices=tso_labels,
+                    choices=make_tso_labels(tso_runs),
                     selected=[''],
-                    #width='450px',
+                    width='100%',
                 ),
                 # TBD: Set disabled based on existing TSOs
                 ui.layout_column_wrap(
@@ -189,10 +262,28 @@ app_ui = ui.page_fluid(
                 fill=True,
                 fillable=True,
             ),
-            ui.input_task_button(
-                id="run_pandeia",
-                label="Run Pandeia",
-                label_busy="processing...",
+            ui.layout_columns(
+                ui.input_task_button(
+                    id="run_pandeia",
+                    label="Run Pandeia",
+                    label_busy="processing...",
+                    width='100%',
+                ),
+                ui.panel_conditional(
+                    "input.mode == 'target_acq'",
+                    ui.input_radio_buttons(
+                        id='target_focus',
+                        label='',
+                        choices={
+                            'science': 'sci target',
+                            'acquisition': 'acq target',
+                        },
+                        selected='science',
+                    ),
+                ),
+                col_widths=(9,3),
+                gap='10px',
+                class_="px-0 py-0 mx-0 my-0",
             ),
         ),
         col_widths=[6,6],
@@ -236,16 +327,16 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_text("teff", "", value='1400.0'),
+                    ui.input_text("t_eff", "", value='1400.0'),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_text("logg", "", value='4.5'),
+                    ui.input_text("log_g", "", value='4.5'),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
                         label='',
-                        choices=list(bands_dict.keys()),
-                        selected='Ks mag',
+                        choices=bands_dict,
+                        selected='2mass,ks',
                     ),
                     ui.input_text(
                         id="magnitude",
@@ -269,8 +360,14 @@ app_ui = ui.page_fluid(
                         "blackbody",
                         "input",
                     ],
+                    selected='phoenix',
                 ),
-                ui.output_ui('choose_sed'),
+                ui.input_select(
+                    id="sed",
+                    label="",
+                    choices=sed_dict['phoenix'],
+                    selected='g0v',
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             # The planet
@@ -315,14 +412,17 @@ app_ui = ui.page_fluid(
                     placement="right",
                     id="obs_popover",
                 ),
-                "Observation",
+                ui.markdown("Observation"),
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("Type:"),
                     ui.input_select(
-                        id='geometry',
+                        id='obs_geometry',
                         label='',
-                        choices=['Transit', 'Eclipse'],
+                        choices={
+                            'transit': 'Transit',
+                            'eclipse': 'Eclipse',
+                        }
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
@@ -342,7 +442,52 @@ app_ui = ui.page_fluid(
                     label=ui.output_ui('depth_label_text'),
                     choices=["Input"],
                 ),
-                ui.output_ui('choose_depth'),
+                ui.panel_conditional(
+                    "input.planet_model_type == 'Input'",
+                    ui.tooltip(
+                        ui.input_select(
+                            id="depth",
+                            label="",
+                            choices=user_spectra['transit'],
+                        ),
+                        '',
+                        id='depth_tooltip',
+                        placement='right',
+                    ),
+                ),
+                ui.panel_conditional(
+                    "input.planet_model_type == 'Flat'",
+                    ui.layout_column_wrap(
+                        ui.p("Depth (%):"),
+                        ui.input_numeric(
+                            id="transit_depth",
+                            label="",
+                            value=0.5,
+                            step=0.1,
+                        ),
+                        **layout_kwargs,
+                    ),
+                ),
+                ui.panel_conditional(
+                    "input.planet_model_type == 'Blackbody'",
+                    ui.layout_column_wrap(
+                        ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
+                        ui.input_numeric(
+                            id="eclipse_depth",
+                            label="",
+                            value=0.05,
+                            step=0.1,
+                        ),
+                        ui.p("Temp (K):"),
+                        ui.input_numeric(
+                            id="teq_planet",
+                            label="",
+                            value=2000.0,
+                            step=100,
+                        ),
+                        **layout_kwargs,
+                    ),
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
             body_args=dict(class_="p-2 m-0"),
@@ -382,9 +527,18 @@ app_ui = ui.page_fluid(
                     choices=[''],
                     selected='',
                 ),
+                ui.panel_conditional(
+                    "input.mode == 'soss' && input.filter == 'clear'",
+                    ui.input_select(
+                        id="order",
+                        label="Order",
+                        choices=['1'],
+                        selected='1',
+                    ),
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
-            # groups / integs
+            # groups and integrations
             ui.panel_well(
                 cs.label_tooltip_button(
                     label='Groups per integration ',
@@ -394,9 +548,58 @@ app_ui = ui.page_fluid(
                     class_='pb-1',
                 ),
                 ui.output_ui('groups_input'),
-                ui.output_ui('integration_input'),
-                ui.input_switch("integs_switch", "Match obs. duration", False),
+                ui.panel_conditional(
+                    "input.mode != 'target_acq'",
+                    ui.input_numeric(
+                        id="integrations",
+                        label="Integrations",
+                        value=1,
+                        min=1, max=100000,
+                    ),
+                    ui.input_switch(
+                        "integs_switch",
+                        "Match obs. duration",
+                        False,
+                    ),
+                ),
                 class_="px-2 pt-2 pb-0 m-0",
+            ),
+            # Search nearby Gaia targets for acquisition
+            ui.panel_conditional(
+                "input.mode == 'target_acq'",
+                ui.panel_well(
+                    ui.tooltip(
+                        ui.markdown('Acquisition targets'),
+                        'Gaia targets within 80" of science target',
+                        id="gaia_tooltip",
+                        placement="top",
+                    ),
+                    ui.layout_column_wrap(
+                        ui.input_task_button(
+                            id="search_gaia_ta",
+                            label="Search nearby targets",
+                            label_busy="processing...",
+                            class_='btn btn-outline-secondary btn-sm',
+                        ),
+                        ui.p("Select TA's SED:"),
+                        ui.input_select(
+                            id="ta_sed",
+                            label="",
+                            choices=[],
+                            selected='',
+                        ),
+                        ui.input_action_button(
+                            id="get_acquisition_target",
+                            label="Print acq. target data",
+                            class_='btn btn-outline-secondary btn-sm',
+                        ),
+                        width=1,
+                        heights_equal='row',
+                        gap='7px',
+                        class_="px-0 py-0 mx-0 my-0",
+                    ),
+                    class_="px-2 pt-2 pb-2 m-0",
+                ),
             ),
             body_args=dict(class_="p-2 m-0"),
         ),
@@ -432,7 +635,20 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Sky view",
-                    ui.output_ui('esasky_card'),
+                    cs.custom_card(
+                        ui.HTML(
+                            '<iframe id="esasky" '
+                            'height="100%" '
+                            'width="100%" '
+                            'style="overflow" '
+                            'src="https://sky.esa.int/esasky/?target=0.0%200.0'
+                            '&fov=0.2&sci=true&hide_welcome=true" '
+                            'frameborder="0" allowfullscreen></iframe>',
+                        ),
+                        body_args=dict(class_='m-0 p-0'),
+                        full_screen=True,
+                        height='350px',
+                    )
                 ),
                 ui.nav_panel(
                     "Stellar SED",
@@ -554,18 +770,18 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Results",
-                    cs.custom_card(
-                        ui.span(
-                            ui.output_ui(id="exp_time"),
-                            style="font-family: monospace; font-size:medium;",
-                        ),
-                        body_args=dict(padding='8px'),
-                        style="background: #F2F2F2!important; border-radius: 3px;",
+                    ui.span(
+                        ui.output_ui(id="results"),
+                        style="font-family: monospace; font-size:medium;",
                     ),
                 ),
                 ui.nav_panel(
-                    ui.output_ui('warnings_label'),
-                    ui.output_text_verbatim(id="warnings")
+                    ui.output_ui(id='warnings_label'),
+                    ui.output_text_verbatim(id="warnings"),
+                ),
+                ui.nav_panel(
+                    "Acquisition targets",
+                    ui.output_data_frame(id="acquisition_targets"),
                 ),
             ),
             col_widths=[12, 12],
@@ -573,7 +789,24 @@ app_ui = ui.page_fluid(
         ),
         col_widths=[3, 3, 6],
     ),
+    title='Gen TSO',
+    theme=f'{ROOT}/data/base_theme.css',
 )
+
+
+def parse_obs(input):
+    planet_model_type = input.planet_model_type.get()
+    depth_model = None
+    rprs_sq = None
+    teq_planet = None
+    if planet_model_type == 'Input':
+        depth_model = input.depth.get()
+    elif planet_model_type == 'Flat':
+        rprs_sq = input.transit_depth.get()
+    elif planet_model_type == 'Blackbody':
+        rprs_sq = input.eclipse_depth.get()
+        teq_planet = input.teq_planet.get()
+    return planet_model_type, depth_model, rprs_sq, teq_planet
 
 
 def planet_model_name(input):
@@ -585,21 +818,21 @@ def planet_model_name(input):
     depth_label: String
         A string representation of the depth model.
     """
-    model_type = input.planet_model_type.get()
-    if model_type == 'Input':
+    planet_model_type = input.planet_model_type.get()
+    if planet_model_type == 'Input':
         return input.depth.get()
-    transit_depth = input.depth.get()
-    if model_type == 'Flat':
+    elif planet_model_type == 'Flat':
+        transit_depth = input.transit_depth.get()
         return f'Flat transit ({transit_depth:.3f}%)'
-    elif model_type == 'Blackbody':
-        t_planet = input.tplanet.get()
-        return f'Blackbody({t_planet:.0f}K, rprs\u00b2={transit_depth:.3f}%)'
-    raise ValueError('Invalid model type')
+    elif planet_model_type == 'Blackbody':
+        eclipse_depth = input.eclipse_depth.get()
+        t_planet = input.teq_planet.get()
+        return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 
 def get_throughput(input):
-    inst = req(input.select_instrument).get().lower()
-    mode = req(input.select_mode).get()
+    inst = req(input.instrument).get().lower()
+    mode = req(input.mode).get()
     if mode == 'target_acq':
         obs_type = 'acquisition'
     else:
@@ -622,51 +855,58 @@ def get_throughput(input):
 
 
 def get_auto_sed(input):
+    """
+    Guess the model closest to the available options given a T_eff
+    and log_g pair.
+    """
     sed_type = input.sed_type()
+    sed_models = sed_dict[sed_type]
     if sed_type == 'kurucz':
-        m_models, m_teff, m_logg = k_models, k_teff, k_logg
+        m_teff, m_logg = k_teff, k_logg
     elif sed_type == 'phoenix':
-        m_models, m_teff, m_logg = p_models, p_teff, p_logg
+        m_teff, m_logg = p_teff, p_logg
 
     try:
-        teff = float(input.teff())
-        logg = float(input.logg())
+        t_eff = float(input.t_eff.get())
+        log_g = float(input.log_g.get())
     except ValueError:
-        return m_models, None
-    idx = jwst.find_closest_sed(m_teff, m_logg, teff, logg)
-    chosen_sed = m_models[idx]
-    return m_models, chosen_sed
+        return sed_models, None
+    idx = jwst.find_closest_sed(m_teff, m_logg, t_eff, log_g)
+    chosen_sed = list(sed_models)[idx]
+    return sed_models, chosen_sed
 
 
-def parse_sed(input):
+def parse_sed(input, target_acq_mag=None):
     """Extract SED parameters"""
-    # Safety to prevent hanging when initalizing the app:
-    if not input.sed.is_set():
-        return None, None, None, None, None
+    if target_acq_mag is None:
+        sed_type = input.sed_type()
+        norm_band = input.magnitude_band.get()
+        norm_magnitude = float(input.magnitude.get())
+    else:
+        sed_type = 'phoenix'
+        norm_band = 'gaia,g'
+        norm_magnitude = target_acq_mag
 
-    sed_type = input.sed_type()
     if sed_type in ['phoenix', 'kurucz']:
-        sed = input.sed.get()
-        if sed not in sed_dict[sed_type]:
+        if target_acq_mag is None:
+            sed_model = input.sed.get()
+        else:
+            sed_model = input.ta_sed.get()
+        if sed_model not in sed_dict[sed_type]:
             return None, None, None, None, None
-        sed_model = sed_dict[sed_type][sed]
         model_label = f'{sed_type}_{sed_model}'
     elif sed_type == 'blackbody':
-        sed_model = float(input.teff.get())
-        model_label = f'{sed_type}_{sed_model:.0f}K'
+        sed_model = float(input.t_eff.get())
+        model_label = f'bb_{sed_model:.0f}K'
     elif sed_type == 'input':
         model_label = sed_model
-
-    norm_band = bands_dict[input.magnitude_band()]
-    norm_magnitude = float(input.magnitude())
 
     if sed_type == 'kurucz':
         sed_type = 'k93models'
 
     # Make a label
-    for name,band in bands_dict.items():
-        if band == norm_band:
-            band_label = f'{norm_magnitude}_{name.split()[0]}'
+    band_name = bands_dict[norm_band].split()[0]
+    band_label = f'{norm_magnitude:.2f}_{band_name}'
     sed_label = f'{model_label}_{band_label}'
 
     return sed_type, sed_model, norm_band, norm_magnitude, sed_label
@@ -679,27 +919,26 @@ def parse_depth_model(input):
     """
     model_type = input.planet_model_type.get()
     depth_label = planet_model_name(input)
+    obs_geometry = input.obs_geometry.get()
 
     if model_type == 'Input':
         if depth_label is None:
             wl, depth = None, None
         else:
-            wl = spectra[depth_label]['wl']
-            depth = spectra[depth_label]['depth']
+            wl = spectra[obs_geometry][depth_label]['wl']
+            depth = spectra[obs_geometry][depth_label]['depth']
     elif model_type == 'Flat':
         nwave = 1000
-        transit_depth = input.depth.get() * 0.01
+        transit_depth = input.transit_depth.get() * 0.01
         wl = np.linspace(0.6, 50.0, nwave)
         depth = np.tile(transit_depth, nwave)
     elif model_type == 'Blackbody':
-        transit_depth = input.depth.get() * 0.01
-        t_planet = input.tplanet.get()
+        transit_depth = input.eclipse_depth.get() * 0.01
+        t_planet = input.teq_planet.get()
         # Un-normalized planet and star SEDs
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
-        planet_scene = jwst.make_scene(
-            'blackbody', t_planet, norm_band='none',
-        )
+        planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
         wl, f_star = jwst.extract_sed(star_scene)
         wl_planet, f_planet = jwst.extract_sed(planet_scene)
         # Interpolate black body at wl_star
@@ -713,22 +952,24 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def make_saturation_label(mode, disperser, filter, subarray, sed_label):
+def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
     """
-    Make a label of unique saturation setups to identify when and
-    when not the saturation level can be estimated.
+    Check that detector configuration settings are consistent
+    between them.
     """
-    sat_label = f'{mode}_{filter}'
-    if mode == 'bots':
-        sat_label = f'{sat_label}_{subarray}'
-    elif mode == 'mrs_ts':
-        sat_label = f'{sat_label}_{disperser}'
-    sat_label = f'{sat_label}_{sed_label}'
-    return sat_label
+    detector = get_detector(inst, mode, detectors)
+    if detector is None:
+        return False
+    if disperser is not None and disperser not in detector.dispersers:
+        return False
+    if filter is not None and filter not in detector.filters:
+        return False
+    if subarray is not None and subarray not in detector.subarrays:
+        return False
+    return True
 
 
 def server(input, output, session):
-    sky_view_src = reactive.Value('')
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
@@ -736,62 +977,434 @@ def server(input, output, session):
     uploaded_units = reactive.Value(None)
     warning_text = reactive.Value('')
     machine_readable_info = reactive.Value(False)
+    acq_target_list = reactive.Value(None)
+    current_acq_science_target = reactive.Value(None)
+    preset_ngroup = reactive.Value(None)
+    preset_sed = reactive.Value(None)
+    preset_obs_dur = reactive.Value(None)
+    esasky_command = reactive.Value(None)
+    trexo_info = reactive.Value(None)
 
-    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-    # Instrument and detector modes
-    @reactive.Effect
-    @reactive.event(input.select_instrument)
-    def _():
-        inst_name = input.select_instrument.get()
-        print(f"You selected me: {inst_name}")
-        spec_modes = {}
-        for det in detectors:
-            if det.instrument == inst_name and det.obs_type=='spectroscopy':
-                spec_modes[det.mode] = det.mode_label
-        choices = {}
-        choices['Spectroscopy'] = spec_modes
+    def run_pandeia(input):
+        """
+        Perform a pandeia calculation on  science or acquisition target.
+        This might be a transit/eclipse TSO or a Pandeia perform_calculation
+        call.
+        """
+        # Instrumental setup:
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
+        subarray = input.subarray.get()
+        readout = input.readout.get()
+        order = input.order.get()
+        ngroup = int(input.ngroup.get())
+        nint = input.integrations.get()
+        aperture = None
 
-        #choices['Photometry'] = photo_modes  TBD
+        detector = get_detector(inst, mode, detectors)
+        inst_label = detector.instrument_label(disperser, filter)
 
-        acq_modes = {}
-        for det in detectors:
-            if det.instrument == inst_name and det.obs_type=='acquisition':
-                acq_modes[det.mode] = 'Target Acquisition'
-        choices['Acquisition'] = acq_modes
+        run_is_tso = True
+        # Front-end to back-end exceptions:
+        if mode == 'bots':
+            disperser, filter = filter.split('/')
+        if mode == 'soss':
+            if filter == 'f277w':
+                order = [1]
+            else:
+                order = [int(val) for val in order.split()]
+        else:
+            order = None
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'target_acq':
+            aperture = input.disperser.get()
+            disperser = None
+            nint = 1
+            run_is_tso = False
+            run_type = 'Acquisition'
 
-        ui.update_select(
-            'select_mode',
-            choices=choices,
+        # Target setup:
+        target_focus = input.target_focus.get()
+        target_name = input.target.get()
+        t_eff = input.t_eff.get()
+        log_g = input.log_g.get()
+        obs_geometry = input.obs_geometry.get()
+        transit_dur = float(input.t_dur.get())
+        obs_dur = float(input.obs_dur.get())
+        planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
+
+        if target_focus == 'acquisition':
+            selected = acquisition_targets.cell_selection()['rows'][0]
+            target_list = acq_target_list.get()
+            target_acq_mag = np.round(target_list[1][selected], 3)
+        elif target_focus == 'science':
+            exp_time = jwst.exposure_time(
+                inst, subarray, readout, ngroup, nint,
+            )
+            in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
+                inst, subarray, readout, ngroup, transit_dur,
+            )
+            target_acq_mag = None
+
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
+            input, target_acq_mag=target_acq_mag,
         )
 
+        if run_is_tso and in_transit_integs > nint:
+            error_msg = ui.markdown(
+                f"**Warning:**<br>observation time for **{nint} integration"
+                f"(s)** is less than the {obs_geometry} time.  Running "
+                "a perform_calculation()"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            run_is_tso = False
+            run_type = 'Pandeia_SNR'
+
+        pando = jwst.PandeiaCalculation(inst, mode)
+        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+
+        if not run_is_tso:
+            depth_label = ''
+            tso = pando.perform_calculation(
+                ngroup, nint,
+                disperser, filter, subarray, readout, aperture, order,
+            )
+        else:
+            depth_label, wl, depth = parse_depth_model(input)
+            if depth_label is None:
+                error_msg = ui.markdown(
+                    f"**Error:**<br>no {obs_geometry} depth model "
+                    "to simulate"
+                )
+                ui.notification_show(error_msg, type="error", duration=5)
+                return
+            run_type = obs_geometry.capitalize()
+            if depth_label not in spectra:
+                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+                bookmarked_spectra[obs_geometry].append(depth_label)
+            depth_model = [wl, depth]
+
+            observation_dur = exp_time / 3600.0
+            tso = pando.tso_calculation(
+                obs_geometry, transit_dur, observation_dur, depth_model,
+                ngroup, disperser, filter, subarray, readout, aperture, order,
+            )
+
+        if run_is_tso:
+            success = "TSO model simulated!"
+        else:
+            success = "Pandeia calculation done!"
+        ui.notification_show(success, type="message", duration=2)
+        tso_label = make_obs_label(
+            inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint, run_type, sed_label, depth_label,
+        )
+
+        tso_run = dict(
+            # The detector
+            inst=inst,
+            mode=mode,
+            inst_label=inst_label,
+            label=tso_label,
+            # The SED
+            target=target_name,
+            t_eff=t_eff,
+            log_g=log_g,
+            transit_dur=transit_dur,
+            sed_type=sed_type,
+            sed_model=sed_model,
+            norm_band=norm_band,
+            norm_mag=norm_mag,
+            obs_geometry=obs_geometry,
+            obs_dur=obs_dur,
+            planet_model_type=planet_model_type,
+            depth_label=depth_label,
+            rprs_sq=rprs_sq,
+            teq_planet=teq_planet,
+            target_focus=target_focus,
+            # The instrumental setting
+            aperture=aperture,
+            disperser=disperser,
+            filter=filter,
+            subarray=subarray,
+            readout=readout,
+            order=order,
+            ngroup=ngroup,
+            nint=nint,
+            # The outputs
+            tso=tso,
+        )
+
+        if run_is_tso:
+            # The planet
+            #tso_run['depth_model_name'] = depth_label
+            tso_run['depth_model'] = depth_model
+            if isinstance(tso, list):
+                reports = (
+                    [report['report_in']['scalar'] for report in tso],
+                    [report['report_out']['scalar'] for report in tso],
+                )
+                warnings = tso[0]['report_out']['warnings']
+            else:
+                reports = (
+                    tso['report_in']['scalar'],
+                    tso['report_out']['scalar'],
+                )
+                warnings = tso['report_out']['warnings']
+        else:
+            reports = tso['scalar'], None
+            warnings = tso['warnings']
+        tso_run['stats'] = jwst._print_pandeia_stats(
+            inst, mode, reports[0], reports[1], format='html',
+        )
+        tso_run['warnings'] = warnings
+
+        if run_is_tso or mode=='target_acq':
+            tso_runs[run_type][tso_label] = tso_run
+            tso_labels = make_tso_labels(tso_runs)
+            ui.update_select(
+                'display_tso_run',
+                choices=tso_labels,
+                selected=f'{run_type}_{tso_label}',
+            )
+
+        # Update report
+        sat_label = make_saturation_label(
+            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        )
+        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+        cache_saturation[sat_label] = dict(
+            brightest_pixel_rate=pixel_rate,
+            full_well=full_well,
+            warnings=warnings,
+        )
+        saturation_label.set(sat_label)
+        warning_text.set(warnings)
+
+        print(inst, mode, aperture, disperser, filter, subarray, readout, order)
+        print(sed_type, sed_model, norm_band, repr(norm_mag))
+        print('~~ TSO done! ~~')
+
 
     @reactive.Effect
-    @reactive.event(input.select_mode)
-    def _():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        det = get_detector(mode, instrument)
+    @reactive.event(input.display_tso_run)
+    def update_full_state():
+        """
+        When a user chooses a run from display_tso_run, update the entire
+        front end to match the run setup.
+        """
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
 
+        inst = tso['inst']
+        mode = tso['mode']
+        detector = get_detector(inst, mode, detectors)
+        instrument = detector.instrument
+
+        # The instrumental setting
+        if mode == 'bots':
+            filter = f"{tso['disperser']}/{tso['filter']}"
+            disperser = None
+        elif mode == 'target_acq':
+            filter = tso['filter']
+            disperser = tso['aperture']
+        else:
+            filter = tso['filter']
+            disperser = tso['disperser']
+        subarray = tso['subarray']
+        readout = tso['readout']
+        order = tso['order']
+        ngroup = tso['ngroup']
+
+        # Schedule preset values for invalidation:
+        if mode != input.mode.get() or subarray != input.subarray.get():
+            preset_ngroup.set(
+                {'mode':mode, 'subarray':subarray, 'ngroup':ngroup}
+            )
+
+        ui.update_navs('instrument', selected=instrument)
+        mode_choices = modes[instrument]
+        ui.update_select('mode', choices=mode_choices, selected=mode)
         ui.update_select(
             'disperser',
-            label=det.disperser_label,
-            choices=det.dispersers,
-            selected=det.default_disperser,
+            label=detector.disperser_label,
+            choices=detector.dispersers,
+            selected=disperser,
         )
         ui.update_select(
             'filter',
-            label=det.filter_label,
-            choices=det.filters,
-            selected=det.default_filter,
+            label=detector.filter_label,
+            choices=detector.filters,
+            selected=filter,
+        )
+        choices = detector.get_constrained_val('subarrays', disperser=disperser)
+        ui.update_select('subarray', choices=choices, selected=subarray)
+        choices = detector.get_constrained_val('readouts', disperser=disperser)
+        ui.update_select('readout', choices=choices, selected=readout)
+        if mode == 'soss':
+            choices = detector.get_constrained_val('orders', subarray=subarray)
+            order = ' '.join([str(val) for val in order])
+            ui.update_select('order', choices=choices, selected=order)
+        if ngroup != input.ngroup.get():
+            if mode == 'target_acq':
+                ui.update_select('ngroup', selected=ngroup)
+            else:
+                ui.update_numeric('ngroup', value=ngroup)
+
+        # The target:
+        current_target = input.target.get()
+        current_tdur = input.t_dur.get()
+
+        target_focus = tso['target_focus']
+        ui.update_radio_buttons('target_focus', selected=target_focus)
+
+        name = tso['target']
+        t_dur = str(tso['transit_dur'])
+        planet_model_type = tso['planet_model_type']
+        ui.update_selectize('target', selected=name)
+        norm_band = tso['norm_band']
+        norm_mag = str(tso['norm_mag'])
+        sed_type = tso['sed_type']
+        if sed_type == 'k93models':
+            sed_type = 'kurucz'
+        ui.update_select('sed_type', selected=sed_type)
+
+        if name != current_target:
+            if name not in cache_target:
+                cache_target[name] = {}
+            cache_target[name]['t_eff'] = tso['t_eff']
+            cache_target[name]['log_g'] = tso['log_g']
+            cache_target[name]['t_dur'] = t_dur
+            cache_target[name]['depth_label'] = tso['depth_label']
+            cache_target[name]['rprs_sq'] = tso['rprs_sq']
+            cache_target[name]['teq_planet'] = tso['teq_planet']
+            cache_target[name]['norm_band'] = norm_band
+            cache_target[name]['norm_mag'] = norm_mag
+        else:
+            ui.update_text('t_eff', value=tso['t_eff'])
+            ui.update_text('log_g', value=tso['log_g'])
+            ui.update_text('t_dur', value=t_dur)
+            ui.update_select('magnitude_band', selected=norm_band)
+            ui.update_text('magnitude', value=norm_mag)
+
+        reset_sed = (
+            sed_type != input.sed_type.get() or
+            tso['t_eff']!=input.t_eff.get() or
+            tso['log_g'] != input.log_g.get()
+        )
+        if sed_type in ['kurucz', 'phoenix']:
+            if reset_sed:
+                preset_sed.set(tso['sed_model'])
+            else:
+                choices = sed_dict[sed_type]
+                selected = tso['sed_model']
+                ui.update_select("sed", choices=choices, selected=selected)
+
+        if target_focus == 'acquisition':
+            selected = tso['sed_model']
+            ui.update_select('ta_sed', choices=phoenix_dict, selected=selected)
+            target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+            selected = cache_acquisition[target.host]['selected']
+        # The observation
+        warning_text.set(tso['warnings'])
+        obs_geometry = tso['obs_geometry']
+        ui.update_select('obs_geometry', selected=obs_geometry)
+        if t_dur != current_tdur:
+            preset_obs_dur.set(tso['obs_dur'])
+        else:
+            ui.update_text('obs_dur', value=tso['obs_dur'])
+
+        choices = depth_choices[obs_geometry]
+        ui.update_select(
+            "planet_model_type", choices=choices, selected=planet_model_type,
+        )
+        if planet_model_type == 'Input':
+            choices = user_spectra[obs_geometry]
+            selected = tso['depth_label']
+            ui.update_select("depth", choices=choices, selected=selected)
+        elif planet_model_type == 'Flat':
+            ui.update_numeric("transit_depth", value=tso['rprs_sq'])
+        elif planet_model_type == 'Blackbody':
+            ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
+            ui.update_numeric("teq_planet", value=tso['teq_planet'])
+
+
+    @render.image
+    def tso_logo():
+        dir = Path(__file__).resolve().parent.parent
+        img = {
+            "src": str(dir / "docs/images/gen_tso_logo.png"),
+            "height": "50px",
+        }
+        return img
+
+
+    # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    # Instrument and detector modes
+    @reactive.Effect(priority=3)
+    @reactive.event(input.instrument)
+    def _():
+        inst = input.instrument.get()
+        print(f"You selected me: {inst}")
+        mode_choices = modes[inst]
+        choices = []
+        for m in mode_choices.values():
+            choices += list(m)
+
+        mode = input.mode.get()
+        selected = mode if mode in choices else choices[0]
+        ui.update_select('mode', choices=mode_choices, selected=selected)
+
+
+    @reactive.Effect(priority=2)
+    @reactive.event(input.instrument, input.mode)
+    def _():
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        if not is_consistent(inst, mode):
+            return
+        detector = get_detector(inst, mode, detectors)
+
+        focus = 'science' if mode!='target_acq' else input.target_focus.get()
+        ui.update_radio_buttons('target_focus', selected=focus)
+
+        # The disperser
+        choices = detector.dispersers
+        disperser = input.disperser.get()
+        if disperser not in choices:
+            disperser = detector.default_disperser
+        ui.update_select(
+            'disperser',
+            label=detector.disperser_label,
+            choices=choices,
+            selected=disperser,
+        )
+
+        # The filter
+        choices = detector.filters
+        filter = input.filter.get()
+        if filter not in choices:
+            filter = detector.default_filter
+        ui.update_select(
+            'filter',
+            label=detector.filter_label,
+            choices=choices,
+            selected=filter,
         )
 
         selected = input.filter_filter.get()
-        if det.obs_type == 'acquisition':
-            choices = [det.instrument]
+        if detector.obs_type == 'acquisition':
+            choices = [detector.instrument]
         else:
-            choices = [det.instrument, 'all']
+            choices = [detector.instrument, 'all']
 
-        if selected != 'all' or det.obs_type=='acquisition':
+        if selected != 'all' or detector.obs_type=='acquisition':
             selected = None
         ui.update_radio_buttons(
             "filter_filter",
@@ -799,43 +1412,48 @@ def server(input, output, session):
             selected=selected,
         )
 
-    @reactive.Effect
-    @reactive.event(input.disperser, input.filter)
+
+    @reactive.Effect(priority=1)
+    @reactive.event(input.instrument, input.mode, input.disperser, input.filter)
     def update_subarray():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        det = get_detector(mode, instrument)
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        disperser = input.disperser.get()
+        filter = input.filter.get()
+        if not is_consistent(inst, mode, disperser, filter):
+            return
+        detector = get_detector(inst, mode, detectors)
 
         if mode == 'bots':
             disperser = input.filter.get().split('/')[0]
         else:
             disperser = input.disperser.get()
-        choices = det.get_constrained_val('subarrays', disperser=disperser)
+        choices = detector.get_constrained_val('subarrays', disperser=disperser)
 
         subarray = input.subarray.get()
         if subarray not in choices:
-            subarray = det.default_subarray
-
+            subarray = detector.default_subarray
         ui.update_select(
             'subarray',
             choices=choices,
             selected=subarray,
         )
 
-    @reactive.Effect
-    @reactive.event(input.disperser)
+
+    @reactive.Effect(priority=1)
+    @reactive.event(input.instrument, input.mode, input.disperser)
     def update_readout():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        det = get_detector(mode, instrument)
-
+        inst = input.instrument.get()
+        mode = input.mode.get()
         disperser = input.disperser.get()
-        choices = det.get_constrained_val('readouts', disperser=disperser)
+        if not is_consistent(inst, mode, disperser):
+            return
+        detector = get_detector(inst, mode, detectors)
 
+        choices = detector.get_constrained_val('readouts', disperser=disperser)
         readout = input.readout.get()
         if readout not in choices:
-            readout = det.default_readout
-
+            readout = detector.default_readout
         ui.update_select(
             'readout',
             choices=choices,
@@ -845,140 +1463,54 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.run_pandeia)
     def _():
-        inst_name = input.select_instrument.get()
-        inst = inst_name.lower()
-        mode = input.select_mode.get()
-        disperser = input.disperser.get()
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        readout = input.readout.get()
-        ngroup = int(input.groups.get())
-        nint = int(input.integrations.get())
-        aperture = None
+        target_focus = input.target_focus.get()
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
 
-        detector = get_detector(mode, inst_name)
-        inst_label = jwst.instrument_label(detector, disperser, filter)
-
-        # "Exceptions":
-        if mode == 'bots':
-            disperser, filter = filter.split('/')
-        if mode == 'mrs_ts':
-            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-        if mode == 'target_acq':
-            aperture = input.disperser.get()
-            disperser = None
-
-
-        obs_geometry = input.geometry.get()
-        transit_dur = float(input.t_dur.get())
-        obs_dur = float(input.obs_dur.get())
-        exp_time = jwst.exposure_time(
-            inst, subarray, readout, ngroup, nint,
-        )
-        # TBD: if exp_time << obs_dur, raise warning
-
-        #print(
-        #    repr(inst), repr(mode), repr(disperser), repr(filter),
-        #    repr(subarray), repr(readout), repr(aperture),
-        #)
-
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        print(sed_type, sed_model, norm_band, repr(norm_mag))
-        pando = jwst.PandeiaCalculation(inst, mode)
-        pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-
-        if mode == 'target_acq':
-            nint = 1
-            tso = pando.perform_calculation(
-                ngroup, nint, disperser, filter, subarray, readout, aperture,
-            )
-            obs_geometry = 'Acquisition'
-            depth_label = ''
-        else:
-            depth_label, wl, depth = parse_depth_model(input)
-            if depth_label is None:
-                ui.notification_show(
-                    f"No {obs_geometry.lower()} depth model to simulate",
-                    type="error",
-                    duration=5,
+        error_msg = None
+        if target_focus=='acquisition':
+            if target is None:
+                error_msg = ui.markdown(
+                    "Need to select a valid **Science target** before searching "
+                    "for nearby acquisition targets"
                 )
-                return
-            if depth_label not in spectra:
-                spectrum_choices[obs_geometry.lower()].append(depth_label)
-                spectra[depth_label] = {'wl': wl, 'depth': depth}
-            depth_model = [wl, depth]
+            elif target.host not in cache_acquisition:
+                error_msg = ui.markdown(
+                    "First click the '**Search nearby targets**' button, then "
+                    "select a target from the '**Acquisition targets**' tab"
+                )
+            elif input.ta_sed.get() is None:
+                error_msg = ui.markdown(
+                    "First select a target from the '**Acquisition targets**' tab"
+                )
 
-            tso = pando.tso_calculation(
-                obs_geometry.lower(), transit_dur, exp_time, depth_model,
-                ngroup, disperser, filter, subarray, readout, aperture,
-            )
+        if error_msg is None:
+            run_pandeia(input)
+        else:
+            ui.notification_show(error_msg, type="warning", duration=5)
 
-        detector_label = jwst.detector_label(
-            inst, mode, disperser, filter, subarray, readout,
-        )
 
-        ui.notification_show(
-            "TSO model simulated!",
-            type="message",
-            duration=2,
-        )
-        group_ints = f'({ngroup} G, {nint} I)'
-        pretty_label = (
-            f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
-        )
-        tso_label = f'{obs_geometry} {pretty_label}'
-        tso_labels[obs_geometry][tso_label] = pretty_label
+    @reactive.effect
+    @reactive.event(input.delete_button)
+    def _():
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        del tso_runs[key][tso_label]
+        tso_labels = make_tso_labels(tso_runs)
         ui.update_select('display_tso_run', choices=tso_labels)
 
-        tso_runs[tso_label] = dict(
-            # The detector
-            inst=inst,
-            mode=mode,
-            inst_label=inst_label,
-            # The SED
-            sed_type=sed_type,
-            sed_model=sed_model,
-            norm_band=norm_band,
-            norm_mag=norm_mag,
-            obs_type=obs_geometry,
-            # The instrumental setting
-            aperture=aperture,
-            disperser=disperser,
-            filter=filter,
-            subarray=subarray,
-            readout=readout,
-            ngroup=ngroup,
-            # The outputs
-            tso=tso,
-            #pandeia_results=pandeia_results,
-        )
-        if mode != 'target_acq':
-            # The planet
-            tso_runs[tso_label]['t_dur'] = transit_dur
-            tso_runs[tso_label]['obs_dur'] = obs_dur
-            tso_runs[tso_label]['depth_model_name'] = depth_label
-            tso_runs[tso_label]['depth_model'] = depth_model
-            # Take report with more flux in it:
-            rep_label = 'report_out' if obs_geometry=='Transit' else 'report_in'
-            report = tso[rep_label]
-        else:
-            report = tso
-
-        if len(report['warnings']) > 0:
-            warning_text.set(report['warnings'])
-        else:
-            warning_text.set('')
-
-        print(inst, mode, disperser, filter, subarray, readout)
-        print(sed_type, sed_model, norm_band, repr(norm_mag))
-        print('~~ TSO done! ~~')
 
     @reactive.effect
     @reactive.event(input.save_button)
     def _():
         # Make a filename from current TSO
-        tso_label = input.display_tso_run.get()
-        tso = tso_runs[tso_label]
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
         inst = tso['inst']
         filename = f'tso_{inst}.pickle'
 
@@ -1012,8 +1544,11 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.tso_save_button)
     def _():
-        tso_label = input.display_tso_run.get()
-        tso_run = tso_runs[tso_label]
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso_run = tso_runs[key][tso_label]
 
         filename = input.tso_save_file.get()
         if filename.strip() == '':
@@ -1072,6 +1607,9 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.show_info)
     def _():
+        """
+        Display system parameters
+        """
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         planet_info, star_info, aliases = pretty_print_target(target)
@@ -1096,6 +1634,127 @@ def server(input, output, session):
             ),
         )
         ui.modal_show(m)
+
+
+    @reactive.effect
+    @reactive.event(input.show_observations)
+    def _():
+        """
+        Display JWST observations
+        """
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        trexo_info.set(target.trexo_data)
+
+        keys = ui.HTML(
+            'Keys:<br>'
+            '<span style="color:#0B980D">Observed, no proprietary period.</span>'
+            '<br><span>Observed, in proprietary period.</span><br>'
+            '<span style="color:#FFa500">To be observed, planned window.</span>'
+            '<br><span style="color:red">Failed, withdrawn, or skipped.</span>'
+        )
+
+        m = ui.modal(
+            ui.output_data_frame('trexo_df'),
+            ui.hr(),
+            keys,
+            title=ui.markdown(f'JWST programs for: **{target.host}**'),
+            size='xl',
+            easy_close=True,
+        )
+        ui.modal_show(m)
+
+
+    @render.data_frame
+    @reactive.event(trexo_info)
+    def trexo_df():
+        data = trexo_info.get()
+        nobs = len(data['program'])
+
+        today = datetime.today()
+        status = data['status']
+        date_obs = data['date_start']
+        plan_obs = data['plan_window']
+        propriety = data['proprietary_period']
+        warnings = [
+            i for i in range(nobs)
+            if status[i] in ['Skipped', 'Failed', 'Withdrawn']
+        ]
+        available = []
+        dates = []
+        tbd_dates = []
+        for i in range(nobs):
+            if isinstance(date_obs[i], datetime):
+                release = date_obs[i] + timedelta(days=365.0*propriety[i]/12)
+                if release < today:
+                    available.append(i)
+                dates.append(
+                    date_obs[i].strftime('%Y-%m-%d') +
+                    f' ({propriety[i]} m)'
+                )
+            else:
+                if isinstance(plan_obs[i], datetime):
+                    dates.append(
+                        plan_obs[i].strftime('%Y-%m-%d') +
+                        f' ({propriety[i]} m)'
+                    )
+                else:
+                    dates.append('---')
+                if i not in warnings:
+                    tbd_dates.append(i)
+
+        styles = [
+            {
+                'rows': available,
+                'style': {"color": "#0B980D"},
+            },
+            {
+                'rows': warnings,
+                'style': {"color": "red"},
+            },
+            {
+                'rows': tbd_dates,
+                'cols': [10],
+                'style': {"color": "#FFa500"},
+            },
+        ]
+        programs = [
+            ' '.join(program.split()[0:2])
+            for program in data['program']
+        ]
+        pi = [
+            ' '.join(program.split()[2:])
+            for program in data['program']
+        ]
+        hrefs = [stsci_url.replace('PID', pid.split()[1]) for pid in programs]
+        programs = [
+            ui.tags.a(programs[i], href=hrefs[i], target="_blank")
+            for i in range(nobs)
+        ]
+
+        data_df = {
+            'Program ID': programs,
+            'PI': pi,
+            'Target name': data['trexo_name'],
+            # TBD: fetch which planet(s)
+            #'planet': ['b' for _ in pi],
+            'Event': data['event'],
+            'Status': data['status'],
+            'Instrument / Mode': data['mode'],
+            'Subarray': data['subarray'],
+            'Readout': data['readout'],
+            'Groups': data['groups'],
+            'Duration (h)': data['duration'],
+            'Obs date (prop. period)': dates,
+        }
+        df = pd.DataFrame(data=data_df)
+
+        return render.DataGrid(
+            df,
+            styles=styles,
+            width='100%',
+        )
 
 
     @reactive.Effect
@@ -1161,13 +1820,11 @@ def server(input, output, session):
         )
 
         if target.is_jwst:
-            ra, dec = target.trexo_ra_dec
-            url = f'{trexolists_url}?ra={ra}&dec={dec}'
             trexolists_tooltip = ui.tooltip(
-                ui.tags.a(
-                    fa.icon_svg("circle-info", fill='goldenrod'),
-                    href=url,
-                    target="_blank",
+                ui.input_action_link(
+                    id='show_observations',
+                    label='',
+                    icon=fa.icon_svg("circle-info", fill='goldenrod'),
                 ),
                 "This target's host is on TrExoLiSTS",
                 placement='top',
@@ -1189,7 +1846,7 @@ def server(input, output, session):
             )
 
         return ui.span(
-            'Known target? ',
+            'Science target ',
             info_tooltip,
             ui.tooltip(
                 ui.tags.a(
@@ -1204,10 +1861,11 @@ def server(input, output, session):
             candidate_tooltip,
         )
 
-    @reactive.Effect
+
+    @reactive.effect
     @reactive.event(input.target)
     def _():
-        """Set known-target properties"""
+        """Update target properties"""
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
@@ -1215,56 +1873,94 @@ def server(input, output, session):
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
 
-        teff = u.as_str(target.teff, '.1f', '')
-        log_g = u.as_str(target.logg_star, '.2f', '')
-        t_dur = u.as_str(target.transit_dur, '.3f', '')
+        # Physical properties:
+        if target.planet in cache_target:
+            t_eff  = cache_target[target.planet]['t_eff']
+            log_g = cache_target[target.planet]['log_g']
+            t_dur = cache_target[target.planet]['t_dur']
+            band = cache_target[target.planet]['norm_band']
+            magnitude = cache_target[target.planet]['norm_mag']
+        else:
+            t_eff = u.as_str(target.teff, '.1f', '')
+            log_g = u.as_str(target.logg_star, '.2f', '')
+            t_dur = u.as_str(target.transit_dur, '.3f', '')
+            band = '2mass,ks'
+            magnitude = f'{target.ks_mag:.3f}'
 
-        ui.update_text('teff', value=teff)
-        ui.update_text('logg', value=log_g)
-        ui.update_select('magnitude_band', selected='Ks mag')
-        ui.update_text('magnitude', value=f'{target.ks_mag:.3f}')
+        ui.update_text('t_eff', value=t_eff)
+        ui.update_text('log_g', value=log_g)
+        ui.update_select('magnitude_band', selected=band)
+        ui.update_text('magnitude', value=magnitude)
         ui.update_text('t_dur', value=t_dur)
 
-        sky_view_src.set(
-            f'https://sky.esa.int/esasky/?target={target.ra}%20{target.dec}'
-            '&fov=0.2&sci=true'
-        )
+        delete_catalog = {
+            "event": 'deleteCatalogue',
+            "content": { 'overlayName': 'Nearby Gaia sources'}
+        }
+        delete_footprint = {
+            "event": 'deleteFootprintsOverlay',
+            "content": {'overlayName': 'visit splitting distance'}
+        }
+        goto = {
+            "event": "goToRaDec",
+            "content":{"ra": f"{target.ra}", "dec": f"{target.dec}"}
+        }
+        esasky_command.set([delete_catalog, delete_footprint, goto])
 
-    @render.ui
-    @reactive.event(input.sed_type, input.teff, input.logg)
+        # Observing properties:
+        if name in cache_target and cache_target[name]['rprs_sq'] is not None:
+            rprs_square_percent = cache_target[name]['rprs_sq']
+            teq_planet = cache_target[name]['teq_planet']
+            cache_target[name]['rprs_sq'] = None
+            cache_target[name]['teq_planet'] = None
+        else:
+            teq_planet = np.round(target.eq_temp, decimals=1)
+            if np.isnan(teq_planet):
+                teq_planet = 0.0
+            rprs_square = target.rprs**2.0
+            if np.isnan(rprs_square):
+                rprs_square = 0.0
+            rprs_square_percent = np.round(100*rprs_square, decimals=4)
+
+        if rprs_square_percent is not None:
+            ui.update_numeric("transit_depth", value=rprs_square_percent)
+            ui.update_numeric("eclipse_depth", value=rprs_square_percent)
+        if teq_planet is not None:
+            ui.update_numeric('teq_planet', value=teq_planet)
+
+
+    @reactive.Effect
+    @reactive.event(input.sed_type, input.t_eff, input.log_g)
     def choose_sed():
         sed_type = input.sed_type.get()
         if sed_type in ['phoenix', 'kurucz']:
-            m_models, chosen_sed = get_auto_sed(input)
-            choices = list(m_models)
-            selected = chosen_sed
+            choices, selected = get_auto_sed(input)
+            if preset_sed.get() is not None:
+                selected = preset_sed.get()
+                preset_sed.set(None)
         elif sed_type == 'blackbody':
-            if input.teff.get() == '':
-                teff = 0.0
+            if input.t_eff.get() == '':
+                t_eff = 0.0
             else:
-                teff = float(input.teff.get())
-            selected = f' Blackbody (Teff={teff:.0f} K)'
+                t_eff = float(input.t_eff.get())
+            selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices=spectrum_choices['sed']
+            choices = list(spectra['sed'])
             selected = None
 
-        return ui.input_select(
-            id="sed",
-            label="",
-            choices=choices,
-            selected=selected,
-        )
+        ui.update_select("sed", choices=choices, selected=selected)
+
 
     @render.ui
     @reactive.event(
         bookmarked_sed, input.sed,
-        input.teff, input.magnitude_band, input.magnitude,
+        input.t_eff, input.magnitude_band, input.magnitude,
     )
     def stellar_sed_label():
         """Check current SED is bookmarked"""
-        sed_type, sed_model, norm_band, norm_mag, label = parse_sed(input)
-        is_bookmarked = label in spectrum_choices['sed']
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        is_bookmarked = sed_label in bookmarked_spectra['sed']
         bookmarked_sed.set(is_bookmarked)
         if is_bookmarked:
             sed_icon = fa.icon_svg("star", style='solid', fill='gold')
@@ -1292,34 +1988,32 @@ def server(input, output, session):
         """Toggle bookmarked SED"""
         is_bookmarked = not bookmarked_sed.get()
         bookmarked_sed.set(is_bookmarked)
-        sed_type, sed_model, norm_band, norm_mag, sed_file = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
-            spectrum_choices['sed'].append(sed_file)
-            spectra[sed_file] = {'wl': wl, 'flux': flux}
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            bookmarked_spectra['sed'].append(sed_label)
         else:
-            spectrum_choices['sed'].remove(sed_file)
-            spectra.pop(sed_file)
+            bookmarked_spectra['sed'].remove(sed_label)
+            if sed_label not in user_spectra['sed']:
+                spectra['sed'].pop(sed_label)
 
 
-    # This breaks because tplanet is not always defined
-    #@reactive.event(
-    #    bookmarked_depth, input.geometry,
-    #    input.planet_model_type, input.depth, input.tplanet,
-    #)
     @render.ui
+    @reactive.event(
+        bookmarked_depth, input.obs_geometry, input.planet_model_type,
+        input.depth, input.transit_depth, input.eclipse_depth, input.teq_planet,
+    )
     def depth_label_text():
         """Set depth model label"""
-        obs_geometry = str(input.geometry.get()).lower()
+        obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
-        is_bookmarked = not bookmarked_depth.get()
-        is_bookmarked = depth_label in spectrum_choices[obs_geometry]
+
+        is_bookmarked = depth_label in bookmarked_spectra[obs_geometry]
         bookmarked_depth.set(is_bookmarked)
-        if is_bookmarked:
-            depth_icon = fa.icon_svg("earth-americas", style='solid', fill='royalblue')
-        else:
-            depth_icon = fa.icon_svg("earth-americas", style='solid', fill='gray')
+        fill = 'royalblue' if is_bookmarked else 'gray'
+        depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
         icons = [
             depth_icon,
             fa.icon_svg("file-arrow-up", fill='black'),
@@ -1332,18 +2026,19 @@ def server(input, output, session):
             label=f"{obs_geometry.capitalize()} depth spectrum: ",
             icons=icons,
             tooltips=texts,
-            button_ids=['bookmark_depth', 'upload_depth']
+            button_ids=['bookmark_depth', 'upload_depth'],
         )
+
 
     @reactive.Effect
     @reactive.event(input.bookmark_depth)
     def _():
         """Toggle bookmarked depth model"""
-        obs_geometry = input.geometry.get().lower()
+        obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
         if depth_label is None:
             ui.notification_show(
-                f"No {obs_geometry.lower()} depth model to bookmark",
+                f"No {obs_geometry} depth model to bookmark",
                 type="error",
                 duration=5,
             )
@@ -1351,49 +2046,68 @@ def server(input, output, session):
         is_bookmarked = not bookmarked_depth.get()
         bookmarked_depth.set(is_bookmarked)
         if is_bookmarked:
+            bookmarked_spectra[obs_geometry].append(depth_label)
             depth_label, wl, depth = parse_depth_model(input)
-            spectrum_choices[obs_geometry].append(depth_label)
-            spectra[depth_label] = {'wl': wl, 'depth': depth}
+            spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
-            spectrum_choices[obs_geometry].remove(depth_label)
-            spectra.pop(depth_label)
+            bookmarked_spectra[obs_geometry].remove(depth_label)
+            if depth_label not in user_spectra[obs_geometry]:
+                spectra[obs_geometry].pop(depth_label)
 
 
     @reactive.effect
-    @reactive.event(input.geometry)
+    @reactive.event(input.obs_geometry, update_depth_flag)
     def _():
-        obs_geometry = input.geometry.get()
-        selected = input.planet_model_type.get()
-        if obs_geometry == 'Transit':
-            choices = ['Flat', 'Input']
-        elif obs_geometry == 'Eclipse':
-            choices = ['Blackbody', 'Input']
-        if selected not in choices:
-            selected = choices[0]
-
+        obs_geometry = input.obs_geometry.get()
+        choices = depth_choices[obs_geometry]
+        model_type = input.planet_model_type.get()
+        if model_type not in choices:
+            model_type = choices[0]
         ui.update_select(
-            id="planet_model_type",
-            choices=choices,
-            selected=selected,
+            "planet_model_type", choices=choices, selected=model_type,
         )
 
+        spectra = user_spectra[obs_geometry]
+        name = input.target.get()
+        cached = (
+            name in cache_target and
+            cache_target[name]['depth_label'] is not None
+        )
+        selected = input.depth.get()
+        if cached:
+            selected = cache_target[name]['depth_label']
+            cache_target[name]['depth_label'] = None
+        elif selected not in spectra:
+            selected = None if len(spectra) == 0 else spectra[0]
+        #print(f'Updating input [cached={cached}]: {repr(selected)}')
+        ui.update_select("depth", choices=spectra, selected=selected)
+
+        if len(spectra) > 0:
+            tooltip_text = ''
+        elif obs_geometry == 'transit':
+            tooltip_text = f'Upload a {obs_geometry} depth spectrum'
+        elif obs_geometry == 'eclipse':
+            tooltip_text = f'Upload an {obs_geometry} depth spectrum'
+        ui.update_tooltip('depth_tooltip', tooltip_text)
+
+
     @render.text
-    @reactive.event(input.geometry)
+    @reactive.event(input.obs_geometry)
     def transit_dur_label():
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get().capitalize()
         return f"{obs_geometry[0]}_dur (h):"
 
     @render.text
-    @reactive.event(input.geometry)
+    @reactive.event(input.obs_geometry)
     def transit_depth_label():
-        obs_geometry = input.geometry.get()
+        obs_geometry = input.obs_geometry.get().capitalize()
         return f"{obs_geometry} depth"
 
     @render.ui
     @reactive.event(warning_text)
     def warnings_label():
         warnings = warning_text.get()
-        if warnings == '':
+        if len(warnings) == 0:
             return "Warnings"
         n_warn = len(warnings)
         return ui.HTML(f'<div style="color:red;">Warnings ({n_warn})</div>')
@@ -1405,9 +2119,14 @@ def server(input, output, session):
     )
     def _():
         """Set observation time based on transit dur and popover settings"""
+        if preset_obs_dur.get() is not None:
+            obs_dur = preset_obs_dur.get()
+            preset_obs_dur.set(None)
+            ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
+            return
         t_dur = req(input.t_dur).get()
         if t_dur == '':
-            ui.update_text('obs_dur', value='')
+            ui.update_text('obs_dur', value='0.0')
             return
         transit_dur = float(t_dur)
         settling = req(input.settling_time).get()
@@ -1415,91 +2134,8 @@ def server(input, output, session):
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
         # Tdwell = T_start + T_settle + T14 + 2*max(1, T14/2)
-        t_total = 1.0 + settling + transit_dur + 2.0*baseline
-        ui.update_text('obs_dur', value=f'{t_total:.2f}')
-
-
-    @render.ui
-    @reactive.event(
-        input.target, input.geometry, input.planet_model_type,
-        update_depth_flag,
-    )
-    def choose_depth():
-        obs_geometry = input.geometry.get()
-        model_type = input.planet_model_type.get()
-
-        name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
-        if target is None:
-            rprs_square = 1.0
-            teq_planet = 1000.0
-        else:
-            teq_planet = target.eq_temp
-            rprs_square = target.rprs**2.0
-            if np.isnan(rprs_square):
-                rprs_square = 0.0
-        rprs_square_percent = np.round(100*rprs_square, decimals=4)
-
-        layout_kwargs = dict(
-            width=1/2,
-            fixed_width=False,
-            heights_equal='all',
-            gap='7px',
-            fill=False,
-            fillable=True,
-            class_="pb-2 pt-0 m-0",
-        )
-
-        if model_type == 'Flat':
-            return ui.layout_column_wrap(
-                ui.p("Depth (%):"),
-                ui.input_numeric(
-                    id="depth",
-                    label="",
-                    value=rprs_square_percent,
-                    step=0.1,
-                ),
-                **layout_kwargs,
-            )
-        elif model_type == 'Blackbody':
-            return ui.layout_column_wrap(
-                ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
-                ui.input_numeric(
-                    id="depth",
-                    label="",
-                    value=rprs_square_percent,
-                    step=0.1,
-                ),
-                ui.p("Temp (K):"),
-                ui.input_numeric(
-                    id="tplanet",
-                    label="",
-                    value=teq_planet,
-                    step=100,
-                ),
-                **layout_kwargs,
-            )
-
-        if model_type == 'Input':
-            choices = spectrum_choices[obs_geometry.lower()]
-            input_select = ui.input_select(
-                id="depth",
-                label="",
-                choices=choices,
-                #selected=selected,
-            )
-            if len(choices) > 0:
-                return input_select
-
-            if obs_geometry == 'Transit':
-                tooltip_text = f"a {obs_geometry.lower()}"
-            elif obs_geometry == 'Eclipse':
-                tooltip_text = f"an {obs_geometry.lower()}"
-            return ui.tooltip(
-                input_select,
-                f'Upload {tooltip_text} depth spectrum',
-                placement='right',
-            )
+        obs_dur = 1.0 + settling + transit_dur + 2.0*baseline
+        ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
 
 
     @reactive.effect
@@ -1534,7 +2170,7 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.upload_depth)
     def _():
-        obs_geometry = input.geometry.get().lower()
+        obs_geometry = input.obs_geometry.get()
         m = ui.modal(
             ui.input_file(
                 id="upload_file",
@@ -1571,7 +2207,6 @@ def server(input, output, session):
     def _():
         new_model = input.upload_file.get()
         if not new_model:
-            print('No new model!')
             return
 
         # The units tell this function SED or depth spectrum:
@@ -1588,10 +2223,11 @@ def server(input, output, session):
             label = label[0:-4]
 
         if units in depth_units:
-            obs_geometry = input.geometry.get().lower()
-            spectrum_choices[obs_geometry].append(label)
+            obs_geometry = input.obs_geometry.get()
             # TBD: convert depth units
-            spectra[label] = {'wl': wl, 'depth': depth}
+            spectra[obs_geometry][label] = {'wl': wl, 'depth': depth}
+            user_spectra[obs_geometry].append(label)
+            bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
                 return
             # Trigger update choose_depth
@@ -1602,100 +2238,113 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
+    @reactive.Effect
+    @reactive.event(input.subarray)
+    def set_soss_orders():
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        subarray = input.subarray.get()
+        if not is_consistent(inst, mode, subarray=subarray):
+            return
+        if mode != 'soss':
+            return
+        detector = get_detector(inst, mode, detectors)
+        choices = detector.get_constrained_val('orders', subarray=subarray)
+        order = input.order.get()
+        if order not in choices:
+            order = list(choices)[0]
+        ui.update_select(id='order', choices=choices, selected=order)
+
+
     @render.ui
-    @reactive.event(input.select_mode, input.subarray)
+    @reactive.event(input.mode, input.subarray)
     def groups_input():
-        mode = input.select_mode.get()
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        subarray = input.subarray.get()
+        preset = preset_ngroup.get()
+        has_preset = (
+            preset is not None and
+            preset['mode'] == mode and
+            preset['subarray'] == subarray
+        )
+        if has_preset:
+            value = preset['ngroup']
+            preset_ngroup.set(None)
+        else:
+            value = 2
         if mode == 'target_acq':
-            instrument = req(input.select_instrument).get()
-            det = get_detector(mode, instrument)
-            subarray = input.subarray.get()
-            choices = det.get_constrained_val('groups', subarray=subarray)
+            detector = get_detector(inst, mode, detectors)
+            choices = detector.get_constrained_val('groups', subarray=subarray)
 
             return ui.input_select(
-                id="groups",
+                id="ngroup",
                 label="",
                 choices=choices,
+                selected=value,
             )
         else:
             return ui.input_numeric(
-                id="groups",
+                id="ngroup",
                 label='',
-                value=2,
+                value=value,
                 min=2, max=10000,
-            )
-
-    @render.ui
-    @reactive.event(input.select_mode)
-    def integration_input():
-        mode = input.select_mode.get()
-        if mode == 'target_acq':
-            return ui.input_select(
-                id="integrations",
-                label="Integrations",
-                choices=[1],
-            )
-        else:
-            return ui.input_numeric(
-                id="integrations",
-                label="Integrations",
-                value=1,
-                min=1, max=10000,
             )
 
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
-        inst = input.select_instrument.get().lower()
-        mode = input.select_mode.get()
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
+        order = input.order.get()
         aperture = None
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, sed_label,
-        )
 
+        # Front-end to back-end exceptions:
         if mode == 'bots':
             disperser, filter = filter.split('/')
+        if mode == 'soss':
+            order = [int(val) for val in order.split()]
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
         if mode == 'target_acq':
-            ngroup = int(input.groups.get())
+            ngroup = int(input.ngroup.get())
             aperture = input.disperser.get()
             disperser = None
         else:
             ngroup = 2
 
+        sat_label = make_saturation_label(
+            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        )
+
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-        flux_rate, full_well = pando.get_saturation_values(
-            disperser, filter, subarray, readout, ngroup,
-            aperture,
+        pixel_rate, full_well = pando.get_saturation_values(
+            disperser, filter, subarray, readout, ngroup, aperture, order,
+            get_max=True,
         )
-        if isinstance(flux_rate, Iterable):
-            idx = np.argmax(flux_rate*full_well)
-            flux_rate = flux_rate[idx]
-            full_well = full_well[idx]
 
         cache_saturation[sat_label] = dict(
-            brightest_pixel_rate = flux_rate,
-            full_well = full_well,
+            brightest_pixel_rate=pixel_rate,
+            full_well=full_well,
         )
-        # This reactive variable enforces a re-rendering of exp_time
+        # This reactive variable enforces a re-rendering of results
         saturation_label.set(sat_label)
 
 
     @reactive.Effect
     @reactive.event(
-        input.integs_switch, input.obs_dur, input.select_mode,
-        input.select_instrument, input.groups, input.readout, input.subarray,
+        input.integs_switch, input.obs_dur, input.mode,
+        input.instrument, input.ngroup, input.readout, input.subarray,
     )
     def _():
         """Switch to make the integrations match observation duration"""
-        if input.select_mode.get() == 'target_acq':
+        if input.mode.get() == 'target_acq':
             return
         match_dur = input.integs_switch.get()
         if not match_dur:
@@ -1703,30 +2352,28 @@ def server(input, output, session):
             return
 
         obs_dur = float(req(input.obs_dur).get())
-        inst = input.select_instrument.get().lower()
-        nint = 1
-        ngroup = input.groups.get()
+        inst = input.instrument.get().lower()
+        ngroup = input.ngroup.get()
         readout = input.readout.get()
         subarray = input.subarray.get()
         if ngroup is None:
             return
-        single_exp_time = jwst.exposure_time(
-            inst, subarray, readout, int(ngroup), int(nint),
+        integs, exp_time = jwst.bin_search_exposure_time(
+            inst, subarray, readout, int(ngroup), obs_dur,
         )
-        if single_exp_time == 0.0:
+        if exp_time == 0.0:
             return
-        integs = int(np.round(obs_dur*3600.0/single_exp_time))
         ui.update_numeric('integrations', value=integs)
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-    # Viewer
+    # Viewers
     @render_plotly
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
 
-        inst = req(input.select_instrument).get().lower()
-        mode = input.select_mode.get()
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
 
@@ -1746,35 +2393,16 @@ def server(input, output, session):
         return fig
 
 
-    @render.ui
-    @reactive.event(sky_view_src)
-    def esasky_card():
-        src = sky_view_src.get()
-        return cs.custom_card(
-            HTML(
-                '<iframe '
-                'height="100%" '
-                'width="100%" '
-                'style="overflow" '
-                f'src="{src}" '
-                'frameborder="0" allowfullscreen></iframe>',
-                #id=resolve_id(id),
-            ),
-            body_args=dict(class_='m-0 p-0', id='esasky'),
-            full_screen=True,
-            height='350px',
-        )
-
     @render_plotly
     def plotly_sed():
         # Gather bookmarked SEDs
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
-        model_names = spectrum_choices['sed']
+        model_names = bookmarked_spectra['sed']
         if len(model_names) == 0:
             fig = go.Figure()
             fig.update_layout(title='Bookmark some SEDs to show them here')
             return fig
-        sed_models = [spectra[model] for model in model_names]
+        sed_models = [spectra['sed'][model] for model in model_names]
 
         # Get current SED:
         sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
@@ -1794,8 +2422,8 @@ def server(input, output, session):
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
-        obs_geometry = input.geometry.get()
-        model_names = spectrum_choices[obs_geometry.lower()]
+        obs_geometry = input.obs_geometry.get()
+        model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
         if nmodels == 0:
             return go.Figure()
@@ -1806,7 +2434,7 @@ def server(input, output, session):
         wl_scale = input.plot_depth_xscale.get()
         resolution = input.depth_resolution.get()
 
-        depth_models = [spectra[model] for model in model_names]
+        depth_models = [spectra[obs_geometry][model] for model in model_names]
         fig = tplots.plotly_depth_spectra(
             depth_models, model_names, current_model,
             units=units, wl_scale=wl_scale, resolution=resolution,
@@ -1817,7 +2445,10 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_tso():
-        tso_label = input.display_tso_run.get()
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return go.Figure()
+        key, tso_label = tso_key.split('_', maxsplit=1)
         n_obs = input.n_obs.get()
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
@@ -1828,96 +2459,130 @@ def server(input, output, session):
         else:
             wl_range = [0.6, 13.0]
 
-        if tso_label in tso_runs:
-            tso_run = tso_runs[tso_label]
-            planet = tso_run['depth_model_name']
-            fig = tplots.plotly_tso_spectra(
-                tso_run['tso'], resolution, n_obs,
-                model_label=planet,
-                instrument_label=tso_run['inst_label'],
-                bin_widths=None,
-                units=units, wl_range=wl_range, wl_scale=wl_scale,
-                obs_geometry='Transit',
-            )
-        else:
-            fig = go.Figure()
+        tso_run = tso_runs[key][tso_label]
+        planet = tso_run['depth_label']
+        fig = tplots.plotly_tso_spectra(
+            tso_run['tso'], resolution, n_obs,
+            model_label=planet,
+            instrument_label=tso_run['inst_label'],
+            bin_widths=None,
+            units=units, wl_range=wl_range, wl_scale=wl_scale,
+            obs_geometry='transit',
+        )
         return fig
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
     @render.ui
-    def exp_time():
-        instrument = req(input.select_instrument).get()
-        mode = input.select_mode.get()
-        detector = get_detector(mode=mode, instrument=instrument)
-        inst = instrument.lower()
+    def results():
+        warnings = {}
+        # Only read for reactivity reasons:
+        saturation_label.get()
+        input.ta_sed.get()
+
+        inst = input.instrument.get().lower()
+        mode = input.mode.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
         readout = input.readout.get()
-        ngroup = input.groups.get()
+        order = input.order.get()
+        ngroup = input.ngroup.get()
         nint = input.integrations.get()
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
-        if ngroup is None or detector is None or sed_label is None:
-            return ui.HTML(' ')
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        depth_label = parse_obs(input)[1]
+        transit_dur = float(input.t_dur.get())
+
+        consistent = is_consistent(inst, mode, disperser, filter, subarray)
+        if ngroup is None or not consistent or sed_label is None:
+            warning_text.set(warnings)
+            return ui.HTML('<pre> </pre>')
+
+        obs_geometry = input.obs_geometry.get()
+        run_type = obs_geometry.capitalize()
+        # Front-end to back-end exceptions:
+        aperture = None
+        if mode == 'bots' and '/' in filter:
+            disperser, filter = filter.split('/')
+        if mode == 'mrs_ts':
+            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'target_acq':
+            aperture = input.disperser.get()
+            disperser = None
+            nint = 1
+            run_type = 'Acquisition'
+            depth_label = ''
 
         ngroup = int(ngroup)
+        report_text = jwst._print_pandeia_exposure(
+            inst, subarray, readout, ngroup, nint,
+        )
+        target_focus = input.target_focus.get().capitalize()
+
+        if target_focus == 'Science':
+            target_acq_mag = None
+            target_name = f': {target.planet}' if target is not None else ''
+        else:
+            no_target = (
+                target is None or
+                target.host not in cache_acquisition or
+                cache_acquisition[target.host]['selected'] is None
+            )
+            if no_target:
+                report_text = f'<b>{target_focus} target</b><br>{report_text}'
+                warning_text.set(warnings)
+                return ui.HTML(f'<pre>{report_text}</pre>')
+            target_list = cache_acquisition[target.host]['targets']
+            selected = cache_acquisition[target.host]['selected']
+            target_acq_mag = np.round(target_list[1][selected], 3)
+            target_name = f': {target_list[0][selected]}'
+        report_text = f'<b>{target_focus} target{target_name}</b><br>{report_text}'
+
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
+            input, target_acq_mag=target_acq_mag,
+        )
         sat_label = make_saturation_label(
-            mode, disperser, filter, subarray, sed_label,
+            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        )
+        tso_label = make_obs_label(
+            inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint, run_type, sed_label, depth_label,
         )
 
-        exp_time = jwst.exposure_time(
-            inst, subarray, readout, ngroup, int(nint),
-        )
-        exposure_hours = exp_time / 3600.0
-        exp_text = ui.HTML(
-            f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
-        )
+        if sat_label in cache_saturation:
+            pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
+            full_well = cache_saturation[sat_label]['full_well']
+            saturation_text = jwst._print_pandeia_saturation(
+                inst, subarray, readout, ngroup, pixel_rate, full_well,
+                format='html',
+            )
+            report_text += f'<br>{saturation_text}'
 
-        saturation_label.get()  # enforce calc_saturation renders exp_time
-        if sat_label not in cache_saturation:
-            return exp_text
 
-        pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
-        full_well = cache_saturation[sat_label]['full_well']
-        sat_time = jwst.saturation_time(detector, ngroup, readout, subarray)
-        sat_fraction = pixel_rate * sat_time / full_well
-        ngroup_80 = int(0.8*ngroup/sat_fraction)
-        ngroup_max = int(ngroup/sat_fraction)
-        saturation = f'{100.0*sat_fraction:.1f}%'
-        ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80:d}'
-        ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max:d}'
+        if tso_label in tso_runs[run_type]:
+            tso_run = tso_runs[run_type][tso_label]
+            warnings = tso_run['warnings']
+            if transit_dur == tso_run['transit_dur']:
+                report_text += f'<br><br>{tso_run["stats"]}'
+        warning_text.set(warnings)
+        return ui.HTML(f'<pre>{report_text}</pre>')
 
-        if sat_fraction >= 1.0:
-            saturation = f'<span class="danger">{saturation}</span>'
-        elif sat_fraction > 0.81:
-            saturation = f'<span class="warning">{saturation}</span>'
-
-        if ngroup_80 < 2:
-            ngroup_80_sat = f'<span class="danger">{ngroup_80_sat}</span>'
-        elif ngroup_80 == 2:
-            ngroup_80_sat = f'<span class="warning">{ngroup_80_sat}</span>'
-
-        if ngroup_max < 2:
-            ngroup_max_sat = f'<span class="danger">{ngroup_max_sat}</span>'
-        elif ngroup_max == 2:
-            ngroup_max_sat = f'<span class="warning">{ngroup_max_sat}</span>'
-        return ui.HTML(
-            f'{exp_text}<br>'
-            f'Max. fraction of saturation: {saturation}<br>'
-            f'{ngroup_80_sat}<br>'
-            f'{ngroup_max_sat}<br>'
-        )
 
     @render.text
     @reactive.event(warning_text)
     def warnings():
         warnings = warning_text.get()
-        if warnings == '':
+        if len(warnings) == 0:
             return 'No warnings'
         text = ''
         for warn_label, warn_text in warnings.items():
+            warn_text = warn_text.replace(
+                '<font color=red><b>TA MAY FAIL</b></font>',
+                'TA MAY FAIL',
+            )
             warn = textwrap.fill(
                 f'- {warn_text}',
                 subsequent_indent='  ',
@@ -1925,6 +2590,175 @@ def server(input, output, session):
             )
             text += warn + '\n\n'
         return text
+
+
+    @reactive.effect
+    @reactive.event(esasky_command)
+    async def _():
+        commands = esasky_command.get()
+        if commands is None:
+            return
+        if not isinstance(commands, list):
+            commands = [commands]
+        for command in commands:
+            command = json.dumps(command)
+            await session.send_custom_message(
+                "update_esasky",
+                {"command": command},
+            )
+
+
+    @reactive.Effect
+    @reactive.event(input.search_gaia_ta)
+    def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+
+        query = cat.fetch_gaia_targets(
+            target.ra, target.dec, max_separation=80.0, raise_errors=False,
+        )
+        if isinstance(query, str):
+            msg = ui.HTML(
+                "The Gaia astroquery request failed :(<br>"
+                "Check the terminal for more info"
+            )
+            ui.notification_show(msg, type="error", duration=5)
+            return
+
+        cache_acquisition[target.host] = {'targets': query, 'selected': None}
+        acq_target_list.set(query)
+        current_acq_science_target.set(name)
+        success = "Nearby targets found!  Open the '*Acquisition targets*' tab"
+        ui.notification_show(ui.markdown(success), type="message", duration=5)
+
+        circle = u.esasky_js_circle(target.ra, target.dec, radius=80.0)
+        ta_catalog = u.esasky_js_catalog(query)
+        esasky_command.set([ta_catalog, circle])
+
+
+    @render.data_frame
+    @reactive.event(acq_target_list, input.target)
+    def acquisition_targets():
+        """
+        Display TA list, gets triggered only when tab is shown
+        """
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return render.DataGrid(pd.DataFrame([]))
+        if target.host not in cache_acquisition:
+            # Do I need to? gets wiped anyway
+            ui.update_select('ta_sed', choices=[])
+            return render.DataGrid(pd.DataFrame([]))
+
+        ta_list = cache_acquisition[target.host]['targets']
+        acq_target_list.set(ta_list)
+        names, G_mag, t_eff, log_g, ra, dec, separation = ta_list
+        data_df = {
+            'Gaia DR3 target': [name[9:] for name in names],
+            'G_mag': [f'{mag:5.2f}' for mag in G_mag],
+            'separation (")': [f'{sep:.3f}' for sep in separation],
+            'T_eff (K)': [f'{temp:.1f}' for temp in t_eff],
+            'log(g)': [f'{grav:.2f}' for grav in log_g],
+            'RA (deg)': [f'{r:.4f}' for r in ra],
+            'dec (deg)': [f'{d:.4f}' for d in dec],
+        }
+        acquisition_df = pd.DataFrame(data=data_df)
+        return render.DataGrid(
+            acquisition_df,
+            selection_mode="row",
+            height='370px',
+            summary=True,
+        )
+
+
+    @reactive.effect
+    def select_ta_row():
+        """
+        Gets triggrered all the time. Can I limit it to true unser-interactions
+        with acquisition_targets
+        """
+        acq_target_list.get()
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        if target is None or target.host not in cache_acquisition:
+            ui.update_select('ta_sed', choices=[])
+            return
+        target_list = cache_acquisition[target.host]['targets']
+
+        # TBD: if acquisition_targets changed, a previous non-zero cell_selection()
+        # will leak into the new dataframe, which will de-synchronize
+        # cache_acquisition[target.host]['selected']
+        df = acquisition_targets.cell_selection()
+        if df is None or len(df['rows'])==0:
+            return
+
+        df_data = acquisition_targets.data()
+        current_data = [f'Gaia DR3 {id}' for id in df_data["Gaia DR3 target"]]
+        if current_data[0] != target_list[0][0]:
+            acquisition_targets._reset_reactives()
+            return
+
+        cache_acquisition[target.host]['selected'] = idx = df['rows'][0]
+        target_name = target_list[0][idx]
+        t_eff = target_list[2][idx]
+        log_g = target_list[3][idx]
+        i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
+        chosen_sed = p_keys[i]
+        ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
+
+        deselect_targets = {'event': 'deselectAllShapes'}
+        select_acq_target = {
+            'event': 'selectShape',
+            'content': {
+                'overlayName': 'Nearby Gaia sources',
+                'shapeName': target_name
+            }
+        }
+        esasky_command.set([deselect_targets, select_acq_target])
+
+
+    # TBD: rename
+    @reactive.effect
+    @reactive.event(input.get_acquisition_target)
+    def _():
+        return
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+        if target.host not in cache_acquisition:
+            error_msg = ui.markdown(
+                "First click the '*Search nearby targets*' button, then select "
+                "a target from the '*Acquisition targets*' tab"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            return
+
+        selected = acquisition_targets.cell_selection()['rows']
+        if len(selected) == 0:
+            error_msg = ui.markdown(
+                "First select a target from the '*Acquisition targets*' tab"
+            )
+            ui.notification_show(error_msg, type="warning", duration=5)
+            return
+        target_list = cache_acquisition[target.host]['targets']
+        names, G_mag, t_eff, log_g, ra, dec, separation = target_list
+        idx = selected[0]
+        text = (
+            f"\nacq_target = {repr(names[idx])}\n"
+            f"gaia_mag = {G_mag[idx]}\n"
+            f"separation = {separation[idx]}\n"
+            f"t_eff = {t_eff[idx]}\n"
+            f"log_g = {log_g[idx]}\n"
+            f"ra = {ra[idx]}\n"
+            f"dec = {dec[idx]}"
+        )
+        print(text)
+
 
 app = App(app_ui, server)
 

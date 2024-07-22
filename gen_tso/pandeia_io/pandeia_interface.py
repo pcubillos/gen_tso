@@ -4,19 +4,23 @@
 __all__ = [
     'read_noise_variance',
     'exposure_time',
-    'saturation_time',
+    'bin_search_exposure_time',
+    'integration_time',
+    'saturation_level',
     'load_sed_list',
     'find_closest_sed',
     'extract_sed',
     'make_scene',
     'set_depth_scene',
     'simulate_tso',
-    'PandeiaCalculation',
+    '_print_pandeia_exposure',
+    '_print_pandeia_saturation',
+    '_print_pandeia_stats',
+    '_print_pandeia_report',
+    'tso_print',
 ]
 
-from collections.abc import Iterable
 import copy
-from itertools import product
 import json
 import os
 import random
@@ -25,15 +29,12 @@ import numpy as np
 import requests
 import scipy.interpolate as si
 import pandeia.engine.sed as sed
-from pandeia.engine.calc_utils import (
-    build_default_calc,
-    get_instrument_config,
-)
-from pandeia.engine.perform_calculation import perform_calculation
+from pandeia.engine.calc_utils import get_instrument_config
 from pandeia.engine.normalization import NormalizationFactory
+import prompt_toolkit
 from synphot.config import conf, Conf
 
-from ..utils import constant_resolution_spectrum
+from ..utils import constant_resolution_spectrum, format_text
 
 
 def check_pandeia_version():
@@ -97,10 +98,70 @@ def read_noise_variance(report, ins_config):
     return read_noise
 
 
-def exposure_time(
-        instrument, subarray, readout,
-        ngroup=None, nint=None, nexp=1,
-    ):
+def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
+    """
+    Return a callable that evaluates the exposure time as a function
+    of nint.
+
+    Parameters
+    ----------
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    ngroup: Integeer
+        Number of groups per integration.  Must be >= 2.
+    nexp: Integer
+        Number of exposures.
+
+    Returns
+    -------
+    exp_time: Float
+        Exposure time in seconds.
+
+    """
+    if isinstance(instrument, str):
+        telescope = 'jwst'
+        ins_config = get_instrument_config(telescope, instrument)
+    else:
+        ins_config = instrument.ins_config
+
+    # When switching instrument, subarray and readout updates are not atomic
+    if subarray not in ins_config['subarray_config']['default']:
+        return None
+    if readout not in ins_config['readout_pattern_config']:
+        return None
+
+    subarray_config = ins_config['subarray_config']['default'][subarray]
+    readout_config = ins_config['readout_pattern_config'][readout]
+    tfffr = subarray_config['tfffr']
+    tframe = subarray_config['tframe']
+    nframe = readout_config['nframe']
+    ndrop2 = readout_config['ndrop2']
+    ndrop1 = ndrop3 = 0
+    nreset1 = nreset2 = 1
+    if 'nreset1' in readout_config:
+        nreset1 = readout_config['nreset1']
+    elif 'nreset1' in subarray_config:
+        nreset1 = subarray_config['nreset1']
+    if 'nreset2' in readout_config:
+        nreset2 = readout_config['nreset2']
+
+    def exp_time(nint):
+        time = nexp * (
+            tfffr * nint +
+            tframe * (
+                nreset1 + (nint-1) * nreset2 +
+                nint * (ndrop1 + (ngroup-1) * (nframe + ndrop2) + nframe + ndrop3)
+            )
+        )
+        return time
+    return exp_time
+
+
+def exposure_time(instrument, subarray, readout, ngroup, nint, nexp=1):
     """
     Calculate the exposure time for the given instrumental setup.
     Based on pandeia.engine.exposure.
@@ -131,54 +192,108 @@ def exposure_time(
 
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
-    >>> subarray = 'full'
     >>> readout = 'rapid'
     >>> nint = 1
-    >>> ngroup = 20
+    >>> ngroup = 90
     >>> exp_time = jwst.exposure_time(inst, subarray, readout, ngroup, nint)
     >>> print(exp_time)
     """
-    if isinstance(instrument, str):
-        telescope = 'jwst'
-        ins_config = get_instrument_config(telescope, instrument)
-    else:
-        ins_config = instrument.ins_config
-
-    # When switching instrument, subarray and readout updates are not atomic
-    if subarray not in ins_config['subarray_config']['default']:
-        return 0.0
-    if readout not in ins_config['readout_pattern_config']:
-        return 0.0
-
-    subarray_config = ins_config['subarray_config']['default'][subarray]
-    readout_config = ins_config['readout_pattern_config'][readout]
-    tfffr = subarray_config['tfffr']
-    tframe = subarray_config['tframe']
-    nframe = readout_config['nframe']
-    ndrop2 = readout_config['ndrop2']
-    ndrop1 = ndrop3 = 0
-    nreset1 = nreset2 = 1
-    if 'nreset1' in readout_config:
-        nreset1 = readout_config['nreset1']
-    elif 'nreset1' in subarray_config:
-        nreset1 = subarray_config['nreset1']
-    if 'nreset2' in readout_config:
-        nreset2 = readout_config['nreset2']
-
-    exposure_time = nexp * (
-        tfffr * nint +
-        tframe * (
-            nreset1 + (nint-1) * nreset2 +
-            nint * (ndrop1 + (ngroup-1) * (nframe + ndrop2) + nframe + ndrop3)
-        )
+    exp_time = _exposure_time_function(
+        instrument, subarray, readout, ngroup, nexp,
     )
-    return exposure_time
+    if exp_time is None:
+        return 0.0
+    return exp_time(nint)
 
 
-def saturation_time(instrument, ngroup=None, readout=None, subarray=None):
+def bin_search_exposure_time(
+        instrument, subarray, readout, ngroup, obs_time, nexp=1,
+    ):
     """
-    Compute JWST's saturation time for the given instrument configuration.
+    Binary search for nint such that exp_time(nint) > obs_time
+
+    Parameters
+    ----------
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    ngroup: Integeer
+        Number of groups per integration.  Must be >= 2.
+    obs_time: Integer
+        Total observation time to aim for (in hours).
+    nexp: Integer
+        Number of exposures.
+
+    Returns
+    -------
+    nint: Integer
+        Number of integrations to reach obs_time.
+    exp_time: Float
+        Exposure time in seconds.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> instrument = 'miri'
+    >>> subarray = 'slitlessprism'
+    >>> readout = 'fastr1'
+    >>> ngroup = 30
+    >>> obs_time = 6.0
+    >>> nint, exp_time = jwst.bin_search_exposure_time(
+    >>>     instrument, subarray, readout, ngroup, obs_time,
+    >>> )
+    >>> print(nint, exp_time)
+    """
+    exp_time = _exposure_time_function(
+        instrument, subarray, readout, ngroup, nexp,
+    )
+    if exp_time is None:
+        return 0, 0.0
+
+    obs_time_sec = 3600 * obs_time
+    n1 = 1
+    t1 = exp_time(n1)
+    if obs_time_sec < t1:
+        return n1, t1
+
+    n2 = int(obs_time_sec / t1)
+    t2 = exp_time(n2)
+    while t2 < obs_time_sec:
+        n1 = n2
+        n2 = n1*2
+        t2 = exp_time(n2)
+    while n2-n1 > 1:
+        n = int(0.5*(n1+n2))
+        t = exp_time(n)
+        if obs_time_sec > t:
+            n1 = n
+        else:
+            n2 = n
+
+    return n2, exp_time(n2)
+
+
+def integration_time(instrument, subarray, readout, ngroup):
+    """
+    Compute JWST's integration time for a given instrument configuration.
     Based on pandeia.engine.exposure.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> # Calculate integration time for a given instrument setup:
+    >>> inst = 'nircam'
+    >>> ngroup = 90
+    >>> readout = 'rapid'
+    >>> subarray = 'subgrism64'
+    >>> integ_time = jwst.integration_time(inst, subarray, readout, ngroup)
+    >>> print(integ_time)
+    30.6549
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
@@ -197,10 +312,84 @@ def saturation_time(instrument, ngroup=None, readout=None, subarray=None):
     ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
     ndrop1 = 0
 
-    saturation_time = tframe * (
+    integration_time = tframe * (
         ndrop1 + (ngroup - 1) * (nframe + ndrop2) + nframe
     )
-    return saturation_time
+    return integration_time
+
+
+def saturation_level(reports, get_max=False):
+    """
+    Compute saturation values for a given perform_calculation output.
+
+    Parameters
+    ----------
+    reports: Dictionary or list of dictionaries
+        One or more pandeia's perform_calculation() output dictionary
+        or a tso_calculation output dictionary.
+        If there is more than one input report, return arrays of
+        saturation values for each input.
+    get_max: Bool
+        If True and there is  more than one input report, return the
+        saturation values for the report that's quickest to saturate.
+
+    Returns
+    -------
+    brightest_pixel_rate: Float
+        e- per second rate at the brightest pixel.
+    full_well: Float
+        Number of e- counts to saturate the detector.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> inst = 'nircam'
+    >>> readout = 'rapid'
+    >>> pando = jwst.PandeiaCalculation(inst, 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> result = pando.perform_calculation(
+    >>>     ngroup=2, nint=683, readout='rapid', filter='f444w',
+    >>> )
+    >>> pixel_rate, full_well = jwst.saturation_level(result)
+
+    >>> # Now I can calculate the saturation level for any integration time:
+    >>> # (for the given filter and scene)
+    >>> subarray = 'subgrism64'
+    >>> for ngroup in [2, 97, 122]:
+    >>>     integ_time = jwst.integration_time(inst, subarray, readout, ngroup)
+    >>>     sat_level = pixel_rate * integ_time / full_well * 100
+    >>>     print(f'Sat. fraction for {ngroup:3d} groups: {sat_level:5.1f}%')
+    Sat. fraction for   2 groups:   1.6%
+    Sat. fraction for  97 groups:  79.4%
+    Sat. fraction for 122 groups:  99.9%
+    """
+    if not isinstance(reports, list):
+        reports = [reports]
+    # Unpack TSO dictionary
+    if 'report_in' in reports[0]:
+        reports = (
+            [report['report_in'] for report in reports] +
+            [report['report_out'] for report in reports]
+        )
+
+    ncalc = len(reports)
+    brightest_pixel_rate = np.zeros(ncalc)
+    full_well = np.zeros(ncalc)
+    for i,report in enumerate(reports):
+        brightest_pixel_rate[i] = report['scalar']['brightest_pixel']
+        full_well[i] = (
+            brightest_pixel_rate[i]
+            * report['scalar']['saturation_time']
+            / report['scalar']['fraction_saturation']
+        )
+
+    if len(reports) == 1:
+        return brightest_pixel_rate[0], full_well[0]
+    if get_max:
+        idx = np.argmax(brightest_pixel_rate*full_well)
+        return brightest_pixel_rate[idx], full_well[idx]
+    return brightest_pixel_rate, full_well
 
 
 def load_sed_list(source):
@@ -671,567 +860,435 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
-class PandeiaCalculation():
-    def __init__(self, instrument, mode):
-        self.telescope = 'jwst'
-        self.instrument = instrument
-        self.mode = mode
-        self.calc = build_default_calc(
-            self.telescope, self.instrument, self.mode,
-        )
+def _print_pandeia_exposure(
+        inst=None, subarray=None, readout=None, ngroup=None, nint=None,
+        config=None, format=None,
+    ):
+    """
+    Return a text showing the total exposure time in seconds and hours.
+    Either config or the set of inst, subarray, readout, ngroup, and nint
+    values must be defined.
 
-    def get_configs(self, output=None):
-        """
-        Print out or return the list of available configurations.
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> import numy as np
 
-        Parameters
-        ----------
-        output: String
-            The configuration variable to list. Select from:
-            readouts, subarrays, filters, or dispersers.
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=190, readout='rapid', filter='f444w',
+    >>> )
 
-        Returns
-        -------
-            outputs: 1D list of strings
-            The list of available inputs for the requested variable.
-        """
-        ins_config = get_instrument_config(self.telescope, self.instrument)
-        config = ins_config['mode_config'][self.mode]
+    >>> # Print from config dictionary:
+    >>> config = tso['report_out']['input']['configuration']
+    >>> text = jwst._print_pandeia_exposure(config=config)
 
-        subarrays = config['subarrays']
-        screen_output = f'subarrays: {subarrays}\n'
+    >>> # Print from direct input values:
+    >>> inst = 'nircam'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'rapid'
+    >>> ngroup = 90
+    >>> nint = 150
+    >>> text = jwst._print_pandeia_exposure(
+    >>>     inst, subarray, readout, ngroup, nint,
+    >>> )
+    """
+    if config is not None:
+        inst = config['instrument']['instrument']
+        subarray = config['detector']['subarray']
+        readout = config['detector']['readout_pattern']
+        nint = config['detector']['nint']
+        ngroup = config['detector']['ngroup']
 
-        if self.instrument == 'niriss':
-            readouts = ins_config['readout_patterns']
+    exp_time = exposure_time(inst, subarray, readout, ngroup, nint)
+    exposure_hours = exp_time / 3600.0
+    exp_text = f'Exposure time: {exp_time:.2f} s ({exposure_hours:.2f} h)'
+    return exp_text
+
+
+def _print_pandeia_saturation(
+        inst=None, subarray=None, readout=None, ngroup=None,
+        pixel_rate=None, full_well=None, reports=None, format=None,
+    ):
+    """
+    >>> import gen_tso.pandeia_io as jwst
+    >>> import numy as np
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=190, readout='rapid', filter='f444w',
+    >>> )
+
+    >>> # Directly print from input values:
+    >>> pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+    >>> inst = 'nircam'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'rapid'
+    >>> ngroup = 90
+    >>> nint = 150
+    >>> text = jwst._print_pandeia_saturation(
+    >>>     inst, subarray, readout, ngroup, pixel_rate, full_well,
+    >>>     format='html',
+    >>> )
+
+    >>> # Print from tso_calculation() or perform_calculation() output:
+    >>> text = jwst._print_pandeia_saturation(
+    >>>     reports=[tso], format='html',
+    >>> )
+    """
+    # parse reports
+    if reports is not None:
+        pixel_rate, full_well = saturation_level(reports, get_max=True)
+        # This is a TSO dict
+        if 'report_in' in reports[0]:
+            report = reports[0]['report_in']
         else:
-            readouts = config['readout_patterns']
-        screen_output += f'readout patterns: {readouts}\n'
+            report = reports[0]
+        config = report['input']['configuration']
+        inst = config['instrument']['instrument']
+        subarray = config['detector']['subarray']
+        readout = config['detector']['readout_pattern']
+        ngroup = config['detector']['ngroup']
 
-        if self.instrument == 'nirspec':
-            gratings_dict = ins_config['config_constraints']['dispersers']
-            gratings = filters = dispersers = []
-            for grating, filter_list in gratings_dict.items():
-                for filter in filter_list['filters']:
-                    gratings.append(f'{grating}/{filter}')
-            screen_output += f'grating/filter pairs: {gratings}'
-        else:
-            filters = config['filters']
-            dispersers = [disperser for disperser in config['dispersers']]
-            screen_output += f'dispersers: {dispersers}\n'
-            screen_output += f'filters: {filters}'
+    sat_time = integration_time(inst, subarray, readout, ngroup)
+    sat_fraction = 100 * pixel_rate * sat_time / full_well
+    ngroup_80 = int(80*ngroup/sat_fraction)
+    ngroup_max = int(100*ngroup/sat_fraction)
 
-        if output is None:
-            print(screen_output)
-        elif output == 'readouts':
-            return readouts
-        elif output == 'subarrays':
-            return subarrays
-        elif output == 'filters':
-            return filters
-        elif output == 'dispersers':
-            return dispersers
-        elif self.instrument=='nirspec' and output=='gratings':
-            return gratings
-        else:
-            raise ValueError(f"Invalid config output: '{output}'")
+    saturation = format_text(
+        f"{sat_fraction:.1f}%", sat_fraction>=81, sat_fraction>=100, format,
+    )
+    ngroup_80 = format_text(
+        f"{ngroup_80:d}", ngroup_80==2, ngroup_80<2, format,
+    )
+    ngroup_max = format_text(
+        f"{ngroup_max:d}", ngroup_max==2, ngroup_max<2, format,
+    )
+    saturation = f'Max fraction of saturation: {saturation}'
+    ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80}'
+    ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max}'
 
-
-    def set_scene(
-            self, sed_type, sed_model, norm_band, norm_magnitude,
-            background='ecliptic_low',
-        ):
-        """
-        Set the stellar point-source scene to observe.
-
-        Parameters
-        ----------
-        sed_type: String
-            Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
-        sed_model:
-            The SED model required for each sed_type:
-            - phoenix or k93models: the model key (see load_sed_list)
-            - blackbody: the effective temperature (K)
-            - flat: the unit ('flam' or 'fnu')
-        norm_band: String
-            Band over which to normalize the spectrum.
-        norm_magnitude: float
-            Magnitude of the star at norm_band.
-        background: String
-            Set the background flux. Select from:
-            'ecliptic_low', 'ecliptic_medium', 'ecliptic_high',
-            'minzodi_low',  'minzodi_medium',  'minzodi_high'
-
-        Examples
-        --------
-        >>> import pandeia_interface as jwst
-
-        >>> instrument = 'nircam'
-        >>> mode = 'ssgrism'
-        >>> pando = jwst.PandeiaCalculation(instrument, mode)
-        >>> pando.set_scene(
-        >>>     sed_type='phoenix', sed_model='k5v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.637,
-        >>> )
-        """
-        scene = make_scene(sed_type, sed_model, norm_band, norm_magnitude)
-        self.calc['scene'] = [scene]
-        bkg, bkg_level = background.strip().split('_')
-        self.calc['background'] = bkg
-        self.calc['background_level'] = bkg_level
+    sat_text = (
+        f'{saturation}\n'
+        f'{ngroup_80_sat}\n'
+        f'{ngroup_max_sat}'
+    )
+    if format == 'html':
+        sat_text = sat_text.replace('\n', '<br>')
+    return sat_text
 
 
-    def get_saturation_values(
-            self, disperser, filter, subarray, readout, ngroup=2,
-            aperture=None,
-        ):
-        """
-        Calculate the brightest-pixel rate (e-/s) and full_well (e-)
-        for the current instrument and scene configuration, which once known,
-        are sufficient to calculate the saturation level once the
-        saturation  time is known.
+def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
+    r"""
+    Return a text summarizing the SNR, timings, and backround info
+    from a perform_calculation() or a tso_calculation() output.
 
-        Examples
-        --------
-        >>> import gen_tso.pandeia_io as jwst
+    Parameters
+    ----------
+    inst: String
+        Instrument name.
+    mode: String
+        Instrument's mode.
+    report_in: Dictionary
+        A tso_calculation() or pandeia's perform_calculation() output.
+    report_out: Dictionary
+        A pandeia's perform_calculation() output.
+        If not None, assume that the inputs reports are an in-transit
+        and out-of-transit pair.
+    format: String
+        If None format as plain text (e.g., for print() calls)
+        If 'rich' format as rich/colorful text (e.g., for FormattedText())
+        If 'html' format as HTML text (e.g., for browser applications)
 
-        >>> instrument = 'nircam'
-        >>> mode = 'ssgrism'
-        >>> pando = jwst.PandeiaCalculation(instrument, mode)
-        >>> pando.set_scene(
-        >>>     sed_type='phoenix', sed_model='k2v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.351,
-        >>> )
-        >>> brightest_pixel_rate, full_well = pando.get_saturation_values(
-        >>>     disperser='grismr', filter='f444w',
-        >>>     readout='rapid', subarray='subgrism64',
-        >>> )
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
 
-        >>> # Also works for Target Acquisition:
-        >>> instrument = 'nircam'
-        >>> mode = 'target_acq'
-        >>> pando = jwst.PandeiaCalculation(instrument, mode)
-        >>> pando.set_scene(
-        >>>     sed_type='phoenix', sed_model='k5v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.351,
-        >>> )
-        >>> brightest_pixel_rate, full_well = pando.get_saturation_values(
-        >>>     disperser=None, filter='f335m',
-        >>>     readout='rapid', subarray='sub32tats', ngroup=3,
-        >>> )
-        """
-        # TBD: Automate here the group setting
-        reports = self.perform_calculation(
-            ngroup=ngroup, nint=1,
-            disperser=disperser, filter=filter,
-            subarray=subarray, readout=readout,
-            aperture=aperture,
-        )
-        if not isinstance(reports, list):
-            reports = [reports]
+    >>> inst = 'nircam'
+    >>> readout = 'rapid'
+    >>> pando = jwst.PandeiaCalculation(inst, 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> result = pando.perform_calculation(
+    >>>     ngroup=92, nint=683, readout='rapid', filter='f444w',
+    >>> )
+    >>> report = jwst.print_pandeia_report(inst, mode, result['scalar'])
+    >>> print(report)
+    """
+    if not isinstance(report_in, list):
+        report_in = [report_in]
+    rate_in = report_in[0]['extracted_flux']
+    if report_out == []:
+        report_out = None
+    if report_out is not None:
+        if not isinstance(report_out, list):
+           report_out = [report_out]
+        rate_out = report_out[0]['extracted_flux']
 
-        ncalc = len(reports)
-        brightest_pixel_rate = np.zeros(ncalc)
-        full_well = np.zeros(ncalc)
-        for i,report in enumerate(reports):
-            results = report['scalar']
-            brightest_pixel_rate[i] = results['brightest_pixel']
-            full_well[i] = (
-                brightest_pixel_rate[i]
-                * results['saturation_time']
-                / results['fraction_saturation']
-            )
-        if len(reports) == 1:
-            return brightest_pixel_rate[0], full_well[0]
-        return brightest_pixel_rate, full_well
+    # Take report with more flux in it
+    if report_out is None or rate_in > rate_out:
+        reports = report_in
+    else:
+        reports = report_out
 
+    snr = ''
+    flux = ''
+    flux_std = ''
+    pixel_rate = ''
+    ref_wave = ''
+    extract_area = ''
+    bkg_area = ''
+    bkg_brightness = ''
+    sky = ''
+    bkg_flux = ''
+    bkg_source = ''
+    min_snr = 0.0
+    if mode == 'target_acq' and inst in ['miri', 'nirspec']:
+        min_snr = 20.0
+    if mode == 'target_acq' and inst in ['niriss', 'nircam']:
+        min_snr = 30.0
 
-    def perform_calculation(
-            self, ngroup, nint,
-            disperser=None, filter=None, subarray=None, readout=None,
-            aperture=None,
-        ):
-        """
-        Run pandeia's perform_calculation() for the given configuration
-        (or set of configurations, see notes below).
+    for report in report_in:
+        sn = report['sn']
+        snr += format_text(f"{sn:9.1f} ", danger=sn<min_snr, format=format)
+        flux += f"{report['extracted_flux']:9.1f} "
+        flux_std += f"{report['extracted_noise']:9.1f} "
+        pixel_rate += f"{report['brightest_pixel']:9.1f} "
+        ref_wave += f"{report['reference_wavelength']:6.2f} "
+        extract_area += f"{report['extraction_area']:6.2f} "
+        if report_in[0]['background_area'] is not None:
+            bkg_area += f"{report['background_area']:6.1f} "
+            bkg_brightness += f"{report['background']:6.1f} "
+            sky += f"{report['background_sky']:6.2f} "
+            bkg_flux += f"{report['background_total']:6.2f} "
+            bkg_source += f"{report['contamination']:6.2f} "
 
-        Parameter
-        ----------
-        ngroup: Integeer
-            Number of groups per integration.  Must be >= 2.
-        nint: Integer
-            Number of integrations.
-        disperser: String
-            Disperser/grating for the given instrument.
-        filter: String
-            Filter for the given instrument.
-        subarray: String
-            Subarray mode for the given instrument.
-        readout: String
-            Readout pattern mode for the given instrument.
-        aperture: String
-            Aperture configuration for the given instrument.
-
-        Returns
-        -------
-        report: dict
-            The Pandeia's report output for the given configuration.
-            If there's more than one requested calculation, return a
-            list of reports.
-
-        Notes
-        -----
-        - Provide a list of values for any of these arguments to
-          compute a batch of calculations.
-        - To leave a config parameter unmodified, leave the respective
-          argument as None.
-          To set a config parameter as None, set the argument to ''.
-        """
-        if not isinstance(nint, Iterable):
-            nint = [nint]
-        if not isinstance(ngroup, Iterable):
-            ngroup = [ngroup]
-        if not isinstance(disperser, Iterable) or isinstance(disperser, str):
-            disperser = [disperser]
-        if not isinstance(filter, Iterable) or isinstance(filter, str):
-            filter = [filter]
-        if not isinstance(subarray, Iterable) or isinstance(subarray, str):
-            subarray = [subarray]
-        if not isinstance(readout, Iterable) or isinstance(readout, str):
-            readout = [readout]
-        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
-            aperture = [aperture]
-
-        configs = product(
-            aperture, disperser, filter, subarray, readout, nint, ngroup,
+    background_info = ''
+    if report_in[0]['background_area'] is not None:
+        background_info = (
+            f"Area of background measurement:        {bkg_area} pixels\n"
+            f"Background surface brightness:         {bkg_brightness} MJy/sr\n"
+            f"Total sky flux in background aperture: {sky} e-/s\n"
+            f"Total flux in background aperture:     {bkg_flux} e-/s\n"
+            f"Background flux fraction from scene:   {bkg_source.rstrip()}\n"
         )
 
-        reports = [
-            self._perform_calculation(config)
-            for config in configs
-        ]
-        if len(reports) == 1:
-            return reports[0]
-        return reports
+    cosmic_rays = f"{report_in[0]['cr_ramp_rate']:9.4f}"
 
-
-    def _perform_calculation(self, params):
-        """
-        (the real function that) runs pandeia.
-        """
-        # Unpack configuration parameters
-        aperture, disperser, filter, subarray, readout, nint, ngroup = params
-        if aperture is not None:
-            self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser is not None:
-            self.calc['configuration']['instrument']['disperser'] = disperser
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-        if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
-        if filter == '':
-            self.calc['configuration']['instrument']['filter'] = None
-        elif filter is not None:
-            self.calc['configuration']['instrument']['filter'] = filter
-
-        if self.instrument == 'niriss':
-            self.calc['strategy']['order'] = 1
-            # DataError: No mask configured for SOSS order 2.
-
-        self.calc['configuration']['detector']['nexp'] = 1 # dither
-        self.calc['configuration']['detector']['nint'] = nint
-        self.calc['configuration']['detector']['ngroup'] = ngroup
-
-        report = perform_calculation(self.calc)
-        self.report = report
-        return report
-
-    def calc_noise(
-            self, obs_dur, ngroup,
-            disperser, filter, subarray, readout, aperture,
-        ):
-        """
-        Run a Pandeia calculation and extract the observed wavelength,
-        flux, and variances.
-
-        Parameters
-        ----------
-        obs_dur: Float
-            Duration of the observation.
-        ngroup: Integer
-            Number of groups per integrations
-        disperser: String
-        filter: String
-        subarray: String
-        readout: String
-        aperture: String
-
-        Returns
-        -------
-        TBD
-
-        Examples
-        --------
-        >>> import gen_tso.pandeia_io as jwst
-
-        >>> instrument = 'nircam'
-        >>> mode = 'ssgrism'
-        >>> pando = jwst.PandeiaCalculation(instrument, mode)
-        >>> pando.set_scene(
-        >>>     sed_type='phoenix', sed_model='k5v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.637,
-        >>> )
-        >>> # Example TBD
-        """
-        ins_config = get_instrument_config(self.telescope, self.instrument)
-        single_exp_time = exposure_time(
-            self.instrument, nint=1, ngroup=ngroup,
-            readout=readout, subarray=subarray,
+    integs = ''
+    duty_cycle = ''
+    total_time = ''
+    exp_time = ''
+    dt_exposure = ''
+    dt_integ = ''
+    dt_fmt = '8.1f' if report_in[0]['total_exposure_time'] > 100 else '8.3f'
+    min_duty = 0.0 if mode == 'target_acq' else 0.49
+    reports = report_in[0:1]
+    if report_out is not None:
+        reports.append(report_out[0])
+    for report in reports:
+        integs += f"{report['total_integrations']:8d} "
+        duty = report['duty_cycle']
+        duty_cycle += format_text(
+            f"{duty:8.2f} ", warning=duty<min_duty, format=format,
         )
+        total_time += f"{report['total_exposure_time']:{dt_fmt}} "
+        exp_time += f"{report['all_dithers_time']:{dt_fmt}} "
+        dt_exposure += f"{report['exposure_time']:{dt_fmt}} "
+        dt_integ += f"{report['measurement_time']:{dt_fmt}} "
 
-        nint = int(obs_dur*3600/single_exp_time)
-        report = self.perform_calculation(
-            ngroup, nint, disperser, filter, subarray, readout, aperture,
-        )
+    if report_out is None:
+        tso_header = ''
+    else:
+        tso_header = f"{'in-transit':>41}  out-transit\n"
+    if mode == 'miri_ts' and len(reports)==4:
+        channels = "CH1 CH2 CH3 CH4"
+        band_header1 = f"{'':31s}{channels.replace(' ', '       ')}\n"
+        band_header2 = f"{'':42s}{channels.replace(' ', '    ')}\n"
+    else:
+        band_header1 = band_header2 = ''
 
-        # Flux:
-        measurement_time = report['scalar']['measurement_time']
-        flux = report['1d']['extracted_flux'][1] * measurement_time
-        wl = report['1d']['extracted_flux'][0]
+    summary = (
+        f"{band_header1}"
+        f"Signal-to-noise ratio    {snr.rstrip()}\n"
+        f"Extracted flux           {flux} e-/s\n"
+        f"Flux standard deviation  {flux_std} e-/s\n"
+        f"Brightest pixel rate     {pixel_rate} e-/s\n\n"
 
-        # Background variance:
-        background_var = report['1d']['extracted_bg_only'][1] * measurement_time
-        # Read noise variance:
-        read_noise = read_noise_variance(report, ins_config)
-        npix = report['scalar']['extraction_area']
-        read_noise_var = 2.0 * read_noise**2.0 * nint * npix
-        # Pandeia (multiaccum) noise:
-        shot_var = (report['1d']['extracted_noise'][1] * measurement_time)**2.0
-        # Last-minus-first (LMF) noise:
-        lmf_var = np.abs(flux) + background_var + read_noise_var
+        f"{tso_header}"
+        f"Integrations:                    {integs.rstrip()}\n"
+        f"Duty cycle:                      {duty_cycle.rstrip()}\n"
+        f"Total exposure time:             {total_time} s\n"
+        # Ignore exp_time since it always matches total_time (nexp=1)
+        #f"Single exposure time:            {exp_time} s\n"
+        f"First--last dt per exposure:     {dt_exposure} s\n"
+        f"Reset--last dt per integration:  {dt_integ} s\n\n"
 
-        variances = lmf_var, shot_var, background_var, read_noise_var
+        f"{band_header2}"
+        f"Reference wavelength:                  {ref_wave} microns\n"
+        f"Area of extraction aperture:           {extract_area} pixels\n"
+        f"{background_info}"
+        f"Number of cosmic rays:   {cosmic_rays}  events/pixel/read"
+    )
 
-        return report, wl, flux, variances, measurement_time
-
-
-    def tso_calculation(
-            self, obs_type, transit_dur, obs_dur, depth_model,
-            ngroup, disperser=None, filter=None,
-            subarray=None, readout=None, aperture=None,
-        ):
-        """
-        Run pandeia to simulate a transit/eclipse time-series observation
-
-        Parameters
-        ----------
-        obs_type: String
-            The observing geometry 'transit' or 'eclipse'.
-        transit_dur: Float
-            Duration of the transit or eclipse event in hours.
-        obs_dur: Float
-            Total duration of the observation (baseline plus transit
-            or eclipse event) in hours.
-        depth_model: list of two 1D array or a 2D array
-            The transit or eclipse depth spectrum where the first item is
-            the wavelength (um) and the second is the depth.
-        ngroup: Integer
-            Number of groups per integrations
-        disperser: String
-        filter: String
-        subarray: String
-        readout: String
-        aperture: String
-
-        Returns
-        -------
-        tso: dict
-            A dictionary containing the time-series observation data:
-            - wl: instrumental wavelength sampling (microns)
-            - depth_spectrum: Transit/eclipse depth spectrum at instrumental wl
-            - time_in: In-transit/eclipse measuring time (seconds)
-            - flux_in: In-transit/eclipse flux (e-)
-            - var_in:  In-transit/eclipse variance
-            - time_out: Out-of-transit/eclipse measuring time (seconds)
-            - flux_out: Out-of-transit/eclipse flux (e-)
-            - var_out:  Out-of-transit/eclipse
-            - report_in:  In-transit/eclipse pandeia output report
-            - report_out:  Out-of-transit/eclipse pandeia output report
-
-        Examples
-        --------
-        >>> import pandeia_interface as jwst
-        >>> from pandeia_interface import set_depth_scene
-
-        >>> # Set the stellar scene and transit:
-        >>> scene = jwst.make_scene(
-        >>>     sed_type='phoenix', sed_model='k5v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.637,
-        >>> )
-        >>> transit_dur = 2.753
-        >>> obs_dur = 7.1
-        >>> obs_type = 'transit'
-        >>> depth_model = np.loadtxt(
-        >>>     '../planet_spectra/WASP80b_transit.dat', unpack=True)
-
-        >>> # Set a NIRSpec observation
-        >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
-        >>> pando.calc['scene'] = [scene]
-        >>> disperser = 'g395h'
-        >>> filter = 'f290lp'
-        >>> readout = 'nrsrapid'
-        >>> subarray = 'sub2048'
-        >>> ngroup = 16
-
-        >>> tso = pando.tso_calculation(
-        >>>     obs_type, transit_dur, obs_dur, depth_model,
-        >>>     ngroup, disperser, filter, subarray, readout,
-        >>> )
-
-        >>> # Fluxes and Flux rates
-        >>> col1, col2 = plt.cm.viridis(0.8), plt.cm.viridis(0.25)
-        >>> plt.figure(0, (8.5, 4))
-        >>> plt.clf()
-        >>> plt.subplot(121)
-        >>> plt.plot(tso['wl'], tso['flux_out'], c=col2, label='out of transit')
-        >>> plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
-        >>> plt.legend(loc='best')
-        >>> plt.xlabel('Wavelength (um)')
-        >>> plt.ylabel('Collected flux (e-)')
-        >>> plt.subplot(122)
-        >>> plt.plot(tso['wl'], tso['flux_out']/tso['time_out'], c=col2, label='out of transit')
-        >>> plt.plot(tso['wl'], tso['flux_in']/tso['time_in'], c=col1, label='in transit')
-        >>> plt.legend(loc='best')
-        >>> plt.xlabel('Wavelength (um)')
-        >>> plt.ylabel('Flux rate (e-/s)')
-        >>> plt.tight_layout()
-
-        >>> # Model and instrument-observed transit depth spectrum
-        >>> wl_depth, depth = depth_model
-        >>> plt.figure(4)
-        >>> plt.clf()
-        >>> plt.plot(wl_depth, 100*depth, c='orange', label='model depth')
-        >>> plt.plot(tso['wl'], 100*tso['depth_spectrum'], c='b', label='obs depth')
-        >>> plt.legend(loc='best')
-        >>> plt.xlim(2.75, 5.25)
-        >>> plt.xlabel('Wavelength (um)')
-        >>> plt.ylabel('Transit depth (%)')
-        """
-        # Scale in or out transit flux rates
-        scene = self.calc['scene'][0]
-        star_scene, depth_scene = set_depth_scene(scene, obs_type, depth_model)
-        if obs_type == 'eclipse':
-            scene_in = star_scene
-            scene_out = depth_scene
-        elif obs_type == 'transit':
-            scene_in = depth_scene
-            scene_out = star_scene
-
-        if not isinstance(ngroup, Iterable):
-            ngroup = [ngroup]
-        if not isinstance(disperser, Iterable) or isinstance(disperser, str):
-            disperser = [disperser]
-        if not isinstance(filter, Iterable) or isinstance(filter, str):
-            filter = [filter]
-        if not isinstance(subarray, Iterable) or isinstance(subarray, str):
-            subarray = [subarray]
-        if not isinstance(readout, Iterable) or isinstance(readout, str):
-            readout = [readout]
-        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
-            aperture = [aperture]
-
-        configs = product(
-            aperture, disperser, filter, subarray, readout, ngroup,
-        )
-
-        tso = [
-            self._tso_calculation(config, scene_in, scene_out, transit_dur, obs_dur)
-            for config in configs
-        ]
-        if len(tso) == 1:
-             tso = tso[0]
-        self.tso = tso
-        # Return scene to its previous state
-        self.calc['scene'][0] = scene
-        return tso
+    if format=='html':
+        summary = summary.replace('\n', '<br>')
+    return summary
 
 
-    def _tso_calculation(
-            self, config, scene_in, scene_out, transit_dur, obs_dur,
-        ):
-        """
-        (the real function that) runs a TSO calculation.
-        """
-        aperture, disperser, filter, subarray, readout, ngroup = config
-        if aperture is not None:
-            self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser is not None:
-            self.calc['configuration']['instrument']['disperser'] = disperser
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-        if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
-        if filter == '':
-            self.calc['configuration']['instrument']['filter'] = None
-        elif filter is not None:
-            self.calc['configuration']['instrument']['filter'] = filter
+def _print_pandeia_report(reports, format=None):
+    """
+    Get a text summarizing tso_calculation() or perform_calculation() output.
+    Similar to the results panel in the ETC.
 
-        # Compute observed fluxes and noises:
-        self.calc['scene'][0] = scene_in
-        report_in, wl, flux_in, variances_in, time_in = self.calc_noise(
-            transit_dur, ngroup,
-            disperser, filter, subarray, readout, aperture,
-        )
-        var_lmf_in = variances_in[0]
+    Parameters
+    ----------
+    reports: Dictionary
+        A tso_calculation() or a perform_calculation() output.
+        Or a list of them.
+    format: String
+        If None format as plain text (e.g., for print() calls)
+        If 'rich' format as rich/colorful text (e.g., for FormattedText())
+        If 'html' format as HTML text (e.g., for browser applications)
 
-        out_transit_dur = obs_dur - transit_dur
-        self.calc['scene'][0] = scene_out
-        report_out, wl, flux_out, variances_out, time_out = self.calc_noise(
-            out_transit_dur, ngroup,
-            disperser, filter, subarray, readout, aperture,
-        )
-        var_lmf_out = variances_out[0]
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
 
-        # Mask out un-illumnated wavelengths (looking at you, G395H)
-        mask = flux_in > 1e-6 * np.median(flux_in)
-        wl = wl[mask]
-        flux_in = flux_in[mask]
-        flux_out = flux_out[mask]
-        var_in = var_lmf_in[mask]
-        var_out = var_lmf_out[mask]
-        obs_depth = 1 - (flux_in/time_in) / (flux_out/time_out)
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=90, readout='rapid', filter='f444w',
+    >>> )
 
-        tso = {
-            'wl': wl,
-            'depth_spectrum': obs_depth,
-            'time_in': time_in,
-            'flux_in': flux_in,
-            'var_in': var_in,
-            'time_out': time_out,
-            'flux_out': flux_out,
-            'var_out': var_out,
-            'report_in': report_in,
-            'report_out': report_out,
-        }
-        return tso
+    >>> tso_report = jwst._print_pandeia_report(tso, format=None)
+    >>> print(tso_report)
 
-    def simulate_tso(
-            self, n_obs=1, resolution=None, bins=None, noiseless=False,
-        ):
-        """
-        Simulate a time-series observation spectrum with noise
-        for the given number of observations and spectral sampling.
+    Exposure time: 21545.44 s (5.98 h)
+    Max fraction of saturation: 73.7%
+    ngroup below 80% saturation: 97
+    ngroup below 100% saturation: 122
 
-        Parameters
-        ----------
-        TBD
+    Signal-to-noise ratio       3484.8
+    Extracted flux              2043.0  e-/s
+    Flux standard deviation        0.6  e-/s
+    Brightest pixel rate        1354.7  e-/s
 
-        Returns
-        -------
-        TBD
+                                   in-transit  out-transit
+    Integrations:                         243      452
+    Duty cycle:                          0.98     0.98
+    Total exposure time:               7533.2  14012.3  s
+    First--last dt per exposure:       7533.2  14012.3  s
+    Reset--last dt per integration:    7366.4  13702.1  s
 
-        Examples
-        --------
-        >>> TBD
-        """
-        return simulate_tso(self.tso, n_obs, resolution, bins, noiseless)
+    Reference wavelength:                    4.36  microns
+    Area of extraction aperture:             4.76  pixels
+    Area of background measurement:           6.3  pixels
+    Background surface brightness:            0.3  MJy/sr
+    Total sky flux in background aperture:   4.45  e-/s
+    Total flux in background aperture:      64.12  e-/s
+    Background flux fraction from scene:     0.93
+    Number of cosmic rays:      0.0072  events/pixel/read
+    """
+    if not isinstance(reports, list):
+        reports = [reports]
+    # This is a TSO dict
+    if 'report_in' in reports[0]:
+        report_in = [report['report_in'] for report in reports]
+        report_out = [report['report_out'] for report in reports]
+    # This is a perform_calculation dict
+    else:
+        report_in = reports
+        report_out = []
+
+    # Put everything into a list to make things easier to handle:
+    if not isinstance(report_in, list):
+        report_in = [report_in]
+    if not isinstance(report_out, list):
+        report_out = [report_out]
+
+    # Exposure
+    config = report_in[0]['input']['configuration']
+    inst = config['instrument']['instrument']
+    mode = config['instrument']['mode']
+    subarray = config['detector']['subarray']
+    readout = config['detector']['readout_pattern']
+    ngroup = config['detector']['ngroup']
+    nint = config['detector']['nint']
+    if report_out != []:
+        nint += report_out[0]['input']['configuration']['detector']['nint']
+    text_report = _print_pandeia_exposure(inst, subarray, readout, ngroup, nint)
+
+    # Saturation
+    reports = report_in + report_out
+    pixel_rate, full_well = saturation_level(reports, get_max=True)
+    saturation_report = _print_pandeia_saturation(
+        inst, subarray, readout, ngroup, pixel_rate, full_well,
+        format=format,
+    )
+    text_report = f'{text_report}\n{saturation_report}'
+
+    # Full report
+    scalar_in = [report['scalar'] for report in report_in]
+    scalar_out = [report['scalar'] for report in report_out]
+    stats = _print_pandeia_stats(inst, mode, scalar_in, scalar_out, format)
+    text_report = f'{text_report}\n\n{stats}'
+    if format == 'html':
+        text_report = text_report.replace('\n', '<br>')
+    return text_report
+
+
+def tso_print(calculation, format='rich'):
+    """
+    Print to screen a tso_calculation() output or a Pandeia's
+    perform_calculation() output.
+
+    Parameters
+    ----------
+    calculation: Dictionary or list of dictionaries
+        A tso_calculation() or a Pandeia's perform_calculation() output.
+    format: String
+        If 'rich' print with colourful text when there are warnings
+        or errors in values.
+        If None, print as plain text.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> import numpy as np
+
+    >>> wl = np.logspace(0, 2, 1000)
+    >>> depth = [wl, np.tile(0.03, len(wl))]
+    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> tso = pando.tso_calculation(
+    >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
+    >>>     ngroup=100, readout='rapid', filter='f444w',
+    >>> )
+    >>> # A perform_calculation() call:
+    >>> jwst.tso_print(tso)
+
+    >>> # A tso_calculation() call:
+    >>> calc = pando.perform_calculation(ngroup=130, nint=300)
+    >>> jwst.tso_print(calc)
+    """
+    # TBD: get style from style.css file?
+    style = prompt_toolkit.styles.Style.from_dict({
+        'danger': '#cb2222',
+        'warning': '#ffa500',
+    })
+    report = _print_pandeia_report(calculation, format)
+    if format == 'rich':
+        report = prompt_toolkit.HTML(report)
+    prompt_toolkit.print_formatted_text(report, style=style)
 

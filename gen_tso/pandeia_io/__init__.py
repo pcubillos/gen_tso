@@ -2,10 +2,12 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 from .pandeia_interface import *
+from .pandeia_calculation import *
 from .pandeia_defaults import *
 
 __all__ = (
     pandeia_interface.__all__
+    + pandeia_calculation.__all__
     + pandeia_defaults.__all__
 )
 

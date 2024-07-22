@@ -15,6 +15,7 @@ __all__ = [
     'bin_spectrum',
     'read_spectrum_file',
     'collect_spectra',
+    'format_text',
     'pretty_print_target',
 ]
 
@@ -22,6 +23,7 @@ import operator
 import os
 
 import numpy as np
+from prompt_toolkit.formatted_text import FormattedText
 from pyratbay.tools import u
 from pyratbay.spectrum import PassBand
 from shiny import ui
@@ -352,6 +354,7 @@ def collect_spectra(folder, on_fail=None):
     on_fail: String
         if 'warning' raise a warning.
         if 'error' raise an error.
+
     Examples
     --------
     >>> import gen_tso.utils as u
@@ -392,6 +395,58 @@ def collect_spectra(folder, on_fail=None):
             sed_spectra[label] = {'wl': wl, 'depth': model}
 
     return transit_spectra, eclipse_spectra, sed_spectra
+
+
+def format_text(text, warning=False, danger=False, format=None):
+    """
+    Return a colorful text depending on requested format and warning
+    or danger flags.
+
+    Parameters
+    ----------
+    text: String
+        A text to print with optional richer format.
+    warning: Bool
+        If True, format as warning text (orange color).
+    danger: Bool
+        If True, format as danger text (red color).
+        If True, overrides warning.
+    format: String
+        If None return plain text.
+        If 'html' return HTML formatted text.
+        If 'rich' return formatted text to be printed with prompt_toolkit.
+
+    See also
+    --------
+    gen_tso.pandeia_io.tso_print
+        
+    Examples
+    --------
+    >>> import gen_tso.utils as u
+    >>> text = 'WASP-80 b'
+    >>> plain = u.format_text(text, danger=True)
+    >>> normal = u.format_text(text, warning=False, danger=False, format='html')
+    >>> html = u.format_text(text, danger=True, format='html')
+    >>> rich = u.format_text(text, danger=True, format='rich')
+
+    >>> warned = u.format_text(text, warning=True, format='html')
+    >>> danger1 = u.format_text(text, danger=True, format='html')
+    >>> danger2 = u.format_text(text, warning=True, danger=True, format='html')
+    """
+    status = 'normal'
+    if danger:
+        status = 'danger'
+    elif warning:
+        status = 'warning'
+
+    if format is None or status=='normal':
+        return text
+
+    if format == 'html':
+        text_value = f'<span class="{status}">{text}</span>'
+    elif format == 'rich':
+        text_value = f'<{status}>{text}</{status}>'
+    return text_value
 
 
 def pretty_print_target(target):
