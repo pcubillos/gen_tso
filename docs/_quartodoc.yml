@@ -24,4 +24,4 @@ quartodoc:
     package: gen_tso.catalogs
     contents:
     - Catalog
-    - load_trexolist_table
+    - load_trexolists
