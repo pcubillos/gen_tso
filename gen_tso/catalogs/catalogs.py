@@ -336,7 +336,14 @@ def load_trexolists(grouped=False, trexo_file=None):
         np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
         for date in trexolist_data['Start date']
     ])
-    trexo_data['plan_window'] = np.array(trexolist_data['Plan Windows'])
+    plan_window = [
+        date if '-' not in date else date[:date.index('-')]
+        for date in trexolist_data['Plan Windows']
+    ]
+    trexo_data['plan_window'] = np.array([
+        np.nan if date=='X' else datetime.strptime(date,'%b%d,%Y')
+        for date in plan_window
+    ])
     trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
 
     trexo_data['status'] = np.array(trexolist_data['Status'])
