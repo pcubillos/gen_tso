@@ -719,10 +719,16 @@ def make_detector_label(
     detector configuration.
     """
     if mode == 'target_acq':
+        if inst == 'miri':
+            label = f'{filter.upper()} {subarray.upper()}'
+        if inst == 'nircam':
+            label = f'{filter.upper()} {readout.upper()}'
         if inst == 'niriss':
-            aper = 'Bright' if aperture == 'nrm' else 'Faint'
-            return f'{inst_names[inst]} {aper}'
-        return inst_names[inst]
+            label = 'Bright' if aperture == 'nrm' else 'Faint'
+            label = f'{label} {readout.upper()}'
+        if inst == 'nirspec':
+            label = f'{filter.upper()} {subarray.upper()} {readout.upper()}'
+        return f'{inst_names[inst]} {label}'
 
     if mode == 'mrs_ts':
         return f'MIRI MRS {disperser.upper()}'
@@ -757,6 +763,7 @@ def make_saturation_label(
         sat_label = f'{sat_label}_{disperser}'
     elif mode == 'target_acq' and inst == 'niriss':
         sat_label = f'{sat_label}_{aperture}'
+
     sat_label = f'{sat_label}_{sed_label}'
     return sat_label
 
