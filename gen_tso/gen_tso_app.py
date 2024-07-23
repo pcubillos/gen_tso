@@ -13,6 +13,7 @@ from datetime import timedelta, datetime
 import numpy as np
 import scipy.interpolate as si
 import pandas as pd
+import pyratbay.tools as pt
 import faicons as fa
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
@@ -2142,18 +2143,11 @@ def server(input, output, session):
     @reactive.event(input.upload_sed)
     def _():
         m = ui.modal(
-            ui.input_file(
-                # Need to change the id to avoid conflict with upload_depth
-                id="upload_file",
-                label=ui.markdown(
-                    "Input files must be plan-text files with two columns, "
-                    "the first one being the wavelength (microns) and "
-                    "the second one the stellar SED. "
-                    "**Make sure the input units are correct!**"
-                ),
-                button_label="Browse",
-                multiple=True,
-                width='100%',
+            ui.markdown(
+                "Input files must be plan-text files with two columns, "
+                "the first one being the wavelength (microns) and "
+                "the second one the stellar SED.<br>**Make sure "
+                "the input units are correct before uploading a file!**"
             ),
             ui.input_radio_buttons(
                 id="upload_units",
@@ -2161,7 +2155,14 @@ def server(input, output, session):
                 choices=sed_units,
                 width='100%',
             ),
-            title="Upload Spectrum",
+            ui.input_file(
+                id="upload_file",
+                label='',
+                button_label="Browse",
+                multiple=True,
+                width='100%',
+            ),
+            title="Upload stellar spectrum",
             easy_close=True,
         )
         ui.modal_show(m)
@@ -2172,17 +2173,11 @@ def server(input, output, session):
     def _():
         obs_geometry = input.obs_geometry.get()
         m = ui.modal(
-            ui.input_file(
-                id="upload_file",
-                label=ui.markdown(
-                    "Input files must be plan-text files with two columns, "
-                    "the first one being the wavelength (microns) and "
-                    f"the second one the {obs_geometry} depth. "
-                    "**Make sure the input units are correct!**"
-                ),
-                button_label="Browse",
-                multiple=True,
-                width='100%',
+            ui.markdown(
+                "Input files must be plan-text files with two columns, "
+                "the first one being the wavelength (microns) and "
+                f"the second one the {obs_geometry} depth.<br>**Make sure "
+                "the input units are correct before uploading a file!**"
             ),
             ui.input_radio_buttons(
                 id="upload_units",
@@ -2190,7 +2185,14 @@ def server(input, output, session):
                 choices=depth_units,
                 width='100%',
             ),
-            title="Upload Spectrum",
+            ui.input_file(
+                id="upload_file",
+                label='',
+                button_label="Browse",
+                multiple=True,
+                width='100%',
+            ),
+            title="Upload planetary spectrum",
             easy_close=True,
         )
         ui.modal_show(m)
@@ -2214,23 +2216,26 @@ def server(input, output, session):
         label, wl, depth = read_spectrum_file(
             new_model[0]['datapath'], on_fail='warning',
         )
-        if wl is None:
-            # TBD: capture and pop up the warning
-            return
-        # Need to manually handle the label
         label = new_model[0]['name']
+        if wl is None:
+            msg = ui.markdown(
+                f'**Error:**<br>Invalid format for input file:<br>*{label}*'
+            )
+            ui.notification_show(msg, type="error", duration=5)
+            return
+
         if label.endswith('.dat') or label.endswith('.txt'):
             label = label[0:-4]
 
         if units in depth_units:
             obs_geometry = input.obs_geometry.get()
-            # TBD: convert depth units
-            spectra[obs_geometry][label] = {'wl': wl, 'depth': depth}
+            u = pt.u(units)
+            spectra[obs_geometry][label] = {'wl': wl, 'depth': depth*u}
             user_spectra[obs_geometry].append(label)
             bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
                 return
-            # Trigger update choose_depth
+            # TBD: Trigger update choose_depth
             update_depth_flag.set(label)
         elif units in sed_units:
             pass
