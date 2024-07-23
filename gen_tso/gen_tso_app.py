@@ -2235,7 +2235,7 @@ def server(input, output, session):
             bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
                 return
-            # TBD: Trigger update choose_depth
+            # Trigger update choose_depth
             update_depth_flag.set(label)
         elif units in sed_units:
             pass
@@ -2427,6 +2427,7 @@ def server(input, output, session):
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
+        update_depth_flag.get()
         obs_geometry = input.obs_geometry.get()
         model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
