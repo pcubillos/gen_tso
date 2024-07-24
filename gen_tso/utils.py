@@ -330,11 +330,8 @@ def read_spectrum_file(file, on_fail=None):
     except ValueError as error:
         wl = None
         depth = None
-        str_error = str(on_fail).capitalize()
         error_msg = (
-                f'{str_error}, could not load spectrum file: '
-                f'{repr(file)}\n'
-                f'{error}'
+            f'Error, could not load spectrum file: {repr(file)}\n{error}'
         )
         if on_fail == 'warning':
             print(error_msg)
@@ -392,7 +389,7 @@ def collect_spectra(folder, on_fail=None):
     for file in sed_files:
         label, wl, model = read_spectrum_file(f'{folder}/{file}', on_fail)
         if wl is not None:
-            sed_spectra[label] = {'wl': wl, 'depth': model}
+            sed_spectra[label] = {'wl': wl, 'flux': model}
 
     return transit_spectra, eclipse_spectra, sed_spectra
 

@@ -529,6 +529,8 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
         sed['key'] = sed_model
     elif sed_type == 'blackbody':
         sed['temp'] = sed_model
+    elif sed_type == 'input':
+        sed['spectrum'] = sed_model['wl'], sed_model['flux']
 
     if norm_band is None or norm_band == 'none':
         normalization = {'type': 'none'}

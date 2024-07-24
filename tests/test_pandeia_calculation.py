@@ -5,6 +5,61 @@ import gen_tso.pandeia_io as jwst
 import numpy as np
 
 
+def test_perform_calculation():
+    pando = jwst.PandeiaCalculation('niriss', 'soss')
+    # Set the stellar scene:
+    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.637)
+
+    # Set a NIRSpec observation
+    disperser = 'gr700xd'
+    filter = 'clear'
+    readout = 'nisrapid'
+    subarray = 'substrip96'
+    aperture = 'soss'
+    ngroup = 3
+    nint = 984
+
+    report = pando.perform_calculation(
+        ngroup, nint, disperser, filter, subarray, readout, aperture,
+    )
+    # assert
+
+
+#def test_read_noise_variance():
+#    report_config = {
+#        'mode': '',
+#        'aperture': '',
+#    }
+#    inputs = (
+#        ('miri', 'mrs_ts', 'ch1'),
+#        ('miri', 'lrsslitless', 'imager'),
+#        ('nircam', 'ssgrism', 'lw'),
+#        ('nirspec', 'bots',  's1600a1'),
+#        ('niriss', 'soss', 'soss'),
+#    )
+#    for input in inputs:
+#        inst, mode, aperture = input
+#        ins_config = get_instrument_config('jwst', inst)
+#        pando = jwst.PandeiaCalculation(inst, mode)
+#        #print(pando.calc['configuration']['instrument']['aperture'])
+#        info_dict = ins_config['detector_config']
+#        report_config['mode'] = mode
+#        report_config['aperture'] = aperture
+#
+#        #report_config = report['input']['configuration']['instrument']
+#        if report_config['mode'] == 'mrs_ts':
+#            aperture = report_config['aperture']
+#            aperture = ins_config['aperture_config'][aperture]['detector']
+#
+#        if aperture not in ins_config['detector_config']:
+#            aperture = 'default'
+#
+#        read_noise = ins_config['detector_config'][aperture]['rn']
+#        if isinstance(read_noise, dict):
+#            read_noise = read_noise['default']
+#        print(inst, mode, read_noise)
+
+
 def test_tso_calculation_single():
     pando = jwst.PandeiaCalculation('nirspec', 'bots')
     # Set the stellar scene:

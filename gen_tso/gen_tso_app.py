@@ -13,6 +13,8 @@ from datetime import timedelta, datetime
 import numpy as np
 import scipy.interpolate as si
 import pandas as pd
+import pyratbay.constants as pc
+import pyratbay.tools as pt
 import faicons as fa
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
@@ -121,7 +123,7 @@ bookmarked_spectra = {
 user_spectra = {
     'transit': [],
     'eclipse': [],
-    'sed': [],
+    'sed': {},
 }
 
 # Load spectra from user-defined folder and/or from default folder
@@ -140,10 +142,8 @@ for location in loading_folders:
     for label, model in e_models.items():
         spectra['eclipse'][label] = model
         user_spectra['eclipse'].append(label)
-    # for label, model in sed_models.items():
-        # 'depth' --> 'flux'
-        #spectra['sed'][label] = {'wl': wl, 'depth': depth}
-        #user_spectra['sed'].append(label)
+    for label, model in sed_models.items():
+        user_spectra['sed'][label] = model
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
@@ -899,7 +899,10 @@ def parse_sed(input, target_acq_mag=None):
         sed_model = float(input.t_eff.get())
         model_label = f'bb_{sed_model:.0f}K'
     elif sed_type == 'input':
-        model_label = sed_model
+        model_label = input.sed.get()
+        if model_label not in user_spectra['sed']:
+            return None, None, None, None, None
+        sed_model = user_spectra['sed'][model_label]
 
     if sed_type == 'kurucz':
         sed_type = 'k93models'
@@ -973,6 +976,7 @@ def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
+    update_sed_flag = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
     warning_text = reactive.Value('')
@@ -1052,6 +1056,10 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
             input, target_acq_mag=target_acq_mag,
         )
+        if sed_label is None:
+            error_msg = ui.markdown(f"**Error:**<br>No SED model to simulate")
+            ui.notification_show(error_msg, type="error", duration=5)
+            return
 
         if run_is_tso and in_transit_integs > nint:
             error_msg = ui.markdown(
@@ -1066,6 +1074,12 @@ def server(input, output, session):
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 
+        if sed_label not in bookmarked_spectra['sed']:
+            scene = pando.calc['scene'][0]
+            wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            bookmarked_spectra['sed'].append(sed_label)
+
         if not run_is_tso:
             depth_label = ''
             tso = pando.perform_calculation(
@@ -1075,11 +1089,8 @@ def server(input, output, session):
         else:
             depth_label, wl, depth = parse_depth_model(input)
             if depth_label is None:
-                error_msg = ui.markdown(
-                    f"**Error:**<br>no {obs_geometry} depth model "
-                    "to simulate"
-                )
-                ui.notification_show(error_msg, type="error", duration=5)
+                msg = f"**Error:**<br>No {obs_geometry} depth model to simulate"
+                ui.notification_show(ui.markdown(msg), type="error", duration=5)
                 return
             run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
@@ -1930,7 +1941,7 @@ def server(input, output, session):
 
 
     @reactive.Effect
-    @reactive.event(input.sed_type, input.t_eff, input.log_g)
+    @reactive.event(input.sed_type, input.t_eff, input.log_g, update_sed_flag)
     def choose_sed():
         sed_type = input.sed_type.get()
         if sed_type in ['phoenix', 'kurucz']:
@@ -1946,7 +1957,7 @@ def server(input, output, session):
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices = list(spectra['sed'])
+            choices = list(user_spectra['sed'])
             selected = None
 
         ui.update_select("sed", choices=choices, selected=selected)
@@ -1986,9 +1997,13 @@ def server(input, output, session):
     @reactive.event(input.sed_bookmark)
     def _():
         """Toggle bookmarked SED"""
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        if sed_type is None:
+            msg = ui.markdown("**Error**:<br>No SED model to bookmark")
+            ui.notification_show(msg, type="error", duration=5)
+            return
         is_bookmarked = not bookmarked_sed.get()
         bookmarked_sed.set(is_bookmarked)
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
@@ -1996,8 +2011,6 @@ def server(input, output, session):
             bookmarked_spectra['sed'].append(sed_label)
         else:
             bookmarked_spectra['sed'].remove(sed_label)
-            if sed_label not in user_spectra['sed']:
-                spectra['sed'].pop(sed_label)
 
 
     @render.ui
@@ -2037,11 +2050,10 @@ def server(input, output, session):
         obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
         if depth_label is None:
-            ui.notification_show(
-                f"No {obs_geometry} depth model to bookmark",
-                type="error",
-                duration=5,
+            msg = ui.markdown(
+                f"**Error:**<br>No {obs_geometry} depth model to bookmark"
             )
+            ui.notification_show(msg, type="error", duration=5)
             return
         is_bookmarked = not bookmarked_depth.get()
         bookmarked_depth.set(is_bookmarked)
@@ -2051,8 +2063,6 @@ def server(input, output, session):
             spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
-            if depth_label not in user_spectra[obs_geometry]:
-                spectra[obs_geometry].pop(depth_label)
 
 
     @reactive.effect
@@ -2142,18 +2152,11 @@ def server(input, output, session):
     @reactive.event(input.upload_sed)
     def _():
         m = ui.modal(
-            ui.input_file(
-                # Need to change the id to avoid conflict with upload_depth
-                id="upload_file",
-                label=ui.markdown(
-                    "Input files must be plan-text files with two columns, "
-                    "the first one being the wavelength (microns) and "
-                    "the second one the stellar SED. "
-                    "**Make sure the input units are correct!**"
-                ),
-                button_label="Browse",
-                multiple=True,
-                width='100%',
+            ui.markdown(
+                "Input files must be plan-text files with two columns, "
+                "the first one being the wavelength (microns) and "
+                "the second one the stellar SED.<br>**Make sure "
+                "the input units are correct before uploading a file!**"
             ),
             ui.input_radio_buttons(
                 id="upload_units",
@@ -2161,7 +2164,14 @@ def server(input, output, session):
                 choices=sed_units,
                 width='100%',
             ),
-            title="Upload Spectrum",
+            ui.input_file(
+                id="upload_file",
+                label='',
+                button_label="Browse",
+                multiple=True,
+                width='100%',
+            ),
+            title="Upload stellar spectrum",
             easy_close=True,
         )
         ui.modal_show(m)
@@ -2172,17 +2182,11 @@ def server(input, output, session):
     def _():
         obs_geometry = input.obs_geometry.get()
         m = ui.modal(
-            ui.input_file(
-                id="upload_file",
-                label=ui.markdown(
-                    "Input files must be plan-text files with two columns, "
-                    "the first one being the wavelength (microns) and "
-                    f"the second one the {obs_geometry} depth. "
-                    "**Make sure the input units are correct!**"
-                ),
-                button_label="Browse",
-                multiple=True,
-                width='100%',
+            ui.markdown(
+                "Input files must be plan-text files with two columns, "
+                "the first one being the wavelength (microns) and "
+                f"the second one the {obs_geometry} depth.<br>**Make sure "
+                "the input units are correct before uploading a file!**"
             ),
             ui.input_radio_buttons(
                 id="upload_units",
@@ -2190,7 +2194,14 @@ def server(input, output, session):
                 choices=depth_units,
                 width='100%',
             ),
-            title="Upload Spectrum",
+            ui.input_file(
+                id="upload_file",
+                label='',
+                button_label="Browse",
+                multiple=True,
+                width='100%',
+            ),
+            title="Upload planetary spectrum",
             easy_close=True,
         )
         ui.modal_show(m)
@@ -2211,21 +2222,24 @@ def server(input, output, session):
 
         # The units tell this function SED or depth spectrum:
         units = uploaded_units.get()
-        label, wl, depth = read_spectrum_file(
+        label, wl, model = read_spectrum_file(
             new_model[0]['datapath'], on_fail='warning',
         )
-        if wl is None:
-            # TBD: capture and pop up the warning
-            return
-        # Need to manually handle the label
         label = new_model[0]['name']
+        if wl is None:
+            msg = ui.markdown(
+                f'**Error:**<br>Invalid format for input file:<br>*{label}*'
+            )
+            ui.notification_show(msg, type="error", duration=5)
+            return
+
         if label.endswith('.dat') or label.endswith('.txt'):
             label = label[0:-4]
 
         if units in depth_units:
             obs_geometry = input.obs_geometry.get()
-            # TBD: convert depth units
-            spectra[obs_geometry][label] = {'wl': wl, 'depth': depth}
+            u = pt.u(units)
+            spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
             user_spectra[obs_geometry].append(label)
             bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
@@ -2233,7 +2247,16 @@ def server(input, output, session):
             # Trigger update choose_depth
             update_depth_flag.set(label)
         elif units in sed_units:
-            pass
+            if 'frequency' in units:
+                u = 10**26
+            elif 'wavenumber' in units:
+                u = 10**26 / pc.c
+            elif 'wavelength' in units:
+                u = 10**26 / pc.c * (wl*pc.um)**2.0
+            elif 'mJy' in units:
+                u = 1.0
+            user_spectra['sed'][label] = {'wl': wl, 'flux': model*u}
+            update_sed_flag.set(label)
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -2422,6 +2445,7 @@ def server(input, output, session):
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
+        update_depth_flag.get()
         obs_geometry = input.obs_geometry.get()
         model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
