@@ -14,7 +14,7 @@ __all__ = [
 import os
 import requests
 from shiny import ui
-from synphot.config import conf, Conf
+from pathlib import Path
 
 
 def check_latest_pandeia_version():
@@ -121,24 +121,60 @@ def check_pysynphot():
     )
 
 
-def fetch_vega():
-    """
-    Fetch Vega reference spectrum and place it in the rigth folder.
-    """
+def update_pysynphot_files():
     if "PYSYN_CDBS" not in os.environ:
         raise ValueError('$PYSYN_CDBS environment variable is not defined')
 
-    vega_url = 'https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits'
-    vega_url = Conf.vega_file.defaultvalue
-    query_parameters = {}
-    response = requests.get(vega_url, params=query_parameters)
-    if not response.ok:
-        print('Could not download Vega reference spectrum')
-        # show url, download manually?, put it in path
+    cdbs_path = os.environ['PYSYN_CDBS']
+    if not os.path.exists(cdbs_path):
+        Path(cdbs_path).mkdir(parents=True, exist_ok=True)
+        if not os.path.exists(cdbs_path):
+            raise ValueError(
+                f'Could not create "PYSYN_CDBS" directory: {cdbs_path}'
+            )
 
+    # check files
+    vega_path = f'{cdbs_path}/calspec/alpha_lyr_stis_010.fits'
+    atlases = {
+        'throughput': os.path.exists(f'{cdbs_path}/comp'),
+        'Kurucz SED': os.path.exists(f'{cdbs_path}/grid/k93models/'),
+        'PHOENIX SED': os.path.exists(f'{cdbs_path}/grid/phoenix/'),
+        'Vega SED': os.path.exists(vega_path),
+    }
+
+    if not atlases['Vega SED']:
+        status = fetch_vega()
+    return status
+
+
+def fetch_vega():
+    """
+    Fetch Vega reference spectrum and place it in the rigth folder.
+
+    Returns
+    -------
+    On success, returns None.
+    If there was an error, return a string describing the error.
+    """
+    if "PYSYN_CDBS" not in os.environ:
+        return '$PYSYN_CDBS environment variable is not defined'
+
+    vega_url = 'https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits'
     synphot_path = os.environ['PYSYN_CDBS']
     path_idx = vega_url.find('calspec')
     vega_path = f'{synphot_path}/{vega_url[path_idx:]}'
+
+    query_parameters = {}
+    response = requests.get(vega_url, params=query_parameters)
+    if not response.ok or True:
+        error = (
+            'Could not download Vega reference spectrum\n'
+            f'You may try downloading it manually from:\n   {vega_url}\n'
+            f'And put the file in:\n    {vega_path}'
+        )
+        print('\n' + error)
+        return error.replace('\n','<br>')
+
     if not os.path.exists(os.path.dirname(vega_path)):
         os.mkdir(os.path.dirname(vega_path))
     with open(vega_path, mode="wb") as file:

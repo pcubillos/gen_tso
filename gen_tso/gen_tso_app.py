@@ -38,6 +38,7 @@ from gen_tso.pandeia_io.pandeia_setup import (
     check_latest_pandeia_version,
     check_pandeia_ref_data,
     check_pysynphot,
+    update_pysynphot_files,
 )
 
 # Catalog of known exoplanets (and candidate planets)
@@ -1080,6 +1081,21 @@ def server(input, output, session):
     def _():
         cat.fetch_trexolist()
         # TBD: update planets database
+
+    @reactive.Effect
+    @reactive.event(input.update_nasa)
+    def _():
+        pass
+        #cat.udate_nasa_exoplanet_archive()
+        # TBD: update planets database
+
+    @reactive.Effect
+    @reactive.event(input.update_pysynphot)
+    def _():
+        status = update_pysynphot_files()
+        if isinstance(status, str):
+            error_msg = ui.markdown(f"**Error:**<br>{status}")
+            ui.notification_show(error_msg, type="error", duration=8)
 
 
     def run_pandeia(input):
