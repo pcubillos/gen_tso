@@ -332,20 +332,35 @@ def load_trexolists(grouped=False, trexo_file=None):
         np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
         for date in trexolist_data['Start date']
     ])
-    trexo_data['date_start'] = np.array([
-        np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
-        for date in trexolist_data['Start date']
-    ])
-    plan_window = [
-        date if '-' not in date else date[:date.index('-')]
-        for date in trexolist_data['Plan Windows']
-    ]
-    trexo_data['plan_window'] = np.array([
-        np.nan if date=='X' else datetime.strptime(date,'%b%d,%Y')
-        for date in plan_window
-    ])
-    trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
 
+    date_start = []
+    date_end = []
+    plan_window = []
+    s_dates = trexolist_data['Start date']
+    e_dates = trexolist_data['End date']
+    windows = trexolist_data['Plan Windows']
+    for i in range(len(norm_targets)):
+        try:
+            date = datetime.strptime(s_dates[i],'%b_%d_%Y_%H:%M:%S')
+        except:
+            date = np.nan
+        try:
+            end = datetime.strptime(e_dates[i],'%b_%d_%Y_%H:%M:%S')
+        except:
+            end = np.nan
+        try:
+            window = windows[i][:windows[i].index('-')]
+            window = datetime.strptime(window,'%b%d,%Y')
+        except:
+            window = np.nan
+        date_start.append(date)
+        date_end.append(end)
+        plan_window.append(window)
+    trexo_data['date_start'] = np.array(date_start)
+    trexo_data['date_end'] = np.array(date_end)
+    trexo_data['plan_window'] = np.array(plan_window)
+
+    trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
     trexo_data['status'] = np.array(trexolist_data['Status'])
 
     if not grouped:
