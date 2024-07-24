@@ -13,6 +13,7 @@ from datetime import timedelta, datetime
 import numpy as np
 import scipy.interpolate as si
 import pandas as pd
+import pyratbay.constants as pc
 import pyratbay.tools as pt
 import faicons as fa
 import plotly.graph_objects as go
@@ -122,7 +123,7 @@ bookmarked_spectra = {
 user_spectra = {
     'transit': [],
     'eclipse': [],
-    'sed': [],
+    'sed': {},
 }
 
 # Load spectra from user-defined folder and/or from default folder
@@ -141,10 +142,8 @@ for location in loading_folders:
     for label, model in e_models.items():
         spectra['eclipse'][label] = model
         user_spectra['eclipse'].append(label)
-    # for label, model in sed_models.items():
-        # 'depth' --> 'flux'
-        #spectra['sed'][label] = {'wl': wl, 'depth': depth}
-        #user_spectra['sed'].append(label)
+    for label, model in sed_models.items():
+        user_spectra['sed'][label] = model
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
@@ -900,7 +899,10 @@ def parse_sed(input, target_acq_mag=None):
         sed_model = float(input.t_eff.get())
         model_label = f'bb_{sed_model:.0f}K'
     elif sed_type == 'input':
-        model_label = sed_model
+        model_label = input.sed.get()
+        if model_label not in user_spectra['sed']:
+            return None, None, None, None, None
+        sed_model = user_spectra['sed'][model_label]
 
     if sed_type == 'kurucz':
         sed_type = 'k93models'
@@ -974,6 +976,7 @@ def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
+    update_sed_flag = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
     warning_text = reactive.Value('')
@@ -1931,7 +1934,7 @@ def server(input, output, session):
 
 
     @reactive.Effect
-    @reactive.event(input.sed_type, input.t_eff, input.log_g)
+    @reactive.event(input.sed_type, input.t_eff, input.log_g, update_sed_flag)
     def choose_sed():
         sed_type = input.sed_type.get()
         if sed_type in ['phoenix', 'kurucz']:
@@ -1947,7 +1950,7 @@ def server(input, output, session):
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices = list(spectra['sed'])
+            choices = list(user_spectra['sed'])
             selected = None
 
         ui.update_select("sed", choices=choices, selected=selected)
@@ -1990,6 +1993,8 @@ def server(input, output, session):
         is_bookmarked = not bookmarked_sed.get()
         bookmarked_sed.set(is_bookmarked)
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        if sed_type is None:
+            return
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
@@ -1997,8 +2002,6 @@ def server(input, output, session):
             bookmarked_spectra['sed'].append(sed_label)
         else:
             bookmarked_spectra['sed'].remove(sed_label)
-            if sed_label not in user_spectra['sed']:
-                spectra['sed'].pop(sed_label)
 
 
     @render.ui
@@ -2052,8 +2055,6 @@ def server(input, output, session):
             spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
-            if depth_label not in user_spectra[obs_geometry]:
-                spectra[obs_geometry].pop(depth_label)
 
 
     @reactive.effect
@@ -2213,7 +2214,7 @@ def server(input, output, session):
 
         # The units tell this function SED or depth spectrum:
         units = uploaded_units.get()
-        label, wl, depth = read_spectrum_file(
+        label, wl, model = read_spectrum_file(
             new_model[0]['datapath'], on_fail='warning',
         )
         label = new_model[0]['name']
@@ -2230,7 +2231,7 @@ def server(input, output, session):
         if units in depth_units:
             obs_geometry = input.obs_geometry.get()
             u = pt.u(units)
-            spectra[obs_geometry][label] = {'wl': wl, 'depth': depth*u}
+            spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
             user_spectra[obs_geometry].append(label)
             bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
@@ -2238,7 +2239,16 @@ def server(input, output, session):
             # Trigger update choose_depth
             update_depth_flag.set(label)
         elif units in sed_units:
-            pass
+            if 'frequency' in units:
+                u = 10**26
+            elif 'wavenumber' in units:
+                u = 10**26 / pc.c
+            elif 'wavelength' in units:
+                u = 10**26 / pc.c * (wl*pc.um)**2.0
+            elif 'mJy' in units:
+                u = 1.0
+            user_spectra['sed'][label] = {'wl': wl, 'flux': model*u}
+            update_sed_flag.set(label)
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
