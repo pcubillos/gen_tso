@@ -58,11 +58,11 @@ def check_pandeia_ref_data(engine_version=None):
             output = f"Invalid 'pandeia_refdata' path: {repr(refdata_path)}"
 
     if 'up to date' in output:
-        return ui.HTML(f'<br><span style="color:#0B980D">{output}</span>')
+        return ui.HTML(f'<span style="color:#0B980D">{output}</span>')
 
     return ui.span(
         ui.HTML(
-            f'<br><span style="color:red">{output}.</span> '
+            f'<span style="color:red">{output}.</span> '
             'Please follow the instructions in section 2.1 of '
         ),
         ui.tags.a(pandeia_url, href=pandeia_url, target="_blank"),

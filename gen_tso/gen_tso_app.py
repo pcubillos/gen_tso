@@ -1018,12 +1018,19 @@ def server(input, output, session):
         my_pandeia = pandeia.engine.__version__
         last_pandeia = check_latest_pandeia_version()
         color = 'red' if my_pandeia != last_pandeia else '#0B980D'
-        pandeia_status = ui.HTML(
-            f'<p><span style="color:{color}">You have version {my_pandeia},'
-            f'</span> the latest version is {last_pandeia}</p>'
+        if color == 'red':
+            advice = (
+                '. You may want to upgrade pandeia.engine with<br>'
+                'pip install --upgrade pandeia.engine'
+            )
+        else:
+            advice = ''
+        pandeia_engine_status = ui.HTML(
+            f'<br><p><span style="color:{color}">You have version {my_pandeia},'
+            f' the latest version is {last_pandeia}</span>{advice}</p>'
         )
 
-        pandeia_ref = check_pandeia_ref_data(engine_version=my_pandeia)
+        pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
         pysynphot_data = check_pysynphot()
 
         m = ui.modal(
@@ -1046,15 +1053,6 @@ def server(input, output, session):
                     class_="btn btn-sm",
                 ),
                 ui.HTML(f"Last updated: {last_nasa}"),
-                # Pandeia engine
-                ui.input_task_button(
-                    id='update_pandeia',
-                    label='Update Pandeia engine',
-                    label_busy="Fetching from STScI ...",
-                    width=button_width,
-                    class_="btn btn-sm",
-                ),
-                pandeia_status,
                 # pysynphot
                 ui.input_task_button(
                     id='update_pysynphot',
@@ -1068,8 +1066,8 @@ def server(input, output, session):
                 gap='10px',
                 class_="px-0 py-0 mx-0 my-0",
             ),
-            # Pandeia reference data
-            pandeia_ref,
+            pandeia_engine_status,
+            pandeia_ref_status,
             ui.hr(),
             title=ui.markdown("**Settings**"),
             easy_close=True,
