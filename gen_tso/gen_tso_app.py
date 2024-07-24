@@ -1056,6 +1056,10 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
             input, target_acq_mag=target_acq_mag,
         )
+        if sed_label is None:
+            error_msg = ui.markdown(f"**Error:**<br>No SED model to simulate")
+            ui.notification_show(error_msg, type="error", duration=5)
+            return
 
         if run_is_tso and in_transit_integs > nint:
             error_msg = ui.markdown(
@@ -1070,6 +1074,12 @@ def server(input, output, session):
         pando = jwst.PandeiaCalculation(inst, mode)
         pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 
+        if sed_label not in bookmarked_spectra['sed']:
+            scene = pando.calc['scene'][0]
+            wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            bookmarked_spectra['sed'].append(sed_label)
+
         if not run_is_tso:
             depth_label = ''
             tso = pando.perform_calculation(
@@ -1079,11 +1089,8 @@ def server(input, output, session):
         else:
             depth_label, wl, depth = parse_depth_model(input)
             if depth_label is None:
-                error_msg = ui.markdown(
-                    f"**Error:**<br>no {obs_geometry} depth model "
-                    "to simulate"
-                )
-                ui.notification_show(error_msg, type="error", duration=5)
+                msg = f"**Error:**<br>No {obs_geometry} depth model to simulate"
+                ui.notification_show(ui.markdown(msg), type="error", duration=5)
                 return
             run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
@@ -1990,11 +1997,13 @@ def server(input, output, session):
     @reactive.event(input.sed_bookmark)
     def _():
         """Toggle bookmarked SED"""
-        is_bookmarked = not bookmarked_sed.get()
-        bookmarked_sed.set(is_bookmarked)
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         if sed_type is None:
+            msg = ui.markdown("**Error**:<br>No SED model to bookmark")
+            ui.notification_show(msg, type="error", duration=5)
             return
+        is_bookmarked = not bookmarked_sed.get()
+        bookmarked_sed.set(is_bookmarked)
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
@@ -2041,11 +2050,10 @@ def server(input, output, session):
         obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
         if depth_label is None:
-            ui.notification_show(
-                f"No {obs_geometry} depth model to bookmark",
-                type="error",
-                duration=5,
+            msg = ui.markdown(
+                f"**Error:**<br>No {obs_geometry} depth model to bookmark"
             )
+            ui.notification_show(msg, type="error", duration=5)
             return
         is_bookmarked = not bookmarked_depth.get()
         bookmarked_depth.set(is_bookmarked)
