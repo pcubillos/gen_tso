@@ -166,7 +166,7 @@ def fetch_vega():
 
     query_parameters = {}
     response = requests.get(vega_url, params=query_parameters)
-    if not response.ok or True:
+    if not response.ok:
         error = (
             'Could not download Vega reference spectrum\n'
             f'You may try downloading it manually from:\n   {vega_url}\n'
