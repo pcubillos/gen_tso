@@ -10,13 +10,14 @@ import textwrap
 from datetime import timedelta, datetime
 
 
+import faicons as fa
 import numpy as np
-import scipy.interpolate as si
 import pandas as pd
+import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
-import faicons as fa
 import plotly.graph_objects as go
+import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -32,6 +33,11 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     get_detector,
     make_obs_label,
     make_saturation_label,
+)
+from gen_tso.pandeia_io.pandeia_setup import (
+    check_latest_pandeia_version,
+    check_pandeia_ref_data,
+    check_pysynphot,
 )
 
 # Catalog of known exoplanets (and candidate planets)
@@ -185,6 +191,16 @@ app_ui = ui.page_fluid(
                     target="_blank",
                 ),
                 "documentation",
+                placement='bottom',
+            ),
+            ',',
+            ui.tooltip(
+                ui.input_action_link(
+                    id='main_settings',
+                    label='',
+                    icon=fa.icon_svg("gear", fill='black'),
+                ),
+                "settings",
                 placement='bottom',
             ),
             ')',
@@ -989,6 +1005,75 @@ def server(input, output, session):
     esasky_command = reactive.Value(None)
     trexo_info = reactive.Value(None)
 
+
+    @reactive.effect
+    @reactive.event(input.main_settings)
+    def _():
+        with open(f'{ROOT}/data/last_updated_trexolist.txt', 'r') as f:
+            last_trexo = f.readline().replace('_','-')
+        with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
+            last_nasa = f.readline().replace('_','-')
+        button_width = '95%'
+
+        my_pandeia = pandeia.engine.__version__
+        last_pandeia = check_latest_pandeia_version()
+        color = 'red' if my_pandeia != last_pandeia else '#0B980D'
+        color = f'color:{color}'
+
+        pandeia_ref = check_pandeia_ref_data(engine_version=my_pandeia)
+        pysynphot_data = check_pysynphot()
+
+        m = ui.modal(
+            ui.layout_columns(
+                # Trexolists
+                ui.input_action_button(
+                    id='update_trexo',
+                    label='Update JWST database',
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                ui.HTML(f'Last updated: {last_trexo}'),
+                # NASA Archive
+                ui.input_action_button(
+                    id='update_nasa',
+                    label='Update Exoplanet database',
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                ui.HTML(f"Last updated: {last_nasa}"),
+                # Pandeia engine
+                ui.input_action_button(
+                    id='update_pandeia',
+                    label='Update Pandeia engine',
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                ui.HTML(
+                    f'<p><span style="{color}">You have version {my_pandeia},'
+                    f'</span> the latest version is {last_pandeia}</p>'
+                ),
+                # pysynphot
+                ui.input_action_button(
+                    id='update_pysynphot',
+                    label='Update Pysynphot',
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                pysynphot_data,
+                col_widths=(4,8),
+                gap='10px',
+                class_="px-0 py-0 mx-0 my-0",
+            ),
+            # Pandeia reference data
+            pandeia_ref,
+            ui.hr(),
+            title=ui.markdown("**Settings**"),
+            easy_close=True,
+            size='l',
+        )
+        ui.modal_show(m)
+
+
     def run_pandeia(input):
         """
         Perform a pandeia calculation on  science or acquisition target.
@@ -1057,7 +1142,7 @@ def server(input, output, session):
             input, target_acq_mag=target_acq_mag,
         )
         if sed_label is None:
-            error_msg = ui.markdown(f"**Error:**<br>No SED model to simulate")
+            error_msg = ui.markdown("**Error:**<br>No SED model to simulate")
             ui.notification_show(error_msg, type="error", duration=5)
             return
 
