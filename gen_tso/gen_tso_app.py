@@ -1018,7 +1018,10 @@ def server(input, output, session):
         my_pandeia = pandeia.engine.__version__
         last_pandeia = check_latest_pandeia_version()
         color = 'red' if my_pandeia != last_pandeia else '#0B980D'
-        color = f'color:{color}'
+        pandeia_status = ui.HTML(
+            f'<p><span style="color:{color}">You have version {my_pandeia},'
+            f'</span> the latest version is {last_pandeia}</p>'
+        )
 
         pandeia_ref = check_pandeia_ref_data(engine_version=my_pandeia)
         pysynphot_data = check_pysynphot()
@@ -1026,36 +1029,37 @@ def server(input, output, session):
         m = ui.modal(
             ui.layout_columns(
                 # Trexolists
-                ui.input_action_button(
+                ui.input_task_button(
                     id='update_trexo',
                     label='Update JWST database',
+                    label_busy="Fetching from trexolists ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
                 ui.HTML(f'Last updated: {last_trexo}'),
                 # NASA Archive
-                ui.input_action_button(
+                ui.input_task_button(
                     id='update_nasa',
                     label='Update Exoplanet database',
+                    label_busy="Fetching from NASA Archive ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
                 ui.HTML(f"Last updated: {last_nasa}"),
                 # Pandeia engine
-                ui.input_action_button(
+                ui.input_task_button(
                     id='update_pandeia',
                     label='Update Pandeia engine',
+                    label_busy="Fetching from STScI ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
-                ui.HTML(
-                    f'<p><span style="{color}">You have version {my_pandeia},'
-                    f'</span> the latest version is {last_pandeia}</p>'
-                ),
+                pandeia_status,
                 # pysynphot
-                ui.input_action_button(
+                ui.input_task_button(
                     id='update_pysynphot',
                     label='Update Pysynphot',
+                    label_busy="Fetching from STScI ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
@@ -1072,6 +1076,12 @@ def server(input, output, session):
             size='l',
         )
         ui.modal_show(m)
+
+    @reactive.Effect
+    @reactive.event(input.update_trexo)
+    def _():
+        cat.fetch_trexolist()
+        # TBD: update planets database
 
 
     def run_pandeia(input):
