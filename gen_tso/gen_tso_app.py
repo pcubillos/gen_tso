@@ -41,13 +41,13 @@ from gen_tso.pandeia_io.pandeia_setup import (
     update_pysynphot_files,
 )
 
+
 # Catalog of known exoplanets (and candidate planets)
 catalog = cat.Catalog()
-nplanets = len(catalog.targets)
 is_jwst = np.array([target.is_jwst for target in catalog.targets])
 is_transit = np.array([target.is_transiting for target in catalog.targets])
 is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
-
+nplanets = len(catalog.targets)
 
 # Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
@@ -1093,8 +1093,8 @@ def server(input, output, session):
     @reactive.event(input.update_pysynphot)
     def _():
         status = update_pysynphot_files()
-        if isinstance(status, str):
-            error_msg = ui.markdown(f"**Error:**<br>{status}")
+        for warning in status:
+            error_msg = ui.markdown(f"**Error:**<br>{warning}")
             ui.notification_show(error_msg, type="error", duration=8)
 
 
