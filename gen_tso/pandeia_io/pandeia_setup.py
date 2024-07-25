@@ -160,7 +160,6 @@ def update_pysynphot_files():
         warnings.append(fetch_throughputs())
 
     warnings = [warn for warn in warnings if warn is not None]
-    print(warnings)
     return warnings
 
 

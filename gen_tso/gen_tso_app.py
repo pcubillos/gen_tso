@@ -42,11 +42,16 @@ from gen_tso.pandeia_io.pandeia_setup import (
 )
 
 
+def load_catalog():
+    catalog = cat.Catalog()
+    is_jwst = np.array([target.is_jwst for target in catalog.targets])
+    is_transit = np.array([target.is_transiting for target in catalog.targets])
+    is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
+    return catalog, is_jwst, is_transit, is_confirmed
+
+
 # Catalog of known exoplanets (and candidate planets)
-catalog = cat.Catalog()
-is_jwst = np.array([target.is_jwst for target in catalog.targets])
-is_transit = np.array([target.is_transiting for target in catalog.targets])
-is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
+catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 nplanets = len(catalog.targets)
 
 # Catalog of stellar SEDs:
@@ -1035,6 +1040,13 @@ def server(input, output, session):
         pysynphot_data = check_pysynphot()
 
         m = ui.modal(
+            ui.markdown(
+                'If you see anything in <span style="color:red">red</span>, '
+                'click the button to update or follow the instructions.<br>'
+                'If you see <span style="color:#0B980D">green</span>, you '
+                'are good to go modeling JWST observations.'
+            ),
+            ui.hr(),
             ui.layout_columns(
                 # Trexolists
                 ui.input_task_button(
@@ -1080,7 +1092,7 @@ def server(input, output, session):
     @reactive.event(input.update_trexo)
     def _():
         cat.fetch_trexolist()
-        # TBD: update planets database
+        catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 
     @reactive.Effect
     @reactive.event(input.update_nasa)
@@ -1096,7 +1108,6 @@ def server(input, output, session):
         for warning in status:
             error_msg = ui.markdown(f"**Error:**<br>{warning}")
             ui.notification_show(error_msg, type="error", duration=8)
-
 
     def run_pandeia(input):
         """
