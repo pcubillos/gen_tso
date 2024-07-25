@@ -38,7 +38,7 @@ from gen_tso.pandeia_io.pandeia_setup import (
     check_latest_pandeia_version,
     check_pandeia_ref_data,
     check_pysynphot,
-    update_pysynphot_files,
+    update_synphot_files,
 )
 
 
