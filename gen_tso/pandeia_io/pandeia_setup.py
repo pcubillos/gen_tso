@@ -5,17 +5,18 @@ __all__ = [
     'check_latest_pandeia_version',
     'check_pandeia_ref_data',
     'check_pysynphot',
+    'update_synphot_files',
     'fetch_vega',
-    'fetch_seds',
-    'fetch_throughputs',
+    'fetch_synphot_files',
 ]
 
 import os
 from pathlib import Path
-import requests
-from shiny import ui
 import shutil
 import tarfile
+
+import requests
+from shiny import ui
 
 
 stsci_url = 'https://archive.stsci.edu/hlsps/reference-atlases/'
@@ -128,7 +129,28 @@ def check_pysynphot():
     )
 
 
-def update_pysynphot_files():
+def update_synphot_files(force_update=False):
+    """
+    Check which synphot files are needed, fetch them from STScI,
+    https://archive.stsci.edu/hlsp/reference-atlases
+    and save them to the right folder pointed by the $PYSYN_CDBS
+    environment variable.
+
+    Parameters
+    ----------
+    force_update: Bool
+        If True, enforce updating files even if they already exist.
+
+    Returns
+    -------
+    warnings: List of strings
+        List of any error during the file requests (if any).
+
+    Examples
+    --------
+    >>> from gen_tso.pandeia_io.pandeia_setup import fetch_synphot_files
+    >>> fetch_synphot_files('k93models')
+    """
     if "PYSYN_CDBS" not in os.environ:
         raise ValueError('$PYSYN_CDBS environment variable is not defined')
 
@@ -140,7 +162,7 @@ def update_pysynphot_files():
                 f'Could not create "PYSYN_CDBS" directory: {cdbs_path}'
             )
 
-    # check files
+    # check files to update
     vega_path = f'{cdbs_path}/calspec/alpha_lyr_stis_010.fits'
     atlases = {
         'throughput': os.path.exists(f'{cdbs_path}/comp'),
@@ -150,14 +172,14 @@ def update_pysynphot_files():
     }
 
     warnings = []
-    if not atlases['Vega SED']:
+    if not atlases['Vega SED'] or force_update:
         warnings.append(fetch_vega())
-    if not atlases['Kurucz SED']:
-        warnings.append(fetch_seds('k93models'))
-    if not atlases['PHOENIX SED']:
-        warnings.append(fetch_seds('phoenix'))
-    if not atlases['throughput']:
-        warnings.append(fetch_throughputs())
+    if not atlases['Kurucz SED'] or force_update:
+        warnings.append(fetch_synphot_files('k93models'))
+    if not atlases['PHOENIX SED'] or force_update:
+        warnings.append(fetch_synphot_files('phoenix'))
+    if not atlases['throughput'] or force_update:
+        warnings.append(fetch_synphot_files('throughput'))
 
     warnings = [warn for warn in warnings if warn is not None]
     return warnings
@@ -197,7 +219,7 @@ def fetch_vega():
         file.write(response.content)
 
 
-def fetch_seds(sed):
+def fetch_synphot_files(synphot_file):
     """
     Download Kurucz or PHOENIX SED tar files from STScI.
     Unzip tar file.
@@ -206,53 +228,57 @@ def fetch_seds(sed):
     Parameters
     ----------
     sed: String
-        Select from 'k93models' or 'phoenix'.
+        Select from 'k93models', 'phoenix', or 'throughput'.
 
     Returns
     -------
     On success, returns None.
     If there was an error, return a string describing the error.
+
+    Examples
+    --------
+    >>> from gen_tso.pandeia_io.pandeia_setup import fetch_synphot_files
+    >>> fetch_synphot_files('k93models')
     """
     if "PYSYN_CDBS" not in os.environ:
         return '$PYSYN_CDBS environment variable is not defined'
     synphot_path = os.environ['PYSYN_CDBS']
 
-    if sed == 'k93models':
+    if synphot_file == 'k93models':
         url = f'{stsci_url}{syn4}'
-    elif sed == 'phoenix':
+    elif synphot_file == 'phoenix':
         url = f'{stsci_url}{syn5}'
+    elif synphot_file == 'throughput':
+        url = f'{stsci_url}{syn1}'
     else:
-        return f'Invalid SED type: {sed}'
-    model_dir = f'{synphot_path}/grid/{sed}'
+        return f'Invalid Synphot file type: {synphot_file}'
 
-    print(f'Downloading {sed} models ...')
-    tmp_tar_file = f'{synphot_path}/synphot_file.tar'
+    if not os.path.exists(synphot_path):
+        Path(synphot_path).mkdir(parents=True, exist_ok=True)
+
+    print(f'Downloading {synphot_file} files ...')
+    tmp_tar_file = f'{synphot_path}/synphot_file_{synphot_file}.tar'
     with requests.get(url, stream=True) as response:
         if not response.ok:
             return (
                 'HTTP request failed. '
-                f'Could not download {sed} reference spectrum'
+                f'Could not download {synphot_file} reference files'
             )
         with open(tmp_tar_file, mode="wb") as file:
             for chunk in response.iter_content(chunk_size=10 * 1024):
                 file.write(chunk)
 
     print('Saving to PYSYN_CDBS grid folder')
-    grid_dir = f'{synphot_path}/grid/'
-    if not os.path.exists(grid_dir):
-        Path(grid_dir).mkdir(parents=True, exist_ok=True)
-    tmp_dir = f'{synphot_path}/tmp_sed'
-
+    tmp_dir = f'{synphot_path}/tmp_synphot'
+    if os.path.exists(tmp_dir):
+        shutil.rmtree(tmp_dir)
     with tarfile.open(tmp_tar_file, "r") as tar:
         tar.extractall(path=tmp_dir)
-    if os.path.exists(model_dir):
-        shutil.rmtree(model_dir)
-    shutil.move(f'{tmp_dir}/grp/redcat/trds/grid/{sed}', grid_dir)
+    shutil.copytree(
+        f'{tmp_dir}/grp/redcat/trds/', synphot_path,
+        dirs_exist_ok=True,
+    )
     shutil.rmtree(tmp_dir)
     os.remove(tmp_tar_file)
-    print(f'{sed} files updated!')
+    print(f'{synphot_file} files updated!')
 
-
-def fetch_throughputs():
-    url = f'{stsci_url}{syn1}'
-    return None
