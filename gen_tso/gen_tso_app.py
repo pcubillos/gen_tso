@@ -1098,13 +1098,13 @@ def server(input, output, session):
     @reactive.event(input.update_nasa)
     def _():
         pass
-        #cat.udate_nasa_exoplanet_archive()
+        #cat.update_exoplanet_archive()
         # TBD: update planets database
 
     @reactive.Effect
     @reactive.event(input.update_pysynphot)
     def _():
-        status = update_pysynphot_files()
+        status = update_synphot_files()
         for warning in status:
             error_msg = ui.markdown(f"**Error:**<br>{warning}")
             ui.notification_show(error_msg, type="error", duration=8)

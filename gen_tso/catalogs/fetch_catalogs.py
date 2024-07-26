@@ -13,7 +13,9 @@ __all__ = [
     'fetch_gaia_targets',
 ]
 
+import os
 import sys
+
 # Skip importing grequests when launching the app because it breaks shiny
 if 'bin/tso' not in sys.argv[0]:
     import grequests
@@ -259,13 +261,28 @@ def fetch_trexolist():
 
 def fetch_nea_confirmed_targets():
     """
-    Fetch (web request) the entire NASA Exoplanet Archive database
+    Fetch (HTTP web request) the entire NASA Exoplanet Archive database
     for confirmed planets (there is another one for TESS candidates)
+
+    Returns
+    -------
+    new_targets: List of strings
+        List of target names flagged as updated by the NEA
+        since the last update (rowupdate column).
+
+    See also
+    --------
+    - fetch_nea_tess_candidates()  to fetch the TESS candidates database
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> new_targets = cat.fetch_nea_confirmed_targets()
     """
     # Fetch all planetary system entries
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
-        "select+hostname,pl_name,default_flag,sy_kmag,sy_pnum,disc_facility,"
+        "select+hostname,pl_name,default_flag,rowupdate,sy_kmag,sy_pnum,"
         "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,"
         "pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_msinie,pl_ratdor,pl_ratror+"
         "from+ps+"
@@ -285,7 +302,6 @@ def fetch_nea_confirmed_targets():
     )
 
     targets = []
-    fillers = []
     # Make list of unique entries
     # Group by host such that planets share same host-star values
     for host in hosts:
@@ -303,7 +319,7 @@ def fetch_nea_confirmed_targets():
             tar.rank_planets(target, entries)
             planets.append(target)
             n_dups.append(len(idx_entry))
-        # Solve stellar parameters
+        # Solve stellar parameters (all planets must have the 'same' host)
         star = tar.solve_host(planets, n_dups)
 
         # Now, re-do each planet, but using the single host properties
@@ -315,22 +331,53 @@ def fetch_nea_confirmed_targets():
                 entries[i].copy_star(star)
             j = np.where(default_flags[idx_entry])[0][0]
             target = entries.pop(j)
-            t = tar.rank_planets(target, entries)
-            fillers.append(t)
+            target._update_dates = [resp[i]['rowupdate'] for i in idx_entry]
             targets.append(target)
 
+    # Find new and updated targets:
     catalog_file = f'{ROOT}data/nea_data.txt'
-    save_catalog(targets, catalog_file)
+    if os.path.exists(catalog_file):
+        current_targets = [
+            target.planet for target in load_targets('nea_data.txt')
+        ]
+    else:
+        current_targets = []
 
+    update_file = f'{ROOT}/data/last_updated_nea.txt'
+    if os.path.exists(update_file):
+        with open(update_file, 'r') as f:
+            date = f.readline().strip()
+            last_nasa = datetime.strptime(date,'%Y_%m_%d')
+    else:
+        last_nasa = datetime.strptime('1990', '%Y')
+
+    new_targets = []
+    n_new, n_updated = 0, 0
+    for target in targets:
+        if target.planet not in current_targets:
+            new_targets.append(target.planet)
+            n_new += 1
+        else:
+            is_new = [
+                datetime.strptime(date, '%Y-%m-%d') > last_nasa
+                for date in target._update_dates
+                if isinstance(date, str)
+            ]
+            if np.any(is_new):
+                n_updated += 1
+                new_targets.append(target.planet)
+    print(
+        f'There are {n_new} new and {n_updated} updated confirmed '
+        f'targets since {last_nasa.strftime("%Y-%m-%d")}'
+    )
+
+    # Save outputs
+    save_catalog(targets, catalog_file)
     today = datetime.now(timezone.utc)
-    with open(f'{ROOT}data/last_updated_nea.txt', 'w') as f:
+    with open(update_file, 'w') as f:
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
-    # Some stats
-    # np.unique(fillers, return_counts=True)
-    # (array([0, 1, 2]), array([4418, 1202,   18]))
-    # (array([0, 1, 2]), array([3145, 2466,   27]))
-    # (array([0, 1, 2]), array([4528, 1093,   17]))
+    return new_targets
 
 
 def fetch_nea_aliases(targets):

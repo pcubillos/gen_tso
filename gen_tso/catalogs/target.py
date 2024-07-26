@@ -213,8 +213,6 @@ class Target():
         return report
 
 
-
-
     def __str__(self):
         rstar = u.as_str(self.rstar, '.3f', '---')
         mstar = u.as_str(self.mstar, '.3f', '---')
