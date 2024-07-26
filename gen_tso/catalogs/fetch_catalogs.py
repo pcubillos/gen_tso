@@ -146,10 +146,17 @@ def save_catalog(targets, catalog_file):
             )
 
 
-def update_exoplanet_archive():
+def update_exoplanet_archive(from_scratch=False):
     """
     Fetch confirmed and TESS-candidate targets from the NASA
     Exoplanet archive.
+
+    Parameters
+    ----------
+    from_scratch: Bool
+        If True, fetch all aliases from scratch.  This will make
+        populate local .pickle files with all known aliases, which
+        will make later runs more efficient.
 
     Examples
     --------
@@ -161,10 +168,14 @@ def update_exoplanet_archive():
 
     # NEA confirmed targets
     new_targets = fetch_nasa_confirmed_targets()
+    if from_scratch:
+        new_targets = None
     fetch_confirmed_aliases(new_targets)
 
     # NEA TESS candidate targets
     new_targets = fetch_nasa_tess_candidates()
+    if from_scratch:
+        new_targets = None
     fetch_tess_aliases(new_targets)
     crosscheck_tess_candidates()
 
