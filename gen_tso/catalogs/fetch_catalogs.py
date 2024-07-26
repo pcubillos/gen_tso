@@ -8,13 +8,13 @@ __all__ = [
     'fetch_gaia_targets',
 ]
 
+# Note that importing grequests break shiny when running on dev_mode,
+# comment it out if you plan to test the app with dev_mode=True
+import grequests
+import requests
+
 import os
 import sys
-
-# Skip importing grequests when launching the app because it breaks shiny
-if 'bin/tso' not in sys.argv[0]:
-    import grequests
-import requests
 import multiprocessing as mp
 from datetime import datetime, timezone
 import urllib
@@ -167,7 +167,7 @@ def update_exoplanet_archive(from_scratch=False):
     fetch_trexolist()
 
     # NEA confirmed targets
-    print('Fetching confirmed planets from the NASA archive')
+    print('\nFetching confirmed planets from the NASA archive')
     new_targets = fetch_nasa_confirmed_targets()
     if from_scratch:
         new_targets = None
@@ -189,6 +189,7 @@ def update_exoplanet_archive(from_scratch=False):
 
     # Update aliases list
     curate_aliases()
+    print('Exoplanet data is up to date')
 
 
 def curate_aliases():
@@ -345,6 +346,7 @@ def fetch_nasa_confirmed_targets():
                 entries[i].copy_star(star)
             j = np.where(default_flags[idx_entry])[0][0]
             target = entries.pop(j)
+            tar.rank_planets(target, entries)
             target._update_dates = [resp[i]['rowupdate'] for i in idx_entry]
             targets.append(target)
 
