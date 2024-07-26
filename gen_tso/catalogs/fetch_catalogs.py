@@ -3,13 +3,7 @@
 
 __all__ = [
     'fetch_trexolist',
-    'fetch_nea_confirmed_targets',
-    'fetch_nea_tess_candidates',
-    'fetch_nea_aliases',
-    'fetch_simbad_aliases',
-    'fetch_vizier_ks',
-    'fetch_aliases',
-    'fetch_tess_aliases',
+    'update_exoplanet_archive',
     'fetch_gaia_targets',
 ]
 
@@ -88,7 +82,7 @@ def save_catalog(targets, catalog_file):
             )
 
 
-def update_databases():
+def update_exoplanet_archive():
     """
     Examples
     --------
@@ -104,7 +98,12 @@ def update_databases():
 
     # NEA TESS candidate targets
     new_targets = fetch_nea_tess_candidates()
-    fetch_tess_aliases()
+    fetch_tess_aliases(new_targets)
+    crosscheck_tess_candidates()
+
+    today = datetime.now(timezone.utc)
+    with open(f'{ROOT}/data/last_updated_nea.txt', 'w') as f:
+        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
     # Update aliases list
     curate_aliases()
@@ -406,10 +405,6 @@ def fetch_nea_confirmed_targets():
 
     # Save outputs
     save_catalog(targets, catalog_file)
-    today = datetime.now(timezone.utc)
-    with open(update_file, 'w') as f:
-        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
-
     return new_targets
 
 
@@ -794,8 +789,10 @@ def fetch_nea_tess_candidates():
 
     Examples
     --------
-    >>> import gen_tso.catalogs as cat
-    >>> new_targets = cat.fetch_nea_tess_candidates()
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nea_tess_candidates()
+    >>> fetch_cat.fetch_tess_aliases(new_targets)
+    >>> fetch_cat.crosscheck_tess_candidates()
     """
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
@@ -878,46 +875,132 @@ def fetch_nea_tess_candidates():
     return new_targets
 
 
-def fetch_tess_aliases(ncpu=None):
+def fetch_tess_aliases(new_targets=None):
     """
-    Get TESS aliases and also finalize the tess database.
+    Get TESS candidate aliases.
+    You want to run fetch_nea_tess_candidates() before this one.
+    And then follow up with crosscheck_tess_candidates()
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nea_tess_candidates()
+    >>> fetch_cat.fetch_tess_aliases(new_targets)
+    >>> fetch_cat.crosscheck_tess_candidates()
+    """
+    candidates = load_targets('tess_candidates_tmp.txt')
+    if new_targets is None:
+        new_targets = np.unique([target.planet for target in candidates])
+
+    if os.path.exists(f'{ROOT}data/tess_data.txt'):
+        known_candidates = load_targets('tess_data.txt')
+        known_tess = [target.planet for target in known_candidates]
+    else:
+        known_tess = []
+
+    # New TESS hosts that are not in confirmed list
+    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
+        nea_aliases = pickle.load(handle)
+    hosts = np.unique([
+        target.host
+        for target in candidates
+        if target.host not in nea_aliases
+        if target.planet in new_targets or target.planet not in known_tess
+    ])
+
+
+    output_file = f'{ROOT}data/tess_aliases.pickle'
+    # Get previously known aliases
+    if os.path.exists(output_file):
+        with open(output_file, 'rb') as handle:
+            known_aliases = pickle.load(handle)
+    else:
+        known_aliases = {}
+
+    known_hosts = np.unique([target.host for target in candidates])
+    for host in list(known_aliases):
+        if host not in known_hosts:
+            known_aliases.pop(host)
+    # Get new aliases
+    aliases = fetch_aliases(hosts, output_file, known_aliases)
+    return aliases
+
+
+def crosscheck_tess_candidates(ncpu=None):
+    """
+    Do a final TESS-confirmed cross-check and hunt for their Ks mag.
+    Write output to tess_data.txt file.
+
+    Before calling this function, you want to run
+    fetch_nea_tess_candidates() and crosscheck_tess_candidates()
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nea_tess_candidates()
+    >>> fetch_cat.fetch_tess_aliases(new_targets)
+    >>> fetch_cat.crosscheck_tess_candidates()
     """
     if ncpu is None:
         ncpu = mp.cpu_count()
 
-    # Known aliases:
-    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
-        nea_aliases = pickle.load(handle)
-    # Candidates
     candidates = load_targets('tess_candidates_tmp.txt')
-    ntess = len(candidates)
+    targets = load_targets()
+    confirmed_planets = [target.planet for target in targets]
 
-    # Get the tess aliases
-    hosts = np.unique([
-        target.host for target in candidates
-        if target.host not in nea_aliases
-    ])
-    tess_aliases_file = f'{ROOT}data/tess_aliases.pickle'
-    tess_aliases = fetch_aliases(hosts, tess_aliases_file)
-
-    # Now I also have tess aliases:
     planet_aliases = {}
     host_aliases = {}
-    for host, system in nea_aliases.items():
+    # previously known aliases
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+        for host, system in known_aliases.items():
+            planet_aliases.update(system['planet_aliases'])
+            for alias in system['host_aliases']:
+                host_aliases[alias] = host
+    # known confirmed aliases
+    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
+        known_aliases = pickle.load(handle)
+    for host, system in known_aliases.items():
         planet_aliases.update(system['planet_aliases'])
         for alias in system['host_aliases']:
             host_aliases[alias] = host
+    # known TESS aliases
+    with open(f'{ROOT}data/tess_aliases.pickle', 'rb') as handle:
+        tess_aliases = pickle.load(handle)
     for host, system in tess_aliases.items():
         planet_aliases.update(system['planet_aliases'])
         for alias in system['host_aliases']:
             host_aliases[alias] = host
+    # Identity alias for targets without aliases
+    for target in candidates:
+        if target.host not in host_aliases:
+            host_aliases[target.host] = target.host
+        if target.planet not in planet_aliases:
+            planet_aliases[target.planet] = target.planet
     aka = u.invert_aliases(host_aliases)
+
+    # Cross-check with confirmed targets:
+    candidates = [
+        target for target in candidates
+        if planet_aliases[target.planet] not in confirmed_planets
+    ]
+
+
+    # Now I need to collect the Ks_magnitudes:
+    # Zeroth idea, check if I already had the Ks mag:
+    if os.path.exists(f'{ROOT}data/tess_data.txt'):
+        known_candidates = load_targets('tess_data.txt')
+        known_hosts = [target.host for target in known_candidates]
+        for target in candidates:
+            if target.host in known_hosts:
+                idx = known_hosts.index(target.host)
+                target.ks_mag = known_candidates[idx].ks_mag
 
     # First idea, search in simbad using best known alias to get Ks magnitude
     catalogs = ['2MASS', 'Gaia DR3', 'Gaia DR2', 'TOI']
     k = 0
-    for i in range(ntess):
-        target = candidates[i]
+    for i,target in enumerate(candidates):
         target.host = host_aliases[target.host]
         target.planet = planet_aliases[target.planet]
 
@@ -932,7 +1015,7 @@ def fetch_tess_aliases(ncpu=None):
             k += 1
             target.ks_mag = kmag
 
-    # Plan B, batch search in vizier catalog:
+    # Plan B, batch search in vizier/2MASS catalog:
     hosts = np.array([
         u.select_alias(aka[target.host], catalogs, target.host)
         for target in candidates
@@ -965,22 +1048,7 @@ def fetch_tess_aliases(ncpu=None):
             idx = vizier_names.index(host)
             target.ks_mag = vizier_ks_mag[idx]
 
-    # Plan C, search in vizier catalog one by one:
-    missing_hosts = np.unique([
-        u.select_alias(aka[target.host], catalogs)
-        for target in candidates
-        if np.isnan(target.ks_mag)
-    ])
-    with mp.get_context('fork').Pool(ncpu) as pool:
-        vizier_ks = pool.map(fetch_vizier_ks, missing_hosts)
-
-    for target in candidates:
-        host = u.select_alias(aka[target.host], catalogs)
-        if host in missing_hosts:
-            idx = list(missing_hosts).index(host)
-            target.ks_mag = vizier_ks[idx]
-
-    # Last resort, scrap from the NEA pages
+    # Last resort, scrap from the NEA website
     missing_hosts = np.unique([
         target.host for target in candidates
         if np.isnan(target.ks_mag)
@@ -995,10 +1063,6 @@ def fetch_tess_aliases(ncpu=None):
     # Save as plain text:
     catalog_file = f'{ROOT}data/tess_data.txt'
     save_catalog(candidates, catalog_file)
-
-    today = datetime.now(timezone.utc)
-    with open(f'{ROOT}data/last_updated_tess.txt', 'w') as f:
-        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
 
 def scrap_nea_kmag(target):
@@ -1020,7 +1084,7 @@ def scrap_nea_kmag(target):
     for dd in soup.find_all('dd'):
         texts = dd.get_text().split()
         if 'mKs' in texts:
-            print(target, dd.text.split())
+            #print(target, dd.text.split())
             kmag_text = texts[-1]
             if kmag_text == '---':
                 kmag = 0.0
