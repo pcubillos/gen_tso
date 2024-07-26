@@ -98,20 +98,53 @@ def update_databases():
     # Update trexolist database
     fetch_trexolist()
 
-    # Update NEA confirmed targets and their aliases
-    fetch_nea_confirmed_targets()
-    # Fetch confirmed aliases
-    targets = load_targets()
-    hosts = np.unique([target.host for target in targets])
-    output_file = f'{ROOT}data/nea_aliases.pickle'
-    fetch_aliases(hosts, output_file)
+    # NEA confirmed targets
+    new_targets = fetch_nea_confirmed_targets()
+    fetch_confirmed_planets_aliases(new_targets)
 
-    # Update NEA TESS candidates and their aliases
+    # NEA TESS candidate targets
     fetch_nea_tess_candidates()
     fetch_tess_aliases()
 
     # Update aliases list
     curate_aliases()
+
+
+def fetch_confirmed_planets_aliases(new_targets=None):
+    """
+    Fetch aliases for NEA confirmed planets.
+    Save results to a binary file 'nea_aliases.pickle'
+
+    Parameters
+    ----------
+    new_targets: List of strings
+        If not None, only fetch aliases for the given targets.
+    """
+    known_targets = load_targets()
+    # Search aliases by host star
+    if new_targets is None:
+        hosts = np.unique([target.host for target in known_targets])
+    else:
+        hosts = np.unique([
+            target.host for target in known_targets
+            if target.planet in new_targets
+        ])
+
+    output_file = f'{ROOT}data/nea_aliases.pickle'
+    # Get previously known aliases
+    if os.path.exists(output_file):
+        with open(output_file, 'rb') as handle:
+            known_aliases = pickle.load(handle)
+    else:
+        known_aliases = {}
+
+    known_hosts = np.unique([target.host for target in known_targets])
+    for host in list(known_aliases):
+        if host not in known_hosts:
+            known_aliases.pop(host)
+
+    aliases = fetch_aliases(hosts, output_file, known_aliases)
+    return aliases
 
 
 def format_nea_entry(entry):
@@ -575,10 +608,32 @@ def fetch_vizier_ks(target, verbose=True):
     return np.nan
 
 
-def fetch_aliases(hosts, output_file=None):
+def fetch_aliases(hosts, output_file=None, known_aliases=None):
     """
-    Fetch known aliases from the NEA and Simbad databases for a list
+    Fetch aliases from the NEA and Simbad databases for a list
     of host stars.  Store output dictionary of aliases to pickle file.
+
+    Parameters
+    ----------
+    hosts: List of strings
+        Host star names of targets to search.
+    output_file: String
+        If not None, save outputs to file (as pickle binary format).
+    known_aliases: Dictionary
+        Dictionary of known aliases, the new aliases will be added
+        on top o this dictionary.
+
+    Returns
+    -------
+    aliases: Dictionary
+        Dictionary of aliases with one entry per system where
+        the key is the host name.  Each entry is a dictionary
+        containing:
+            'host' the host name (string)
+            'planets': array of planets in the system
+            'host_aliases': list of host aliases
+            'planet_aliases': dictionary of planets' aliases with
+                (key,value) as (alias_name, name)
 
     Examples
     --------
@@ -591,6 +646,9 @@ def fetch_aliases(hosts, output_file=None):
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
     >>> aliases = cat.fetch_aliases(hosts, output_file)
     """
+    if known_aliases is None:
+        known_aliases = {}
+
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
     # Keep track of trexolists aliases to cross-check:
@@ -664,7 +722,6 @@ def fetch_aliases(hosts, output_file=None):
         # Replicate host aliases as planet aliases:
         planet_aka = u.invert_aliases(p_aliases)
         for planet, pals in planet_aka.items():
-            #new_planets = ''
             for host in h_aliases:
                 letter = u.get_letter(planet)
                 planet_name = f'{host}{letter}'
@@ -702,12 +759,7 @@ def fetch_aliases(hosts, output_file=None):
                     letter_exists
                 )
                 if is_new and not_downgrade and (new_entry or upgrade):
-                    #new_planets += f'\n--> {planet_name}  ({planet})'
                     p_aliases[planet_name] = planet
-            #if new_planets != '':
-            #    print(f'\n[{i}]  {hosts[i]}{new_planets}')
-            #    for kid in pals:
-            #        print(f'    {kid}')
 
         system = {
             'host': host_name,
@@ -717,9 +769,16 @@ def fetch_aliases(hosts, output_file=None):
         }
         aliases[host_name] = system
 
+
+    # Add previously known aliases (but give priority to the new ones)
+    for host in list(known_aliases):
+        if host not in aliases:
+            aliases[host] = known_aliases[host]
+
     if output_file is not None:
         with open(output_file, 'wb') as handle:
             pickle.dump(aliases, handle, protocol=4)
+
     return aliases
 
 
@@ -811,7 +870,6 @@ def fetch_tess_aliases(ncpu=None):
     ])
     tess_aliases_file = f'{ROOT}data/tess_aliases.pickle'
     tess_aliases = fetch_aliases(hosts, tess_aliases_file)
-
 
     # Now I also have tess aliases:
     planet_aliases = {}
