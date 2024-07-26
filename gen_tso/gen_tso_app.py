@@ -998,6 +998,7 @@ def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
+    update_catalog_flag = reactive.Value(False)
     update_sed_flag = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
@@ -1052,7 +1053,7 @@ def server(input, output, session):
                 ui.input_task_button(
                     id='update_trexo',
                     label='Update JWST database',
-                    label_busy="Fetching from trexolists ...",
+                    label_busy="Fetching data from trexolists ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
@@ -1061,7 +1062,7 @@ def server(input, output, session):
                 ui.input_task_button(
                     id='update_nasa',
                     label='Update Exoplanet database',
-                    label_busy="Fetching from NASA Archive ...",
+                    label_busy="Fetching data from NASA Archive ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
@@ -1070,7 +1071,7 @@ def server(input, output, session):
                 ui.input_task_button(
                     id='update_pysynphot',
                     label='Update Pysynphot',
-                    label_busy="Fetching from STScI ...",
+                    label_busy="Fetching pysynphot data from STScI ...",
                     width=button_width,
                     class_="btn btn-sm",
                 ),
@@ -1097,9 +1098,9 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.update_nasa)
     def _():
-        pass
-        #cat.update_exoplanet_archive()
-        # TBD: update planets database
+        cat.update_exoplanet_archive()
+        catalog, is_jwst, is_transit, is_confirmed = load_catalog()
+        update_catalog_flag.set(~update_catalog_flag.get())
 
     @reactive.Effect
     @reactive.event(input.update_pysynphot)
@@ -1708,8 +1709,9 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
     @reactive.Effect
-    @reactive.event(input.target_filter)
+    @reactive.event(input.target_filter, update_catalog_flag)
     def _():
+        update_catalog_flag.get()
         mask = np.zeros(nplanets, bool)
         if 'jwst' in input.target_filter.get():
             mask |= is_jwst
