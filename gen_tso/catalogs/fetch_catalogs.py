@@ -40,7 +40,7 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 
 from ..utils import ROOT
-from .catalogs import load_targets, load_trexolists
+from .catalogs import load_targets, load_trexolists, load_aliases
 from . import utils as u
 from . import target as tar
 from .target import Target
@@ -103,7 +103,7 @@ def update_databases():
     fetch_confirmed_planets_aliases(new_targets)
 
     # NEA TESS candidate targets
-    fetch_nea_tess_candidates()
+    new_targets = fetch_nea_tess_candidates()
     fetch_tess_aliases()
 
     # Update aliases list
@@ -786,11 +786,21 @@ def fetch_nea_tess_candidates():
     """
     Fetch entries in the NEA TESS candidates table.
     Remove already confirmed targets.
+
+    Returns
+    -------
+    new_targets: List of strings
+        Targets flagged by NEA to be updated since the last fetch.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> new_targets = cat.fetch_nea_tess_candidates()
     """
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+toi,toipfx,pl_trandurh,pl_trandep,pl_rade,pl_eqt,ra,dec,"
-        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp+"
+        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp,rowupdate+"
         "from+toi+"
         "&format=json"
     )
@@ -800,26 +810,38 @@ def fetch_nea_tess_candidates():
     entries = [format_nea_entry(entry) for entry in r.json()]
     ntess = len(entries)
     status = [entry['tfopwg_disp'] for entry in entries]
+    dates = [entry['rowupdate'][0:10] for entry in entries]
 
     # Discard confirmed planets:
-    database = 'nea_data.txt'
-    targets = load_targets(database)
+    targets = load_targets('nea_data.txt')
     confirmed_targets = [target.planet for target in targets]
     confirmed_hosts = [target.host for target in targets]
 
-    # Unpack known aliases:
-    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
-        nea_aliases = pickle.load(handle)
+    # Get aliases of confirmed planets:
     planet_aliases = {}
     host_aliases = {}
-    for host, system in nea_aliases.items():
-        planet_aliases.update(system['planet_aliases'])
-        for alias in system['host_aliases']:
-            host_aliases[alias] = host
+
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+        for host, system in known_aliases.items():
+            if host in confirmed_hosts:
+                planet_aliases.update(system['planet_aliases'])
+                for alias in system['host_aliases']:
+                    host_aliases[alias] = host
+
+    aliases_file = f'{ROOT}data/nea_aliases.pickle'
+    if os.path.exists(aliases_file):
+        with open(aliases_file, 'rb') as handle:
+            known_aliases = pickle.load(handle)
+        for host, system in known_aliases.items():
+            planet_aliases.update(system['planet_aliases'])
+            for alias in system['host_aliases']:
+                host_aliases[alias] = host
 
     j, k, l = 0, 0, 0
-    is_candidate = np.ones(ntess, bool)
     tess_targets = []
+    last_updated = []
     for i in range(ntess):
         target = Target(entries[i])
         # Update names if possible:
@@ -829,24 +851,31 @@ def fetch_nea_tess_candidates():
             target.planet = planet_aliases[target.planet]
 
         if target.planet in confirmed_targets:
-            is_candidate[i] = False
             j += 1
             continue
         if target.host in confirmed_hosts:
             # Update with star props
             k += 1
             idx = confirmed_hosts.index(target.host)
-            star = targets[idx]
-            target.copy_star(star)
+            target.copy_star(targets[idx])
         if status[i] in ['FA', 'FP']:
-            is_candidate[i] = False
             l += 1
             continue
         tess_targets.append(target)
+        last_updated.append(datetime.strptime(dates[i], '%Y-%m-%d'))
 
     # Save temporary data (still need to hunt for Ks mags):
     catalog_file = f'{ROOT}data/tess_candidates_tmp.txt'
     save_catalog(tess_targets, catalog_file)
+
+    with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
+        last_nasa = datetime.strptime(f.readline().strip(),'%Y_%m_%d')
+    new_targets = [
+        target.planet
+        for target,last in zip(tess_targets,last_updated)
+        if last > last_nasa
+    ]
+    return new_targets
 
 
 def fetch_tess_aliases(ncpu=None):
