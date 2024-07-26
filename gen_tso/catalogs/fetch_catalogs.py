@@ -154,9 +154,9 @@ def update_exoplanet_archive(from_scratch=False):
     Parameters
     ----------
     from_scratch: Bool
-        If True, fetch all aliases from scratch.  This will make
-        populate local .pickle files with all known aliases, which
-        will make later runs more efficient.
+        If True, fetch all aliases from scratch.  The run will
+        take much longer but it will populate the local .pickle files
+        with all known aliases, making later runs more efficient.
 
     Examples
     --------
@@ -167,15 +167,19 @@ def update_exoplanet_archive(from_scratch=False):
     fetch_trexolist()
 
     # NEA confirmed targets
+    print('Fetching confirmed planets from the NASA archive')
     new_targets = fetch_nasa_confirmed_targets()
     if from_scratch:
         new_targets = None
+    print('Fetching confirmed planets aliases')
     fetch_confirmed_aliases(new_targets)
 
     # NEA TESS candidate targets
+    print('Fetching TESS candidate planets from the NASA archive')
     new_targets = fetch_nasa_tess_candidates()
     if from_scratch:
         new_targets = None
+    print('Fetching TESS candidates aliases')
     fetch_tess_aliases(new_targets)
     crosscheck_tess_candidates()
 
