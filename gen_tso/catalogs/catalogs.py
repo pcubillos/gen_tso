@@ -81,7 +81,7 @@ class Catalog():
         # JWST targets
         trexo_data = load_trexolists(grouped=True)
         njwst = len(trexo_data)
-        host_aliases = load_aliases('hosts')
+        host_aliases = load_aliases('host')
 
         jwst_hosts = []
         for jwst_target in trexo_data:
@@ -93,7 +93,7 @@ class Catalog():
             jwst_hosts += list(hosts)
         jwst_hosts = np.unique(jwst_hosts)
 
-        planet_aliases = load_aliases('planets')
+        planet_aliases = load_aliases('planet')
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
@@ -476,6 +476,10 @@ def load_aliases(style='planet', aliases_file=None):
       'CD-38 2551 b': 'WASP-63 b',
       'WASP-63 b': 'WASP-63 b'}}
     """
+    if style not in ['planet', 'host', 'system']:
+        raise ValueError(
+            "Invalid alias style, select from: 'planet', 'host', or 'system'"
+        )
     if aliases_file is None:
         aliases_file = f'{ROOT}data/target_aliases.txt'
 
@@ -491,7 +495,6 @@ def load_aliases(style='planet', aliases_file=None):
                 aliases[parse(alias,style)] = name
             aliases[name] = name
         return aliases
-
 
     aliases = {}
     current_host = ''
