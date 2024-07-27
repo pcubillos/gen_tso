@@ -8,13 +8,14 @@ __all__ = [
     'fetch_gaia_targets',
 ]
 
-# Note that importing grequests break shiny when running on dev_mode,
-# comment it out if you plan to test the app with dev_mode=True
-import grequests
+# Importing grequests break shiny when setting dev_mode=True,
+# hence this if-exception when running on debug mode
+import sys
+if '--debug' not in sys.argv:
+    import grequests
 import requests
 
 import os
-import sys
 import multiprocessing as mp
 from datetime import datetime, timezone
 import urllib
