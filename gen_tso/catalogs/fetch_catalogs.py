@@ -869,6 +869,13 @@ def fetch_confirmed_aliases(new_targets=None):
     ----------
     new_targets: List of strings
         If not None, only fetch aliases for the given targets.
+
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nasa_confirmed_targets()
+    >>> aliases = fetch_cat.fetch_confirmed_aliases(new_targets)
     """
     known_targets = load_targets()
     # Search aliases by host star
@@ -880,19 +887,24 @@ def fetch_confirmed_aliases(new_targets=None):
             if target.planet in new_targets
         ])
 
-    output_file = f'{ROOT}data/nea_aliases.pickle'
     # Get previously known aliases
+    known_aliases = {}
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+    output_file = f'{ROOT}data/nea_aliases.pickle'
     if os.path.exists(output_file):
         with open(output_file, 'rb') as handle:
-            known_aliases = pickle.load(handle)
-    else:
-        known_aliases = {}
+            prev_aliases = pickle.load(handle)
+        for host,system in prev_aliases.items():
+            known_aliases[host] = system
 
     known_hosts = np.unique([target.host for target in known_targets])
     for host in list(known_aliases):
         if host not in known_hosts:
             known_aliases.pop(host)
 
+    # Get new aliases
     aliases = fetch_aliases(hosts, output_file, known_aliases)
     return aliases
 
@@ -912,7 +924,7 @@ def fetch_tess_aliases(new_targets=None):
     --------
     >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
     >>> new_targets = fetch_cat.fetch_nasa_tess_candidates()
-    >>> fetch_cat.fetch_tess_aliases(new_targets)
+    >>> aliases = fetch_cat.fetch_tess_aliases(new_targets)
     >>> fetch_cat.crosscheck_tess_candidates()
     """
     candidates = load_targets('tess_candidates_tmp.txt')
@@ -936,18 +948,24 @@ def fetch_tess_aliases(new_targets=None):
     ])
 
 
+    # Get previously known aliases
+    known_aliases = {}
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
     output_file = f'{ROOT}data/tess_aliases.pickle'
     # Get previously known aliases
     if os.path.exists(output_file):
         with open(output_file, 'rb') as handle:
-            known_aliases = pickle.load(handle)
-    else:
-        known_aliases = {}
+            prev_aliases = pickle.load(handle)
+        for host,system in prev_aliases.items():
+            known_aliases[host] = system
 
     known_hosts = np.unique([target.host for target in candidates])
     for host in list(known_aliases):
         if host not in known_hosts:
             known_aliases.pop(host)
+
     # Get new aliases
     aliases = fetch_aliases(hosts, output_file, known_aliases)
     return aliases
