@@ -430,6 +430,19 @@ def fetch_nasa_tess_candidates():
     confirmed_targets = [target.planet for target in targets]
     confirmed_hosts = [target.host for target in targets]
 
+    # Use multiplicity to vet known targets:
+    hosts = [entry['toipfx'] for entry in entries]
+    u_hosts, counts = np.unique(hosts, return_counts=True)
+    u_hosts = list(u_hosts)
+    multiplicity = [
+        counts[u_hosts.index(entry['toipfx'])] for entry in entries
+    ]
+    u_hosts, counts = np.unique(confirmed_hosts, return_counts=True)
+    u_hosts = list(u_hosts)
+    known_multiplicity = [
+        counts[u_hosts.index(target.host)] for target in targets
+    ]
+
     # Get aliases of confirmed planets:
     planet_aliases = {}
     host_aliases = {}
@@ -467,9 +480,11 @@ def fetch_nasa_tess_candidates():
             j += 1
             continue
         if target.host in confirmed_hosts:
+            idx = confirmed_hosts.index(target.host)
+            if multiplicity[i] == known_multiplicity[idx]:
+                continue
             # Update with star props
             k += 1
-            idx = confirmed_hosts.index(target.host)
             target.copy_star(targets[idx])
         if status[i] in ['FA', 'FP']:
             l += 1
@@ -486,7 +501,7 @@ def fetch_nasa_tess_candidates():
     new_targets = [
         target.planet
         for target,last in zip(tess_targets,last_updated)
-        if last > last_nasa
+        if last > last_nasa or target.host in confirmed_hosts
     ]
     return new_targets
 
@@ -942,7 +957,6 @@ def fetch_tess_aliases(new_targets=None):
     hosts = np.unique([
         target.host
         for target in candidates
-        if target.host not in nea_aliases
         if target.planet in new_targets or target.planet not in known_tess
     ])
 
