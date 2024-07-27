@@ -623,7 +623,6 @@ def fetch_simbad_aliases(target, verbose=True):
             host = target[:end]
         else:
             target_id = simbad_info['MAIN_ID'].value.data[0]
-            print(f'Wait, what?:  {repr(target)}  {repr(target_id)}')
             return host_alias, kmag
         # go after star
         simbad_info = simbad.query_object(host)
@@ -1053,8 +1052,6 @@ def crosscheck_tess_candidates(ncpu=None):
             continue
 
         name = u.select_alias(aka[target.host], catalogs)
-        if i%500 == 0:
-            print(f"~~ [{i}] Searching for '{target.host}' / '{name}' ~~")
         aliases, kmag = fetch_simbad_aliases(name, verbose=False)
         if np.isfinite(kmag):
             k += 1
