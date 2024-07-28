@@ -42,6 +42,7 @@ jobs:
           python -m pip install quartodoc
           #python -m pip install flake8 pytest
           pip install -r requirements.txt
+          pip install -r docs/requirements.txt
 
       - name: Install package
         run: |

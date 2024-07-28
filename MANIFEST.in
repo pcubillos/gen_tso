@@ -1,4 +1,5 @@
 include MANIFEST.in
+include docs/requirements.txt
 include gen_tso/data/base_theme.css
 include gen_tso/data/last_updated_nea.txt
 include gen_tso/data/last_updated_trexolist.txt
