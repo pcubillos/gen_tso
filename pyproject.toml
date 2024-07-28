@@ -45,16 +45,16 @@ tso = "gen_tso.__main__:main"
 [tool.setuptools.dynamic]
 version = {attr = "gen_tso.version.__version__"}
 
-#https://setuptools.pypa.io/en/stable/userguide/datafiles.html
-[tool.setuptools.package-data]
-"gen_tso.data" = ["*"]
+[tool.setuptools]
+include-package-data = true
 
 #https://setuptools.pypa.io/en/stable/userguide/package_discovery.html
 [tool.setuptools.packages]
 find = {namespaces = false}  # Take only folders with a __init__.py file
 
-#[tool.setuptools]
-#packages = ["gen_tso"]
+#https://setuptools.pypa.io/en/stable/userguide/datafiles.html
+#[tool.setuptools.package-data]
+#"gen_tso.data" = ["*"]
 
 [tool.pytest.ini_options]
 filterwarnings = [

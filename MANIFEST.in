@@ -1,0 +1,11 @@
+include MANIFEST.in
+include gen_tso/data/base_theme.css
+include gen_tso/data/last_updated_nea.txt
+include gen_tso/data/last_updated_trexolist.txt
+include gen_tso/data/nea_data.txt
+include gen_tso/data/tess_data.txt
+include gen_tso/data/target_aliases.txt
+include gen_tso/data/trexolists.csv
+include gen_tso/data/models/.gitignore
+include gen_tso/data/throughputs/*.pickle
+
