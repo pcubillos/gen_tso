@@ -1,8 +1,47 @@
 ---
+title: "Gen TSO Documentation"
+author: "Patricio Cubillos"
+date: today
+output: html_document
 ---
 
-# Gen TSO: A graphical ETC interface
+---
 
-Welcome message.
+### Gen TSO: A general TSO simulator for exoplanets with JWST
 
+`Gen TSO` is a graphical interface to simulate JWST time-series
+observations (TSO) of exoplanets.  Gen TSO connects together:
+
+- The [JWST's Pandeia ETC engine](https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+News)
+- The [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/)
+- The [trexolists database](https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html) of JWST TSO programs
+- The [Gaia catalog](https://gea.esac.esa.int/archive/) of stellar sources
+
+Which combined, allow `Gen TSO` to offers an interactive interface to easily
+visualize, assess, and compare the JWST characterization capabilities
+for known exoplanets.
+
+`Gen TSO` provides:
+
+- Instant access to system parameters of known exoplanet targets
+- Instant access to previous JWST programs of targets
+- Interactive visualization of target's field of view with [ESASky](https://sky.esa.int/esasky/)
+- Perform transit and eclipse S/N simulations for all JWST observing modes
+- Perform target-acquisition simulations on science or nearby targets
+- Insteractive visualization of transit, eclipse, and stellar SEDs spectra, observing modes, and simulated TSO spectra
+
+---
+
+`Gen TSO` is a Python3.9+ package available via the PyPI repository:
+
+```bash
+pip install gen_tso
+```
+
+More information in the links below.
+
+- [Installation](install.qmd)
+- [Getting Started](get_started.qmd)
+- [Tutorials](tutorials.qmd)
+- [API Reference](api)
 

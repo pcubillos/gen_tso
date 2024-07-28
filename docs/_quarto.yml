@@ -48,8 +48,8 @@ website:
       text: Installation
     - file: get_started.qmd
       text: Get started
-    - file: notebooks.qmd
-      text: Jupyter Notebooks
+    - file: tutorials.qmd
+      text: Tutorials
     - text: API
       href: api
 
