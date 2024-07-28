@@ -30,8 +30,15 @@ from .pandeia_defaults import (
     filter_throughputs,
     get_detector,
 )
-detectors = generate_all_instruments()
-throughputs = filter_throughputs()
+try:
+    detectors = generate_all_instruments()
+    throughputs = filter_throughputs()
+except:
+    print(
+        "The '$pandeia_refdata' environment variable is missing. "
+        "Please follow the instructions in section 2.1 of\n"
+        "https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation"
+    )
 
 
 class PandeiaCalculation():
