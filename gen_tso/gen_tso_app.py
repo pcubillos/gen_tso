@@ -1469,13 +1469,11 @@ def server(input, output, session):
 
     @render.image
     def tso_logo():
-        dir = Path(__file__).resolve().parent.parent
         img = {
-            "src": str(dir / "docs/images/gen_tso_logo.png"),
+            "src": f'{ROOT}data/images/gen_tso_logo.png',
             "height": "50px",
         }
         return img
-
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
