@@ -3,7 +3,7 @@ title: Installation
 page-navigation: true
 ---
 
-## Gen TSO Installation
+## 1 Gen TSO Installation
 
 You can install `Gen TSO` from [PyPI](https://pypi.org/project/gen_tso/) with the following command:
 
@@ -11,21 +11,49 @@ You can install `Gen TSO` from [PyPI](https://pypi.org/project/gen_tso/) with th
 pip install gen_tso
 ```
 
-## Pandeia Engine Installation
+<br>
 
-To use `pandeia` you would need to download some files as per their [documentation](https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation).
+## 2 Pandeia Engine
 
-### Reference data
+To use `pandeia` you need to download some files as per their [documentation](https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation).
 
-First you need to download the pandeia reference data (version 3.0) from
-this folder: [https://stsci.app.box.com/v/pandeia-refdata-v3p0-jwst](https://stsci.app.box.com/v/pandeia-refdata-v3p0-jwst)
+### 2.1 Reference data
 
-Unpack the file and set the `$pandeia_refdata` environment variable pointing
-to the top folder of the data (the directory containing the VERSION_PSF file).
+If this is your first time using pandeia, you likely need to setup a
+`$pandeia_refdata` environment variable (e.g., in your `~/.bashrc` file).
 
-### Stellar atlases
+Then, download the pandeia reference data, unzip it, and place
+it in the folder pointed by `$pandeia_refdata`. Here's the current latest version: [https://stsci.app.box.com/v/pandeia-refdata-v3p2-jwst](https://stsci.app.box.com/v/pandeia-refdata-v3p2-jwst)
 
-Then, you need to download these three reference stellar and calibration files, for example with these commands:
+You should end up with something like this:
+
+```bash
+echo $pandeia_refdata
+/home/USERNAME/data/pandeia_data-3.2-jwst
+```
+
+### 2.2 Atlases data
+
+Pandeia also needs some stellar and throughput files to simulate exoplanet spectra.  Use one of the options below to stay up to date:
+
+::: {.panel-tabset}
+## With TSO
+
+Use this prompt command to automatically check and upload the required atlases
+
+```bash
+TSO --update_db
+```
+
+## Manually
+
+If this is your first time using pandeia, you likely need to setup a synphot
+`$PYSYN_CDBS` environment variable (e.g., in your `~/.bashrc` file) pointing
+to the trds directory (see below).
+
+Then, download these reference files (e.g., with the wget command below) and
+place them inside the folder pointed by `$PYSYN_CDBS` (make sure to keep the
+`trds/...` folder structure of the downloaded files):
 
 ```bash
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_kurucz-1993-atlas_multi_v2_synphot4.tar
@@ -33,15 +61,25 @@ wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hs
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_everything_multi_v15_sed.tar
 ```
 
-Unpack these files and set the environment variable: `$PYSYN_CDBS` pointing to
-the trds directory.
-
-### Vega reference SED
-
-Lastly, you need to download the Vega reference spectrum:
+Lastly, download the Vega reference spectrum
+and place the file in your `$PYSYN_CDBS` trds/calspec/ folder.
 
 ```bash
 wget https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
 ```
 
-and place the file in your `$PYSYN_CDBS` trds/calspec/ folder.
+
+:::
+
+<br>
+
+## 3 NASA Exoplanet Archive (optional)
+
+`Gen TSO` is updated regularly to ensure that the exoplanet database remains
+mostly up to date.  But if you want to update the planet data up to the
+current date, you can run this prompt command:
+
+
+```bash
+TSO --update_exo
+```
