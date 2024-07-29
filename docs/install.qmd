@@ -68,6 +68,15 @@ and place the file in your `$PYSYN_CDBS` trds/calspec/ folder.
 wget https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
 ```
 
+If everything went right, then you should see something similar to this:
+
+```bash
+echo $PYSYN_CDBS
+/home/USERNAME/data/pysynphot/trds
+
+ls $PYSYN_CDBS
+calspec  comp  grid  mtab
+```
 
 :::
 
