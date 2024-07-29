@@ -10,13 +10,14 @@ import textwrap
 from datetime import timedelta, datetime
 
 
+import faicons as fa
 import numpy as np
-import scipy.interpolate as si
 import pandas as pd
+import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
-import faicons as fa
 import plotly.graph_objects as go
+import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -33,14 +34,25 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     make_obs_label,
     make_saturation_label,
 )
+from gen_tso.pandeia_io.pandeia_setup import (
+    check_latest_pandeia_version,
+    check_pandeia_ref_data,
+    check_pysynphot,
+    update_synphot_files,
+)
+
+
+def load_catalog():
+    catalog = cat.Catalog()
+    is_jwst = np.array([target.is_jwst for target in catalog.targets])
+    is_transit = np.array([target.is_transiting for target in catalog.targets])
+    is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
+    return catalog, is_jwst, is_transit, is_confirmed
+
 
 # Catalog of known exoplanets (and candidate planets)
-catalog = cat.Catalog()
+catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 nplanets = len(catalog.targets)
-is_jwst = np.array([target.is_jwst for target in catalog.targets])
-is_transit = np.array([target.is_transiting for target in catalog.targets])
-is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
-
 
 # Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
@@ -185,6 +197,16 @@ app_ui = ui.page_fluid(
                     target="_blank",
                 ),
                 "documentation",
+                placement='bottom',
+            ),
+            ',',
+            ui.tooltip(
+                ui.input_action_link(
+                    id='main_settings',
+                    label='',
+                    icon=fa.icon_svg("gear", fill='black'),
+                ),
+                "settings",
                 placement='bottom',
             ),
             ')',
@@ -976,6 +998,7 @@ def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
+    update_catalog_flag = reactive.Value(False)
     update_sed_flag = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
@@ -988,6 +1011,104 @@ def server(input, output, session):
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
     trexo_info = reactive.Value(None)
+
+
+    @reactive.effect
+    @reactive.event(input.main_settings)
+    def _():
+        with open(f'{ROOT}/data/last_updated_trexolist.txt', 'r') as f:
+            last_trexo = f.readline().replace('_','-')
+        with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
+            last_nasa = f.readline().replace('_','-')
+        button_width = '95%'
+
+        my_pandeia = pandeia.engine.__version__
+        last_pandeia = check_latest_pandeia_version()
+        color = 'red' if my_pandeia != last_pandeia else '#0B980D'
+        if color == 'red':
+            advice = (
+                '. You may want to upgrade pandeia.engine with<br>'
+                'pip install --upgrade pandeia.engine'
+            )
+        else:
+            advice = ''
+        pandeia_engine_status = ui.HTML(
+            f'<br><p><span style="color:{color}">You have version {my_pandeia},'
+            f' the latest version is {last_pandeia}</span>{advice}</p>'
+        )
+
+        pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
+        pysynphot_data = check_pysynphot()
+
+        m = ui.modal(
+            ui.markdown(
+                'If you see anything in <span style="color:red">red</span>, '
+                'click the button to update or follow the instructions.<br>'
+                'If you see <span style="color:#0B980D">green</span>, you '
+                'are good to go modeling JWST observations.'
+            ),
+            ui.hr(),
+            ui.layout_columns(
+                # Trexolists
+                ui.input_task_button(
+                    id='update_trexo',
+                    label='Update JWST database',
+                    label_busy="Fetching data from trexolists ...",
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                ui.HTML(f'Last updated: {last_trexo}'),
+                # NASA Archive
+                ui.input_task_button(
+                    id='update_nasa',
+                    label='Update Exoplanet database',
+                    label_busy="Fetching data from NASA Archive ...",
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                ui.HTML(f"Last updated: {last_nasa}"),
+                # pysynphot
+                ui.input_task_button(
+                    id='update_pysynphot',
+                    label='Update Pysynphot',
+                    label_busy="Fetching pysynphot data from STScI ...",
+                    width=button_width,
+                    class_="btn btn-sm",
+                ),
+                pysynphot_data,
+                col_widths=(4,8),
+                gap='10px',
+                class_="px-0 py-0 mx-0 my-0",
+            ),
+            pandeia_engine_status,
+            pandeia_ref_status,
+            ui.hr(),
+            title=ui.markdown("**Settings**"),
+            easy_close=True,
+            size='l',
+        )
+        ui.modal_show(m)
+
+    @reactive.Effect
+    @reactive.event(input.update_trexo)
+    def _():
+        cat.fetch_trexolist()
+        catalog, is_jwst, is_transit, is_confirmed = load_catalog()
+
+    @reactive.Effect
+    @reactive.event(input.update_nasa)
+    def _():
+        cat.update_exoplanet_archive()
+        catalog, is_jwst, is_transit, is_confirmed = load_catalog()
+        update_catalog_flag.set(~update_catalog_flag.get())
+
+    @reactive.Effect
+    @reactive.event(input.update_pysynphot)
+    def _():
+        status = update_synphot_files()
+        for warning in status:
+            error_msg = ui.markdown(f"**Error:**<br>{warning}")
+            ui.notification_show(error_msg, type="error", duration=8)
 
     def run_pandeia(input):
         """
@@ -1057,7 +1178,7 @@ def server(input, output, session):
             input, target_acq_mag=target_acq_mag,
         )
         if sed_label is None:
-            error_msg = ui.markdown(f"**Error:**<br>No SED model to simulate")
+            error_msg = ui.markdown("**Error:**<br>No SED model to simulate")
             ui.notification_show(error_msg, type="error", duration=5)
             return
 
@@ -1348,13 +1469,11 @@ def server(input, output, session):
 
     @render.image
     def tso_logo():
-        dir = Path(__file__).resolve().parent.parent
         img = {
-            "src": str(dir / "docs/images/gen_tso_logo.png"),
+            "src": f'{ROOT}data/images/gen_tso_logo.png',
             "height": "50px",
         }
         return img
-
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -1588,8 +1707,9 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
     @reactive.Effect
-    @reactive.event(input.target_filter)
+    @reactive.event(input.target_filter, update_catalog_flag)
     def _():
+        update_catalog_flag.get()
         mask = np.zeros(nplanets, bool)
         if 'jwst' in input.target_filter.get():
             mask |= is_jwst

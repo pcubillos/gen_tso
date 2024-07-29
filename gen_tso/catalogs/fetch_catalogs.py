@@ -3,21 +3,19 @@
 
 __all__ = [
     'fetch_trexolist',
-    'fetch_nea_confirmed_targets',
-    'fetch_nea_tess_candidates',
-    'fetch_nea_aliases',
-    'fetch_simbad_aliases',
-    'fetch_vizier_ks',
-    'fetch_aliases',
-    'fetch_tess_aliases',
+    'update_exoplanet_archive',
+    'fetch_nasa_confirmed_targets',
     'fetch_gaia_targets',
 ]
 
+# Importing grequests break shiny when setting dev_mode=True,
+# hence this if-exception when running on debug mode
 import sys
-# Skip importing grequests when launching the app because it breaks shiny
-if 'bin/tso' not in sys.argv[0]:
+if '--debug' not in sys.argv:
     import grequests
 import requests
+
+import os
 import multiprocessing as mp
 from datetime import datetime, timezone
 import urllib
@@ -38,78 +36,10 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 
 from ..utils import ROOT
-from .catalogs import load_targets, load_trexolists
+from .catalogs import load_targets, load_trexolists, load_aliases
 from . import utils as u
 from . import target as tar
 from .target import Target
-
-
-def save_catalog(targets, catalog_file):
-    """
-    save_catalog(targets, catalog_file)
-    """
-    # Save as plain text:
-    with open(catalog_file, 'w') as f:
-        f.write(
-            '# > host: RA(deg) dec(deg) Ks_mag '
-            'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
-            '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
-            'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
-        )
-        host = ''
-        for target in targets:
-            planet = target.planet
-            ra = f'{target.ra:.7f}'
-            dec = f'{target.dec:.7f}'
-            ks_mag = f'{target.ks_mag:.3f}'
-            teff = f'{target.teff:.1f}'
-            rstar = f'{target.rstar:.3f}'
-            mstar = f'{target.mstar:.3f}'
-            logg = f'{target.logg_star:.2f}'
-            metal = f'{target.metal_star:.2f}'
-            rplanet = f'{target.rplanet:.3f}'
-            mplanet = f'{target.mplanet:.3f}'
-            transit_dur = f'{target.transit_dur:.3f}'
-            sma = f'{target.sma:.4f}'
-            period = f'{target.period:.5f}'
-            teq = f'{target.eq_temp:.1f}'
-            is_min_mass = int(target.is_min_mass)
-            if target.host != host:
-                host = target.host
-                f.write(
-                    f">{host}: {ra} {dec} {ks_mag} "
-                    f"{rstar} {mstar} {teff} {logg} {metal}\n",
-                )
-            f.write(
-                f" {planet}: {transit_dur} {rplanet} {mplanet} "
-                f"{sma} {period} {teq} {is_min_mass}\n",
-            )
-
-
-def update_databases():
-    """
-    Examples
-    --------
-    >>> import gen_tso.catalogs as cat
-    >>> cat.fetch_trexolist()
-    """
-    # Update trexolist database
-    fetch_trexolist()
-
-    # Update NEA confirmed targets and their aliases
-    fetch_nea_confirmed_targets()
-    # Fetch confirmed aliases
-    targets = load_targets()
-    hosts = np.unique([target.host for target in targets])
-    output_file = f'{ROOT}data/nea_aliases.pickle'
-    fetch_aliases(hosts, output_file)
-
-    # Update NEA TESS candidates and their aliases
-    fetch_nea_tess_candidates()
-    fetch_tess_aliases()
-
-    # Update aliases list
-    curate_aliases()
 
 
 def format_nea_entry(entry):
@@ -173,6 +103,94 @@ def get_children(host_aliases, planet_aliases):
         if planet in children
     }
     return aliases
+
+
+def save_catalog(targets, catalog_file):
+    """
+    save_catalog(targets, catalog_file)
+    """
+    # Save as plain text:
+    with open(catalog_file, 'w') as f:
+        f.write(
+            '# > host: RA(deg) dec(deg) Ks_mag '
+            'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
+            '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
+            'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
+        )
+        host = ''
+        for target in targets:
+            planet = target.planet
+            ra = f'{target.ra:.7f}'
+            dec = f'{target.dec:.7f}'
+            ks_mag = f'{target.ks_mag:.3f}'
+            teff = f'{target.teff:.1f}'
+            rstar = f'{target.rstar:.3f}'
+            mstar = f'{target.mstar:.3f}'
+            logg = f'{target.logg_star:.2f}'
+            metal = f'{target.metal_star:.2f}'
+            rplanet = f'{target.rplanet:.3f}'
+            mplanet = f'{target.mplanet:.3f}'
+            transit_dur = f'{target.transit_dur:.3f}'
+            sma = f'{target.sma:.4f}'
+            period = f'{target.period:.5f}'
+            teq = f'{target.eq_temp:.1f}'
+            is_min_mass = int(target.is_min_mass)
+            if target.host != host:
+                host = target.host
+                f.write(
+                    f">{host}: {ra} {dec} {ks_mag} "
+                    f"{rstar} {mstar} {teff} {logg} {metal}\n",
+                )
+            f.write(
+                f" {planet}: {transit_dur} {rplanet} {mplanet} "
+                f"{sma} {period} {teq} {is_min_mass}\n",
+            )
+
+
+def update_exoplanet_archive(from_scratch=False):
+    """
+    Fetch confirmed and TESS-candidate targets from the NASA
+    Exoplanet archive.
+
+    Parameters
+    ----------
+    from_scratch: Bool
+        If True, fetch all aliases from scratch.  The run will
+        take much longer but it will populate the local .pickle files
+        with all known aliases, making later runs more efficient.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> cat.update_exoplanet_archive()
+    """
+    # Update trexolist database
+    fetch_trexolist()
+
+    # NEA confirmed targets
+    print('\nFetching confirmed planets from the NASA archive')
+    new_targets = fetch_nasa_confirmed_targets()
+    if from_scratch:
+        new_targets = None
+    print('Fetching confirmed planets aliases')
+    fetch_confirmed_aliases(new_targets)
+
+    # NEA TESS candidate targets
+    print('Fetching TESS candidate planets from the NASA archive')
+    new_targets = fetch_nasa_tess_candidates()
+    if from_scratch:
+        new_targets = None
+    print('Fetching TESS candidates aliases')
+    fetch_tess_aliases(new_targets)
+    crosscheck_tess_candidates()
+
+    today = datetime.now(timezone.utc)
+    with open(f'{ROOT}/data/last_updated_nea.txt', 'w') as f:
+        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
+
+    # Update aliases list
+    curate_aliases()
+    print('Exoplanet data is up to date')
 
 
 def curate_aliases():
@@ -257,15 +275,30 @@ def fetch_trexolist():
         f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
 
-def fetch_nea_confirmed_targets():
+def fetch_nasa_confirmed_targets():
     """
-    Fetch (web request) the entire NASA Exoplanet Archive database
+    Fetch (HTTP web request) the entire NASA Exoplanet Archive database
     for confirmed planets (there is another one for TESS candidates)
+
+    Returns
+    -------
+    new_targets: List of strings
+        List of target names flagged as updated by the NEA
+        since the last update (rowupdate column).
+
+    See also
+    --------
+    - fetch_nasa_tess_candidates()  to fetch the TESS candidates database
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> new_targets = cat.fetch_nasa_confirmed_targets()
     """
     # Fetch all planetary system entries
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
-        "select+hostname,pl_name,default_flag,sy_kmag,sy_pnum,disc_facility,"
+        "select+hostname,pl_name,default_flag,rowupdate,sy_kmag,sy_pnum,"
         "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,"
         "pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_msinie,pl_ratdor,pl_ratror+"
         "from+ps+"
@@ -285,7 +318,6 @@ def fetch_nea_confirmed_targets():
     )
 
     targets = []
-    fillers = []
     # Make list of unique entries
     # Group by host such that planets share same host-star values
     for host in hosts:
@@ -303,7 +335,7 @@ def fetch_nea_confirmed_targets():
             tar.rank_planets(target, entries)
             planets.append(target)
             n_dups.append(len(idx_entry))
-        # Solve stellar parameters
+        # Solve stellar parameters (all planets must have the 'same' host)
         star = tar.solve_host(planets, n_dups)
 
         # Now, re-do each planet, but using the single host properties
@@ -315,22 +347,163 @@ def fetch_nea_confirmed_targets():
                 entries[i].copy_star(star)
             j = np.where(default_flags[idx_entry])[0][0]
             target = entries.pop(j)
-            t = tar.rank_planets(target, entries)
-            fillers.append(t)
+            tar.rank_planets(target, entries)
+            target._update_dates = [resp[i]['rowupdate'] for i in idx_entry]
             targets.append(target)
 
+    # Find new and updated targets:
     catalog_file = f'{ROOT}data/nea_data.txt'
+    if os.path.exists(catalog_file):
+        current_targets = [
+            target.planet for target in load_targets('nea_data.txt')
+        ]
+    else:
+        current_targets = []
+
+    update_file = f'{ROOT}/data/last_updated_nea.txt'
+    if os.path.exists(update_file):
+        with open(update_file, 'r') as f:
+            date = f.readline().strip()
+            last_nasa = datetime.strptime(date,'%Y_%m_%d')
+    else:
+        last_nasa = datetime.strptime('1990', '%Y')
+
+    new_targets = []
+    n_new, n_updated = 0, 0
+    for target in targets:
+        if target.planet not in current_targets:
+            new_targets.append(target.planet)
+            n_new += 1
+        else:
+            is_new = [
+                datetime.strptime(date, '%Y-%m-%d') > last_nasa
+                for date in target._update_dates
+                if isinstance(date, str)
+            ]
+            if np.any(is_new):
+                n_updated += 1
+                new_targets.append(target.planet)
+    print(
+        f'There are {n_new} new and {n_updated} updated confirmed '
+        f'targets since {last_nasa.strftime("%Y-%m-%d")}'
+    )
+
+    # Save outputs
     save_catalog(targets, catalog_file)
+    return new_targets
 
-    today = datetime.now(timezone.utc)
-    with open(f'{ROOT}data/last_updated_nea.txt', 'w') as f:
-        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
-    # Some stats
-    # np.unique(fillers, return_counts=True)
-    # (array([0, 1, 2]), array([4418, 1202,   18]))
-    # (array([0, 1, 2]), array([3145, 2466,   27]))
-    # (array([0, 1, 2]), array([4528, 1093,   17]))
+def fetch_nasa_tess_candidates():
+    """
+    Fetch entries in the NEA TESS candidates table.
+    Remove already confirmed targets.
+
+    Returns
+    -------
+    new_targets: List of strings
+        Targets flagged by NEA to be updated since the last fetch.
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nasa_tess_candidates()
+    >>> fetch_cat.fetch_tess_aliases(new_targets)
+    >>> fetch_cat.crosscheck_tess_candidates()
+    """
+    r = requests.get(
+        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
+        "select+toi,toipfx,pl_trandurh,pl_trandep,pl_rade,pl_eqt,ra,dec,"
+        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp,rowupdate+"
+        "from+toi+"
+        "&format=json"
+    )
+    if not r.ok:
+        raise ValueError("Something's not OK")
+
+    entries = [format_nea_entry(entry) for entry in r.json()]
+    ntess = len(entries)
+    status = [entry['tfopwg_disp'] for entry in entries]
+    dates = [entry['rowupdate'][0:10] for entry in entries]
+
+    # Discard confirmed planets:
+    targets = load_targets('nea_data.txt')
+    confirmed_targets = [target.planet for target in targets]
+    confirmed_hosts = [target.host for target in targets]
+
+    # Use multiplicity to vet known targets:
+    hosts = [entry['toipfx'] for entry in entries]
+    u_hosts, counts = np.unique(hosts, return_counts=True)
+    u_hosts = list(u_hosts)
+    multiplicity = [
+        counts[u_hosts.index(entry['toipfx'])] for entry in entries
+    ]
+    u_hosts, counts = np.unique(confirmed_hosts, return_counts=True)
+    u_hosts = list(u_hosts)
+    known_multiplicity = [
+        counts[u_hosts.index(target.host)] for target in targets
+    ]
+
+    # Get aliases of confirmed planets:
+    planet_aliases = {}
+    host_aliases = {}
+
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+        for host, system in known_aliases.items():
+            if host in confirmed_hosts:
+                planet_aliases.update(system['planet_aliases'])
+                for alias in system['host_aliases']:
+                    host_aliases[alias] = host
+
+    aliases_file = f'{ROOT}data/nea_aliases.pickle'
+    if os.path.exists(aliases_file):
+        with open(aliases_file, 'rb') as handle:
+            known_aliases = pickle.load(handle)
+        for host, system in known_aliases.items():
+            planet_aliases.update(system['planet_aliases'])
+            for alias in system['host_aliases']:
+                host_aliases[alias] = host
+
+    j, k, l = 0, 0, 0
+    tess_targets = []
+    last_updated = []
+    for i in range(ntess):
+        target = Target(entries[i])
+        # Update names if possible:
+        if target.host in host_aliases:
+            target.host = host_aliases[target.host]
+        if target.planet in planet_aliases:
+            target.planet = planet_aliases[target.planet]
+
+        if target.planet in confirmed_targets:
+            j += 1
+            continue
+        if target.host in confirmed_hosts:
+            idx = confirmed_hosts.index(target.host)
+            if multiplicity[i] == known_multiplicity[idx]:
+                continue
+            # Update with star props
+            k += 1
+            target.copy_star(targets[idx])
+        if status[i] in ['FA', 'FP']:
+            l += 1
+            continue
+        tess_targets.append(target)
+        last_updated.append(datetime.strptime(dates[i], '%Y-%m-%d'))
+
+    # Save temporary data (still need to hunt for Ks mags):
+    catalog_file = f'{ROOT}data/tess_candidates_tmp.txt'
+    save_catalog(tess_targets, catalog_file)
+
+    with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
+        last_nasa = datetime.strptime(f.readline().strip(),'%Y_%m_%d')
+    new_targets = [
+        target.planet
+        for target,last in zip(tess_targets,last_updated)
+        if last > last_nasa or target.host in confirmed_hosts
+    ]
+    return new_targets
 
 
 def fetch_nea_aliases(targets):
@@ -465,7 +638,6 @@ def fetch_simbad_aliases(target, verbose=True):
             host = target[:end]
         else:
             target_id = simbad_info['MAIN_ID'].value.data[0]
-            print(f'Wait, what?:  {repr(target)}  {repr(target_id)}')
             return host_alias, kmag
         # go after star
         simbad_info = simbad.query_object(host)
@@ -528,10 +700,32 @@ def fetch_vizier_ks(target, verbose=True):
     return np.nan
 
 
-def fetch_aliases(hosts, output_file=None):
+def fetch_aliases(hosts, output_file=None, known_aliases=None):
     """
-    Fetch known aliases from the NEA and Simbad databases for a list
+    Fetch aliases from the NEA and Simbad databases for a list
     of host stars.  Store output dictionary of aliases to pickle file.
+
+    Parameters
+    ----------
+    hosts: List of strings
+        Host star names of targets to search.
+    output_file: String
+        If not None, save outputs to file (as pickle binary format).
+    known_aliases: Dictionary
+        Dictionary of known aliases, the new aliases will be added
+        on top o this dictionary.
+
+    Returns
+    -------
+    aliases: Dictionary
+        Dictionary of aliases with one entry per system where
+        the key is the host name.  Each entry is a dictionary
+        containing:
+            'host' the host name (string)
+            'planets': array of planets in the system
+            'host_aliases': list of host aliases
+            'planet_aliases': dictionary of planets' aliases with
+                (key,value) as (alias_name, name)
 
     Examples
     --------
@@ -544,6 +738,9 @@ def fetch_aliases(hosts, output_file=None):
     >>> output_file = f'{ROOT}data/nea_aliases.pickle'
     >>> aliases = cat.fetch_aliases(hosts, output_file)
     """
+    if known_aliases is None:
+        known_aliases = {}
+
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
     # Keep track of trexolists aliases to cross-check:
@@ -617,7 +814,6 @@ def fetch_aliases(hosts, output_file=None):
         # Replicate host aliases as planet aliases:
         planet_aka = u.invert_aliases(p_aliases)
         for planet, pals in planet_aka.items():
-            #new_planets = ''
             for host in h_aliases:
                 letter = u.get_letter(planet)
                 planet_name = f'{host}{letter}'
@@ -655,12 +851,7 @@ def fetch_aliases(hosts, output_file=None):
                     letter_exists
                 )
                 if is_new and not_downgrade and (new_entry or upgrade):
-                    #new_planets += f'\n--> {planet_name}  ({planet})'
                     p_aliases[planet_name] = planet
-            #if new_planets != '':
-            #    print(f'\n[{i}]  {hosts[i]}{new_planets}')
-            #    for kid in pals:
-            #        print(f'    {kid}')
 
         system = {
             'host': host_name,
@@ -670,120 +861,204 @@ def fetch_aliases(hosts, output_file=None):
         }
         aliases[host_name] = system
 
+
+    # Add previously known aliases (but give priority to the new ones)
+    for host in list(known_aliases):
+        if host not in aliases:
+            aliases[host] = known_aliases[host]
+
     if output_file is not None:
         with open(output_file, 'wb') as handle:
             pickle.dump(aliases, handle, protocol=4)
+
     return aliases
 
 
-def fetch_nea_tess_candidates():
+def fetch_confirmed_aliases(new_targets=None):
     """
-    Fetch entries in the NEA TESS candidates table.
-    Remove already confirmed targets.
+    Fetch aliases for NEA confirmed planets.
+    Save results to a binary file 'nea_aliases.pickle'
+
+    Parameters
+    ----------
+    new_targets: List of strings
+        If not None, only fetch aliases for the given targets.
+
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nasa_confirmed_targets()
+    >>> aliases = fetch_cat.fetch_confirmed_aliases(new_targets)
     """
-    r = requests.get(
-        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
-        "select+toi,toipfx,pl_trandurh,pl_trandep,pl_rade,pl_eqt,ra,dec,"
-        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp+"
-        "from+toi+"
-        "&format=json"
-    )
-    if not r.ok:
-        raise ValueError("Something's not OK")
+    known_targets = load_targets()
+    # Search aliases by host star
+    if new_targets is None:
+        hosts = np.unique([target.host for target in known_targets])
+    else:
+        hosts = np.unique([
+            target.host for target in known_targets
+            if target.planet in new_targets
+        ])
 
-    entries = [format_nea_entry(entry) for entry in r.json()]
-    ntess = len(entries)
-    status = [entry['tfopwg_disp'] for entry in entries]
+    # Get previously known aliases
+    known_aliases = {}
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+    output_file = f'{ROOT}data/nea_aliases.pickle'
+    if os.path.exists(output_file):
+        with open(output_file, 'rb') as handle:
+            prev_aliases = pickle.load(handle)
+        for host,system in prev_aliases.items():
+            known_aliases[host] = system
 
-    # Discard confirmed planets:
-    database = 'nea_data.txt'
-    targets = load_targets(database)
-    confirmed_targets = [target.planet for target in targets]
-    confirmed_hosts = [target.host for target in targets]
+    known_hosts = np.unique([target.host for target in known_targets])
+    for host in list(known_aliases):
+        if host not in known_hosts:
+            known_aliases.pop(host)
 
-    # Unpack known aliases:
+    # Get new aliases
+    aliases = fetch_aliases(hosts, output_file, known_aliases)
+    return aliases
+
+
+def fetch_tess_aliases(new_targets=None):
+    """
+    Get TESS candidate aliases.
+    You want to run fetch_nasa_tess_candidates() before this one.
+    And then follow up with crosscheck_tess_candidates()
+
+    Parameters
+    ----------
+    new_targets: List of strings
+        If not None, only fetch aliases for the given targets.
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nasa_tess_candidates()
+    >>> aliases = fetch_cat.fetch_tess_aliases(new_targets)
+    >>> fetch_cat.crosscheck_tess_candidates()
+    """
+    candidates = load_targets('tess_candidates_tmp.txt')
+    if new_targets is None:
+        new_targets = np.unique([target.planet for target in candidates])
+
+    if os.path.exists(f'{ROOT}data/tess_data.txt'):
+        known_candidates = load_targets('tess_data.txt')
+        known_tess = [target.planet for target in known_candidates]
+    else:
+        known_tess = []
+
+    # New TESS hosts that are not in confirmed list
     with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
         nea_aliases = pickle.load(handle)
-    planet_aliases = {}
-    host_aliases = {}
-    for host, system in nea_aliases.items():
-        planet_aliases.update(system['planet_aliases'])
-        for alias in system['host_aliases']:
-            host_aliases[alias] = host
-
-    j, k, l = 0, 0, 0
-    is_candidate = np.ones(ntess, bool)
-    tess_targets = []
-    for i in range(ntess):
-        target = Target(entries[i])
-        # Update names if possible:
-        if target.host in host_aliases:
-            target.host = host_aliases[target.host]
-        if target.planet in planet_aliases:
-            target.planet = planet_aliases[target.planet]
-
-        if target.planet in confirmed_targets:
-            is_candidate[i] = False
-            j += 1
-            continue
-        if target.host in confirmed_hosts:
-            # Update with star props
-            k += 1
-            idx = confirmed_hosts.index(target.host)
-            star = targets[idx]
-            target.copy_star(star)
-        if status[i] in ['FA', 'FP']:
-            is_candidate[i] = False
-            l += 1
-            continue
-        tess_targets.append(target)
-
-    # Save temporary data (still need to hunt for Ks mags):
-    catalog_file = f'{ROOT}data/tess_candidates_tmp.txt'
-    save_catalog(tess_targets, catalog_file)
+    hosts = np.unique([
+        target.host
+        for target in candidates
+        if target.planet in new_targets or target.planet not in known_tess
+    ])
 
 
-def fetch_tess_aliases(ncpu=None):
+    # Get previously known aliases
+    known_aliases = {}
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+    output_file = f'{ROOT}data/tess_aliases.pickle'
+    # Get previously known aliases
+    if os.path.exists(output_file):
+        with open(output_file, 'rb') as handle:
+            prev_aliases = pickle.load(handle)
+        for host,system in prev_aliases.items():
+            known_aliases[host] = system
+
+    known_hosts = np.unique([target.host for target in candidates])
+    for host in list(known_aliases):
+        if host not in known_hosts:
+            known_aliases.pop(host)
+
+    # Get new aliases
+    aliases = fetch_aliases(hosts, output_file, known_aliases)
+    return aliases
+
+
+def crosscheck_tess_candidates(ncpu=None):
     """
-    Get TESS aliases and also finalize the tess database.
+    Do a final TESS-confirmed cross-check and hunt for their Ks mag.
+    Write output to tess_data.txt file.
+
+    Before calling this function, you want to run
+    fetch_nasa_tess_candidates() and crosscheck_tess_candidates()
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs import fetch_catalogs as fetch_cat
+    >>> new_targets = fetch_cat.fetch_nasa_tess_candidates()
+    >>> fetch_cat.fetch_tess_aliases(new_targets)
+    >>> fetch_cat.crosscheck_tess_candidates()
     """
     if ncpu is None:
         ncpu = mp.cpu_count()
 
-    # Known aliases:
-    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
-        nea_aliases = pickle.load(handle)
-    # Candidates
     candidates = load_targets('tess_candidates_tmp.txt')
-    ntess = len(candidates)
+    targets = load_targets()
+    confirmed_planets = [target.planet for target in targets]
 
-    # Get the tess aliases
-    hosts = np.unique([
-        target.host for target in candidates
-        if target.host not in nea_aliases
-    ])
-    tess_aliases_file = f'{ROOT}data/tess_aliases.pickle'
-    tess_aliases = fetch_aliases(hosts, tess_aliases_file)
-
-
-    # Now I also have tess aliases:
     planet_aliases = {}
     host_aliases = {}
-    for host, system in nea_aliases.items():
+    # previously known aliases
+    aliases_file = f'{ROOT}data/target_aliases.txt'
+    if os.path.exists(aliases_file):
+        known_aliases = load_aliases('system')
+        for host, system in known_aliases.items():
+            planet_aliases.update(system['planet_aliases'])
+            for alias in system['host_aliases']:
+                host_aliases[alias] = host
+    # known confirmed aliases
+    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
+        known_aliases = pickle.load(handle)
+    for host, system in known_aliases.items():
         planet_aliases.update(system['planet_aliases'])
         for alias in system['host_aliases']:
             host_aliases[alias] = host
+    # known TESS aliases
+    with open(f'{ROOT}data/tess_aliases.pickle', 'rb') as handle:
+        tess_aliases = pickle.load(handle)
     for host, system in tess_aliases.items():
         planet_aliases.update(system['planet_aliases'])
         for alias in system['host_aliases']:
             host_aliases[alias] = host
+    # Identity alias for targets without aliases
+    for target in candidates:
+        if target.host not in host_aliases:
+            host_aliases[target.host] = target.host
+        if target.planet not in planet_aliases:
+            planet_aliases[target.planet] = target.planet
     aka = u.invert_aliases(host_aliases)
+
+    # Cross-check with confirmed targets:
+    candidates = [
+        target for target in candidates
+        if planet_aliases[target.planet] not in confirmed_planets
+    ]
+
+
+    # Now I need to collect the Ks_magnitudes:
+    # Zeroth idea, check if I already had the Ks mag:
+    if os.path.exists(f'{ROOT}data/tess_data.txt'):
+        known_candidates = load_targets('tess_data.txt')
+        known_hosts = [target.host for target in known_candidates]
+        for target in candidates:
+            if target.host in known_hosts:
+                idx = known_hosts.index(target.host)
+                target.ks_mag = known_candidates[idx].ks_mag
 
     # First idea, search in simbad using best known alias to get Ks magnitude
     catalogs = ['2MASS', 'Gaia DR3', 'Gaia DR2', 'TOI']
     k = 0
-    for i in range(ntess):
-        target = candidates[i]
+    for i,target in enumerate(candidates):
         target.host = host_aliases[target.host]
         target.planet = planet_aliases[target.planet]
 
@@ -791,14 +1066,12 @@ def fetch_tess_aliases(ncpu=None):
             continue
 
         name = u.select_alias(aka[target.host], catalogs)
-        if i%500 == 0:
-            print(f"~~ [{i}] Searching for '{target.host}' / '{name}' ~~")
         aliases, kmag = fetch_simbad_aliases(name, verbose=False)
         if np.isfinite(kmag):
             k += 1
             target.ks_mag = kmag
 
-    # Plan B, batch search in vizier catalog:
+    # Plan B, batch search in vizier/2MASS catalog:
     hosts = np.array([
         u.select_alias(aka[target.host], catalogs, target.host)
         for target in candidates
@@ -831,22 +1104,7 @@ def fetch_tess_aliases(ncpu=None):
             idx = vizier_names.index(host)
             target.ks_mag = vizier_ks_mag[idx]
 
-    # Plan C, search in vizier catalog one by one:
-    missing_hosts = np.unique([
-        u.select_alias(aka[target.host], catalogs)
-        for target in candidates
-        if np.isnan(target.ks_mag)
-    ])
-    with mp.get_context('fork').Pool(ncpu) as pool:
-        vizier_ks = pool.map(fetch_vizier_ks, missing_hosts)
-
-    for target in candidates:
-        host = u.select_alias(aka[target.host], catalogs)
-        if host in missing_hosts:
-            idx = list(missing_hosts).index(host)
-            target.ks_mag = vizier_ks[idx]
-
-    # Last resort, scrap from the NEA pages
+    # Last resort, scrap from the NEA website
     missing_hosts = np.unique([
         target.host for target in candidates
         if np.isnan(target.ks_mag)
@@ -861,10 +1119,6 @@ def fetch_tess_aliases(ncpu=None):
     # Save as plain text:
     catalog_file = f'{ROOT}data/tess_data.txt'
     save_catalog(candidates, catalog_file)
-
-    today = datetime.now(timezone.utc)
-    with open(f'{ROOT}data/last_updated_tess.txt', 'w') as f:
-        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
 
 
 def scrap_nea_kmag(target):
@@ -886,7 +1140,7 @@ def scrap_nea_kmag(target):
     for dd in soup.find_all('dd'):
         texts = dd.get_text().split()
         if 'mKs' in texts:
-            print(target, dd.text.split())
+            #print(target, dd.text.split())
             kmag_text = texts[-1]
             if kmag_text == '---':
                 kmag = 0.0

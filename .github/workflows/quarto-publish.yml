@@ -29,19 +29,29 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Install Jupyter
+        run: |
+          python -m pip install --upgrade pip
+          pip install jupyter
+          pip install ipykernel
+
+          # Ensure the python3 kernel is installed
+          python -m ipykernel install --user --name=python3
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install quartodoc
           #python -m pip install flake8 pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements.txt
+          pip install -r docs/requirements.txt
 
       - name: Install package
         run: |
@@ -61,17 +71,17 @@ jobs:
           path: 'docs'
 
       - name: Setup Pages
-        uses: actions/configure-pages@v2
+        uses: actions/configure-pages@v4
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v2
         with:
           # Upload quarto render output directory
           path: 'docs/_site'
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v1
+        uses: actions/deploy-pages@v3
 
       # add software dependencies here and any libraries
 

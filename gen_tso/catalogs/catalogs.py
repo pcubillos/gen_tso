@@ -81,7 +81,7 @@ class Catalog():
         # JWST targets
         trexo_data = load_trexolists(grouped=True)
         njwst = len(trexo_data)
-        host_aliases = load_aliases(as_hosts=True)
+        host_aliases = load_aliases('host')
 
         jwst_hosts = []
         for jwst_target in trexo_data:
@@ -93,7 +93,7 @@ class Catalog():
             jwst_hosts += list(hosts)
         jwst_hosts = np.unique(jwst_hosts)
 
-        planet_aliases = load_aliases()
+        planet_aliases = load_aliases('planet')
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
@@ -332,20 +332,35 @@ def load_trexolists(grouped=False, trexo_file=None):
         np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
         for date in trexolist_data['Start date']
     ])
-    trexo_data['date_start'] = np.array([
-        np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
-        for date in trexolist_data['Start date']
-    ])
-    plan_window = [
-        date if '-' not in date else date[:date.index('-')]
-        for date in trexolist_data['Plan Windows']
-    ]
-    trexo_data['plan_window'] = np.array([
-        np.nan if date=='X' else datetime.strptime(date,'%b%d,%Y')
-        for date in plan_window
-    ])
-    trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
 
+    date_start = []
+    date_end = []
+    plan_window = []
+    s_dates = trexolist_data['Start date']
+    e_dates = trexolist_data['End date']
+    windows = trexolist_data['Plan Windows']
+    for i in range(len(norm_targets)):
+        try:
+            date = datetime.strptime(s_dates[i],'%b_%d_%Y_%H:%M:%S')
+        except:
+            date = np.nan
+        try:
+            end = datetime.strptime(e_dates[i],'%b_%d_%Y_%H:%M:%S')
+        except:
+            end = np.nan
+        try:
+            window = windows[i][:windows[i].index('-')]
+            window = datetime.strptime(window,'%b%d,%Y')
+        except:
+            window = np.nan
+        date_start.append(date)
+        date_end.append(end)
+        plan_window.append(window)
+    trexo_data['date_start'] = np.array(date_start)
+    trexo_data['date_end'] = np.array(date_end)
+    trexo_data['plan_window'] = np.array(plan_window)
+
+    trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
     trexo_data['status'] = np.array(trexolist_data['Status'])
 
     if not grouped:
@@ -387,28 +402,134 @@ def load_trexolists(grouped=False, trexo_file=None):
     return grouped_data
 
 
-
-def load_aliases(as_hosts=False):
+def parse(name, style):
     """
-    Load file with known aliases of NEA targets.
-    """
-    with open(f'{ROOT}data/target_aliases.txt', 'r') as f:
-        lines = f.readlines()
+    Parse a planet name as a planet (no change) or as a star,
+    in which case it will identify from confirmed or candidate
+    format name.
 
-    def parse(name):
-        if not as_hosts:
-            return name
+    Parameters
+    ----------
+    style: String
+        Select from 'planet' or 'host'.
+
+    Returns
+    -------
+    name: String
+        Parsed name.
+
+    Examples
+    --------
+    >>> from gen_tso.catalogs.catalogs import parse
+    >>> parse('WASP-80 b', 'planet')
+    WASP-80 b'
+    >>> parse('WASP-80 b', 'host')
+    WASP-80'
+    >>> parse('TOI-316.01', 'host')
+    'TOI-316'
+    """
+    if style == 'planet':
+        return name
+    elif style == 'host':
         if u.is_letter(name):
             return name[:-2]
         end = name.rindex('.')
         return name[:end]
 
+
+def load_aliases(style='planet', aliases_file=None):
+    """
+    Load file with known aliases of NEA targets.
+
+    Parameters
+    ----------
+    style: String
+        Select from 'planet', 'host', or 'system'.
+
+    Returns
+    -------
+    aliases: Dictionary
+        Dictionary of aliases to-from NASA Exoplanet Archive name.
+        See below for examples depending on the 'style' argument.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>>
+    >>> # From alias planet name to NEA name:
+    >>> aliases = cat.load_aliases('planet')
+    >>> aliases['CD-38 2551 b']
+    'WASP-63 b'
+    >>>
+    >>> # From alias host name to NEA name:
+    >>> aliases = cat.load_aliases('host')
+    >>> aliases['CD-38 2551']
+    'WASP-63'
+    >>>
+    >>> # As stellar system with all host and planet aliases:
+    >>> aliases = cat.load_aliases('system')
+    >>> aliases['WASP-63']
+    {'host': 'WASP-63',
+     'planets': ['WASP-63 b'],
+     'host_aliases': array(['CD-38 2551', 'TOI-483', 'WASP-63'], dtype='<U10'),
+     'planet_aliases': {'TOI-483.01': 'WASP-63 b',
+      'CD-38 2551 b': 'WASP-63 b',
+      'WASP-63 b': 'WASP-63 b'}}
+    """
+    if style not in ['planet', 'host', 'system']:
+        raise ValueError(
+            "Invalid alias style, select from: 'planet', 'host', or 'system'"
+        )
+    if aliases_file is None:
+        aliases_file = f'{ROOT}data/target_aliases.txt'
+
+    with open(aliases_file, 'r') as f:
+        lines = f.readlines()
+
+    if style != 'system':
+        aliases = {}
+        for line in lines:
+            loc = line.index(':')
+            name = parse(line[:loc], style)
+            for alias in line[loc+1:].strip().split(','):
+                aliases[parse(alias,style)] = name
+            aliases[name] = name
+        return aliases
+
     aliases = {}
+    current_host = ''
     for line in lines:
         loc = line.index(':')
-        name = parse(line[:loc])
-        for alias in line[loc+1:].strip().split(','):
-            if parse(alias) != name:
-                aliases[parse(alias)] = name
+        planet = parse(line[:loc], 'planet')
+        host = parse(line[:loc], 'host')
+        host_aliases = [
+            parse(name, 'host')
+            for name in line[loc+1:].strip().split(',')
+        ]
+        host_aliases += [host]
+        planet_aliases = {
+            parse(name, 'planet'): planet
+            for name in line[loc+1:].strip().split(',')
+        }
+        planet_aliases[planet] = planet
+        if host != current_host:
+            # Save old one
+            if current_host != '':
+                system['host_aliases'] = np.unique(system['host_aliases'])
+                aliases[current_host] = system
+            # Start new one
+            system = {
+                'host': host,
+                'planets': [planet],
+                'host_aliases': host_aliases,
+                'planet_aliases': planet_aliases,
+            }
+            current_host = host
+        else:
+            system['host_aliases'] += host_aliases
+            system['planets'] += [planet]
+            system['planet_aliases'].update(planet_aliases)
+    system['host_aliases'] = np.unique(system['host_aliases'])
+    aliases[current_host] = system
     return aliases
 
