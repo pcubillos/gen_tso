@@ -15,6 +15,7 @@ from pathlib import Path
 import shutil
 import tarfile
 
+import prompt_toolkit as ptk
 import requests
 from shiny import ui
 
@@ -151,41 +152,77 @@ def update_synphot_files(force_update=False):
     >>> from gen_tso.pandeia_io.pandeia_setup import fetch_synphot_files
     >>> fetch_synphot_files('k93models')
     """
+    unset_pysyn = (
+        "'$PYSYN_CDBS' environment variable was not set. "
+        "Could not setup pysynphot reference data"
+    )
     if "PYSYN_CDBS" not in os.environ:
-        raise ValueError('$PYSYN_CDBS environment variable is not defined')
+        completer = ptk.completion.PathCompleter(
+            only_directories=True,
+            expanduser=True,
+        )
+        synphot_dir = ptk.prompt(
+            "The '$PYSYN_CDBS' environment variable is not defined.\nPlease "
+            "set it to a dir where to store the Pandeia synphot data "
+            "(~3GB of data)\n(and make sure the top folder is named 'trds')\n"
+            "$PYSYN_CDBS = ",
+            completer=completer,
+        )
 
-    cdbs_path = os.environ['PYSYN_CDBS']
-    if not os.path.exists(cdbs_path):
-        Path(cdbs_path).mkdir(parents=True, exist_ok=True)
-        if not os.path.exists(cdbs_path):
+        if synphot_dir.strip() == '':
+            print(unset_pysyn)
+            return
+
+        path = Path(os.path.realpath(os.path.expanduser(synphot_dir)))
+        if path.name != 'trds':
+            go_on = ptk.prompt(
+                "The '$PYSYN_CDBS' top dir is not named 'trds', what about:"
+                f"\n{path / 'trds'}"
+                '\nProceed (Y/n)? '
+            )
+            if go_on.strip().lower() not in ['', 'y', 'yes']:
+                print(unset_pysyn)
+                return
+            path = path / 'trds'
+        print(
+            '\nNow, add this line to your bash file:\n'
+            f'export PYSYN_CDBS={path}\n'
+        )
+        synphot_path = str(path)
+    else:
+        synphot_path = os.environ['PYSYN_CDBS']
+
+    if not os.path.exists(synphot_path):
+        Path(synphot_path).mkdir(parents=True, exist_ok=True)
+        if not os.path.exists(synphot_path):
             raise ValueError(
-                f'Could not create "PYSYN_CDBS" directory: {cdbs_path}'
+                f'Could not create "PYSYN_CDBS" directory: {synphot_path}'
             )
 
-    # check files to update
-    vega_path = f'{cdbs_path}/calspec/alpha_lyr_stis_010.fits'
+    # Check files to update
+    vega_path = f'{synphot_path}/calspec/alpha_lyr_stis_010.fits'
     atlases = {
-        'throughput': os.path.exists(f'{cdbs_path}/comp'),
-        'Kurucz SED': os.path.exists(f'{cdbs_path}/grid/k93models/'),
-        'PHOENIX SED': os.path.exists(f'{cdbs_path}/grid/phoenix/'),
+        'throughput': os.path.exists(f'{synphot_path}/comp'),
+        'Kurucz SED': os.path.exists(f'{synphot_path}/grid/k93models/'),
+        'PHOENIX SED': os.path.exists(f'{synphot_path}/grid/phoenix/'),
         'Vega SED': os.path.exists(vega_path),
     }
 
     warnings = []
     if not atlases['Vega SED'] or force_update:
-        warnings.append(fetch_vega())
+        warnings.append(fetch_vega(synphot_path))
     if not atlases['Kurucz SED'] or force_update:
-        warnings.append(fetch_synphot_files('k93models'))
+        warnings.append(fetch_synphot_files('k93models', synphot_path))
     if not atlases['PHOENIX SED'] or force_update:
-        warnings.append(fetch_synphot_files('phoenix'))
+        warnings.append(fetch_synphot_files('phoenix', synphot_path))
     if not atlases['throughput'] or force_update:
-        warnings.append(fetch_synphot_files('throughput'))
+        warnings.append(fetch_synphot_files('throughput', synphot_path))
 
     warnings = [warn for warn in warnings if warn is not None]
     return warnings
 
 
-def fetch_vega():
+def fetch_vega(synphot_path=None):
     """
     Fetch Vega reference spectrum and place it in the rigth folder.
 
@@ -194,11 +231,12 @@ def fetch_vega():
     On success, returns None.
     If there was an error, return a string describing the error.
     """
-    if "PYSYN_CDBS" not in os.environ:
-        return '$PYSYN_CDBS environment variable is not defined'
+    if synphot_path is None:
+        if "PYSYN_CDBS" not in os.environ:
+            return '$PYSYN_CDBS environment variable is not defined'
+        synphot_path = os.environ['PYSYN_CDBS']
 
     vega_url = 'https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits'
-    synphot_path = os.environ['PYSYN_CDBS']
     path_idx = vega_url.find('calspec')
     vega_path = f'{synphot_path}/{vega_url[path_idx:]}'
 
@@ -219,7 +257,7 @@ def fetch_vega():
         file.write(response.content)
 
 
-def fetch_synphot_files(synphot_file):
+def fetch_synphot_files(synphot_file, synphot_path=None):
     """
     Download Kurucz or PHOENIX SED tar files from STScI.
     Unzip tar file.
@@ -240,9 +278,10 @@ def fetch_synphot_files(synphot_file):
     >>> from gen_tso.pandeia_io.pandeia_setup import fetch_synphot_files
     >>> fetch_synphot_files('k93models')
     """
-    if "PYSYN_CDBS" not in os.environ:
-        return '$PYSYN_CDBS environment variable is not defined'
-    synphot_path = os.environ['PYSYN_CDBS']
+    if synphot_path is None:
+        if "PYSYN_CDBS" not in os.environ:
+            return '$PYSYN_CDBS environment variable is not defined'
+        synphot_path = os.environ['PYSYN_CDBS']
 
     if synphot_file == 'k93models':
         url = f'{stsci_url}{syn4}'

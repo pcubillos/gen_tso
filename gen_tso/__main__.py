@@ -13,14 +13,21 @@ def main():
 
     Usage
     -----
+    # Run the application
     tso [--debug] [models_folder]
-    tso --setup_db
+
+    # Check/update the pandeia reference data
+    tso --update_db
+
+    # Update the NASA Exoplanet Archive data
+    tso --update_exo
 
     Optional commands
     -----------------
-    --setup_db:
-        If set, update the NASA exoplanet archive and pysynphot databases
-        Otherwise, launch the TSO app
+    --update_db:
+        If set, update the pysynphot database
+    --update_exo:
+        If set, update the NASA exoplanet archive
     --debug:
         If set, run the app with reload=True, which reloads a live
         app if the code is updated.
@@ -28,15 +35,16 @@ def main():
         If set, the app will attempt to load transit, eclipse, and SED
         models from the specified folder.
     """
-    if '--setup_db' in sys.argv:
+    if '--update_db' in sys.argv:
         # Import here, otherwise shiny breaks (bc of grequests?)
-        import gen_tso.catalogs as cat
         from gen_tso.pandeia_io.pandeia_setup import update_synphot_files
-
-        cat.update_exoplanet_archive()
         status = update_synphot_files()
 
-    else:
+    if '--update_exo' in sys.argv:
+        import gen_tso.catalogs as cat
+        cat.update_exoplanet_archive()
+
+    if '--update_db' not in sys.argv and '--update_exo' not in sys.argv:
         reload = '--debug' in sys.argv
         app = os.path.realpath(os.path.dirname(__file__)) + '/gen_tso_app.py'
         run_app(app, reload=reload, launch_browser=True, dev_mode=False)
