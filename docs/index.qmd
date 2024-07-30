@@ -3,6 +3,7 @@ title: "Gen TSO Documentation"
 author: "Patricio Cubillos"
 date: today
 output: html_document
+page-navigation: true
 ---
 
 ---

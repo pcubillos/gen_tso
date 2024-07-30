@@ -1,48 +1,50 @@
 ---
-title: Get started
+title: Getting started
+page-navigation: true
 ---
 
-## Walk through
+With `Gen TSO` you can produce JWST simulated spectra in as few as four simple steps.
 
-You can install `Gen TSO` from [PyPI](https://pypi.org/project/gen_tso/) with the following command:
+## 1 Select target
 
-```bash
-pip install gen_tso
-```
+A drop down menu lets you search/type for confirmed planets and TESS candidates
+(data provided by the NASA Exoplanet Archive).  Once a target is selected:
 
-### Instrument and mode selection
+- [Editable fileds](select_target.qmd) are automatically filled with the system properties
+- A link provides the target's name aliases full system properties
+- A link leads you to the NASA Exoplanet Archive
+- A link displays the exisiting JWST programs on the host star
 
-To use `pandeia` you would need to download some files as per their [documentation](https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation).
+---
 
-### Target selection
+{{< video images/select_target.webm width='800'>}}
 
-First you need to download the pandeia reference data (version 3.0) from
-this folder: [https://stsci.app.box.com/v/pandeia-refdata-v3p0-jwst](https://stsci.app.box.com/v/pandeia-refdata-v3p0-jwst)
+---
 
-### Detector setup
+## 2 Select instrument and mode
 
-Unpack the file and set the `$pandeia_refdata` environment variable pointing
-to the top folder of the data (the directory containing the VERSION_PSF file).
+The top menu lets you select the JWST instrument and mode:
 
-### Stellar atlases:
+- All TSO spectroscopic and acquisition modes are available
+- The detector setup panel gets automatically updated for the current instrument
+- The right interactive viewer shows the available filter throughputs of the instrument
 
-Then, you need to download these three reference stellar and calibration files, for example with these commands:
+---
 
-```{.bash filename=run.sh}
-wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_kurucz-1993-atlas_multi_v2_synphot4.tar
-wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_pheonix-models_multi_v3_synphot5.tar
-wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_everything_multi_v15_sed.tar
-```
+{{< video images/select_instrument.webm width='800'>}}
 
-Unpack these files and set the environment variable: `$PYSYN_CDBS` pointing to
-the trds directory.
+---
 
-### Vega reference SED:
+## 3 Set transit/eclipse model
 
-Lastly, you need to download the Vega reference spectrum:
+---
 
-```bash
-wget https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
-```
+{{< video images/select_transit_depth.webm width='800'>}}
 
-and place the file in your `$PYSYN_CDBS` trds/calspec/ folder.
+---
+
+
+## 4 Run Pandeia
+
+TBD
+

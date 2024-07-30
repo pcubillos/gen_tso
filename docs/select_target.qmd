@@ -1,0 +1,106 @@
+---
+title: Setting target properties
+page-navigation: true
+---
+
+## Select target
+
+::: {.column-margin}
+![Target selection panel](images/target_panel.png){width=250px}
+:::
+
+The **Target** panel lets the user select the science target from a
+dropdown menu of known target (from the NASA Exoplanet Archive).  An
+auto-complete feature facilitates searching for specific targets.
+
+The gear icon lets users filter what kind of target to search:
+
+![](images/target_filter.png){width=400px}
+
+
+By selecting a target, the fields with the physical properties needed
+to simulate an observation will be automatically updated.  The values
+in these fields can be edited if desired.  The various information
+links help to make an informed decision (see below).
+
+---
+
+### Info-links
+
+For any given target, info-links on top of the name will provide
+additional information about the target.
+
+The first link (blue) shows any relevant name alias for the target:
+
+![](images/target_aliases.png){width=250px fig-align="left"}
+
+When clicked, `Gen TSO` will display the system parameters extracted
+from the NASA Archive.
+The second link (black) will open the NASA Archive page for the current
+target.
+
+![](images/target_system_parameters.png){width=450px}
+
+
+The third link indicates whether the *host* has JWST observing
+programs (gold color) or not (gray).  For targets with JWST
+programs one can click on the link to display a summary of the
+programs (data from the
+[Trexolists](https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html)
+website).  Color coding indicates whether the program was carried out,
+is in proprietary period, or is still to be observed.
+
+![](images/target_programs.png){width=600px}
+
+
+Lastly, unconfirmed candidate targets have an additional icon
+highlighting that:
+
+![](images/target_candidate.png){width=250px fig-align="left"}
+
+
+## Stellar properties
+
+The main stellar values to set for a simulation are the magnitude and
+stellar energy distribution (SED).
+
+
+::: {.column-margin}
+![Target selection panel](images/target_panel.png){width=250px}
+:::
+
+`Gen TSO` provides the Ks magnitude value for the targets.  Users can
+choose among the J, H, Ks, Gaia, and V bands; although these values
+rarely need to be edited since these magnitudes are well established:
+
+![](images/target_magnitude.png){width=250px fig-align="left"}
+
+The stellar effective temperature and log(g) values mainly inform the
+user on the optimal SED to choose.  `Gen TSO` provides a set of
+PHOENIX, Kurucz, and Blackbody models.
+
+::: {layout-ncol=2}
+
+![SED types](images/target_sed_type.png){width=250px}
+
+![Kurucz SED models](images/target_sed_model.png){width=250px}
+
+:::
+
+By clicking the bookmark (star) icon, users can display and compare
+the SEDs on the right viewer panel.  The instrumental observing band
+will be highlighted in light-blue indicating the wavelength range of
+the SED(s) being probed.
+
+![](images/target_sed_viewer.png){width=550px fig-align="left"}
+
+
+Users can also provide their own custom SED models by clicking the
+*upload* icon, which will pop up the following panel:
+
+![](images/target_upload_sed.png){width=350px fig-align="left"}
+
+## Observation configuration
+
+Users can choose between transit and eclipse observation modes.
+

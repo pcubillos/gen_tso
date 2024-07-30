@@ -1933,7 +1933,7 @@ def server(input, output, session):
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
-            return ui.span('Known target?')
+            return ui.span('Science target')
 
         if len(target.aliases) > 0:
             aliases = ', '.join(target.aliases)
