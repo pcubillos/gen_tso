@@ -191,7 +191,6 @@ def get_configs(instrument=None, obs_type=None):
                 aper for aper in apertures
                 if aper in ta_apertures[inst]
             ]
-        #print(f'\n{inst} / {mode}')
         inst_dict['apertures'] = {
             aperture: str_or_dict(aperture_names, aperture, mode)
             for aperture in apertures
@@ -475,7 +474,7 @@ class Detector:
             label = f'{inst} / LRS'
         elif mode == 'soss':
             label = f'{inst} / SOSS'
-        elif mode == 'ssgrism':
+        elif mode == 'lw_tsgrism':
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
         elif mode == 'bots':
@@ -557,7 +556,7 @@ def generate_all_instruments():
             filter_label = ''
             filters = {'': ''}
             default_indices = 0, 0, 0, 0
-        if mode == 'ssgrism':
+        if mode == 'lw_tsgrism':
             disperser_label = 'Grism'
             filter_label = 'Filter'
             default_indices = 0, 3, 3, 0
@@ -600,7 +599,7 @@ def generate_all_instruments():
         detectors.append(det)
 
     # Photometry observing modes
-    photo_insts = get_configs(obs_type='photometry')
+    #photo_insts = get_configs(obs_type='photometry')
     # TBD: enable when the front-end app is ready to take these in
     if False:
         for inst in photo_insts:
@@ -738,7 +737,7 @@ def make_detector_label(
     if mode == 'soss':
         order = f' O{order[0]}' if len(order)==1 else ''
         return f'NIRISS {mode.upper()} {subarray}{order}'
-    if mode == 'ssgrism':
+    if mode == 'lw_tsgrism':
         subarray = subarray.replace('grism', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
     elif mode == 'bots':

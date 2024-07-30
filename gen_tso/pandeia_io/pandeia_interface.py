@@ -346,7 +346,7 @@ def saturation_level(reports, get_max=False):
 
     >>> inst = 'nircam'
     >>> readout = 'rapid'
-    >>> pando = jwst.PandeiaCalculation(inst, 'ssgrism')
+    >>> pando = jwst.PandeiaCalculation(inst, 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> result = pando.perform_calculation(
     >>>     ngroup=2, nint=683, readout='rapid', filter='f444w',
@@ -878,7 +878,7 @@ def _print_pandeia_exposure(
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
-    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> tso = pando.tso_calculation(
     >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
@@ -922,7 +922,7 @@ def _print_pandeia_saturation(
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
-    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> tso = pando.tso_calculation(
     >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
@@ -1016,7 +1016,7 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
 
     >>> inst = 'nircam'
     >>> readout = 'rapid'
-    >>> pando = jwst.PandeiaCalculation(inst, 'ssgrism')
+    >>> pando = jwst.PandeiaCalculation(inst, 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> result = pando.perform_calculation(
     >>>     ngroup=92, nint=683, readout='rapid', filter='f444w',
@@ -1166,7 +1166,7 @@ def _print_pandeia_report(reports, format=None):
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
-    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> tso = pando.tso_calculation(
     >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
@@ -1271,7 +1271,7 @@ def tso_print(calculation, format='rich'):
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
-    >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> tso = pando.tso_calculation(
     >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,

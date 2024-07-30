@@ -127,7 +127,7 @@ def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
             hide = ('h' in filter_name) is not ('h' in filter)
             if hide and 'prism' not in filter:
                 visible[i] = 'legendonly'
-    elif mode == 'ssgrism':
+    elif mode == 'lw_tsgrism':
         for i,filter in enumerate(all_filters[inst_name].keys()):
             if filter != filter_name and filter not in ['f322w2', 'f444w']:
                 visible[i] = 'legendonly'

@@ -7,7 +7,7 @@ import gen_tso.pandeia_io as jwst
 
 
 def mock_perform_calculation_single():
-    pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     result = pando.perform_calculation(
         ngroup=2, nint=683, readout='rapid', filter='f444w',
@@ -15,7 +15,7 @@ def mock_perform_calculation_single():
     result['1d'] = {}
     result['2d'] = {}
     result['3d'] = {}
-    with open('perform_calculation_nircam_ssgrism.pkl', 'wb') as f:
+    with open('perform_calculation_nircam_lw_tsgrism.pkl', 'wb') as f:
         pickle.dump(result, f)
 
 
@@ -37,7 +37,7 @@ def mock_perform_calculation_multi():
 def mock_tso_calculation_multi():
     wl = np.logspace(0, 2, 1000)
     depth = [wl, np.tile(0.03, len(wl))]
-    pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     tso = pando.tso_calculation(
         'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
@@ -61,7 +61,7 @@ def mock_tso_calculation_multi():
         spec = wl[::2000], spectrum[::2000]
         result['input']['scene'][0]['spectrum']['sed']['spectrum'] = spec
 
-    with open('tso_calculation_nircam_ssgrism.pkl', 'wb') as f:
+    with open('tso_calculation_nircam_lw_tsgrism.pkl', 'wb') as f:
         pickle.dump(tso, f)
 
 
