@@ -24,7 +24,8 @@ inst_names = {
 spec_modes = [
    'lrsslitless',
    'mrs_ts',
-   'ssgrism',
+   'lw_tsgrism',
+   #'sw_tsgrism',
    'soss',
    'bots',
 ]

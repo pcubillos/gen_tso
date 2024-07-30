@@ -1,5 +1,5 @@
 shiny>=1.0.0
-pandeia.engine>=3.0.0
+pandeia.engine>=4.0.0
 numpy>=1.17
 scipy
 requests>=2.19.1
