@@ -869,11 +869,11 @@ def get_throughput(input):
     else:
         filter = input.filter.get()
 
-    if subarray not in filter_throughputs[obs_type][inst]:
+    if subarray not in filter_throughputs[obs_type][inst][mode]:
         return None
-    if filter not in filter_throughputs[obs_type][inst][subarray]:
+    if filter not in filter_throughputs[obs_type][inst][mode][subarray]:
         return None
-    return filter_throughputs[obs_type][inst][subarray][filter]
+    return filter_throughputs[obs_type][inst][mode][subarray][filter]
 
 
 def get_auto_sed(input):
@@ -1144,6 +1144,9 @@ def server(input, output, session):
             order = None
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'sw_tsgrism':
+            aperture = input.disperser.get()
+            disperser = 'dhs0'
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None
@@ -1340,14 +1343,15 @@ def server(input, output, session):
         instrument = detector.instrument
 
         # The instrumental setting
+        filter = tso['filter']
         if mode == 'bots':
             filter = f"{tso['disperser']}/{tso['filter']}"
             disperser = None
+        elif mode == 'sw_tsgrism':
+            disperser = tso['aperture']
         elif mode == 'target_acq':
-            filter = tso['filter']
             disperser = tso['aperture']
         else:
-            filter = tso['filter']
             disperser = tso['disperser']
         subarray = tso['subarray']
         readout = tso['readout']
@@ -1558,11 +1562,17 @@ def server(input, output, session):
             disperser = input.filter.get().split('/')[0]
         else:
             disperser = input.disperser.get()
-        choices = detector.get_constrained_val('subarrays', disperser=disperser)
+
+        if mode == 'sw_tsgrism':
+            choices = detector.get_constrained_val('subarrays', aperture=disperser)
+        else:
+            choices = detector.get_constrained_val('subarrays', disperser=disperser)
 
         subarray = input.subarray.get()
         if subarray not in choices:
             subarray = detector.default_subarray
+        if subarray not in choices:
+            subarray = list(choices)[0]
         ui.update_select(
             'subarray',
             choices=choices,
@@ -2448,6 +2458,9 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
         # Front-end to back-end exceptions:
+        if mode == 'sw_tsgrism':
+            aperture = input.disperser.get()
+            disperser = 'dhs0'
         if mode == 'bots':
             disperser, filter = filter.split('/')
         if mode == 'soss':
@@ -2519,6 +2532,8 @@ def server(input, output, session):
         mode = input.mode.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
+        if not is_consistent(inst, mode, filter=filter, subarray=subarray):
+            return
 
         if mode == 'lrsslitless':
             filter = 'None'
@@ -2653,6 +2668,9 @@ def server(input, output, session):
             disperser, filter = filter.split('/')
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'sw_tsgrism':
+            aperture = input.disperser.get()
+            disperser = 'dhs0'
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None
