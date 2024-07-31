@@ -137,13 +137,13 @@ def plotly_filters(
             if mode == mode_name:
                 filters = list(passbands[inst][mode][subarray_name].keys())
             elif show_all and mode in show_all_subarrays:
-                subarray = show_all_subarrays[mode]
+                subarray_name = show_all_subarrays[mode]
                 filters = show_all_filters[mode]
             else:
                 filters = []
 
             for filter in filters:
-                band = passbands[inst][mode][subarray][filter]
+                band = passbands[inst][mode][subarray_name][filter]
                 all_filters[inst][filter] = band
                 if 'order2' in band:
                     all_filters[inst]['order2'] = band['order2']
