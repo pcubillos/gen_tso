@@ -518,7 +518,10 @@ app_ui = ui.page_fluid(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The detector setup
         cs.custom_card(
-            ui.card_header("Detector setup", class_="bg-primary"),
+            ui.card_header(
+                ui.output_ui(id='detector_label'),
+                class_="bg-primary",
+            ),
             # Grism/filter
             ui.panel_well(
                 ui.input_select(
@@ -1496,6 +1499,29 @@ def server(input, output, session):
         ui.update_select('mode', choices=mode_choices, selected=selected)
 
 
+    @render.ui
+    @reactive.event(input.mode)
+    def detector_label():
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        if not is_consistent(inst, mode):
+            return
+        detector = get_detector(inst, mode, detectors)
+        sw_warning = (
+            'The SW Grism Time Series mode is still being calibrated; '
+            'the SNR and saturation estimates provided by the ETC '
+            'may therefore be outside the expected 10% accuracy level'
+        )
+        if mode == 'sw_tsgrism':
+            return ui.tooltip(
+                'Detector setup (!)',
+                sw_warning,
+                placement='top',
+            )
+        else:
+            return 'Detector setup'
+
+
     @reactive.Effect(priority=2)
     @reactive.event(input.instrument, input.mode)
     def _():
@@ -1513,6 +1539,7 @@ def server(input, output, session):
         disperser = input.disperser.get()
         if disperser not in choices:
             disperser = detector.default_disperser
+
         ui.update_select(
             'disperser',
             label=detector.disperser_label,
