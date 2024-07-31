@@ -762,7 +762,7 @@ def make_detector_label(
         order = f' O{order[0]}' if len(order)==1 else ''
         return f'NIRISS {mode.upper()} {subarray}{order}'
     if mode == 'lw_tsgrism':
-        subarray = subarray.replace('grism', '')
+        subarray = subarray.replace('grism', '').replace('_dhs', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
     if mode == 'sw_tsgrism':
         return f'NIRCam {filter.upper()} {subarray} {readout}'
