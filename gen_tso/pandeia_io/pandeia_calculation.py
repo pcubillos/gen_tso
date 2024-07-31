@@ -185,6 +185,10 @@ class PandeiaCalculation():
 
         if self.mode in ['lw_tsgrism', 'target_acq']:
             config = conf['range'][aperture][filter]
+        if self.mode in ['sw_tsgrism']:
+            ranges = conf['range'][aperture]['dhs0_2']
+            ranges.update(conf['range'][aperture]['dhs0_1'])
+            config = ranges[filter]
         elif self.mode in ['lrsslitless', 'mrs_ts']:
             config = conf['range'][aperture][disperser]
         elif self.mode == 'soss':
