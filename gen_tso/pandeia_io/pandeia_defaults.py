@@ -25,7 +25,7 @@ spec_modes = [
    'lrsslitless',
    'mrs_ts',
    'lw_tsgrism',
-   #'sw_tsgrism',
+   'sw_tsgrism',
    'soss',
    'bots',
 ]
@@ -130,7 +130,7 @@ def get_configs(instrument=None, obs_type=None):
     >>> insts = get_configs(obs_type='acquisition')
 
     >>> insts = get_configs(instrument='miri')
-    >>> insts = get_configs(instrument='niriss', obs_type='spectroscopy')
+    >>> insts = get_configs(instrument='nircam', obs_type='spectroscopy')
     """
     ta_apertures = {
         'miri': ['imager'],
@@ -252,6 +252,14 @@ def get_configs(instrument=None, obs_type=None):
 
         # Special constraints
         inst_dict['constraints'] = {}
+        if mode == 'sw_tsgrism':
+            aper_constraints = inst_config['config_constraints']['apertures']
+            constraints = {
+                aperture: aper_constraints[aperture]['subarrays']
+                for aperture in apertures
+            }
+            inst_dict['constraints']['subarrays'] = {'apertures': constraints}
+
         if mode == 'bots':
             disp_constraints = inst_config['config_constraints']['dispersers']
             constraints = {

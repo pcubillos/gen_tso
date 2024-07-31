@@ -28,10 +28,18 @@ def test_get_configs_miri_mrs_ts():
 
 def test_get_configs_nircam_lw_tsgrism():
     configs = get_configs(instrument='nircam', obs_type='spectroscopy')
-    assert len(configs) == 1
+    assert len(configs) == 2
     inst = configs[0]
     assert inst['mode'] == 'lw_tsgrism'
     assert inst['mode_label'] == 'LW Grism Time Series'
+
+
+def test_get_configs_nircam_sw_tsgrism():
+    configs = get_configs(instrument='nircam', obs_type='spectroscopy')
+    assert len(configs) == 2
+    inst = configs[1]
+    assert inst['mode'] == 'sw_tsgrism'
+    assert inst['mode_label'] == 'SW Grism Time Series'
 
 
 def test_get_configs_niriss_soss():
