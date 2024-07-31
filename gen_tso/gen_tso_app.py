@@ -998,6 +998,7 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
 
 
 def server(input, output, session):
+    group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
@@ -2442,6 +2443,11 @@ def server(input, output, session):
         inst = input.instrument.get()
         mode = input.mode.get()
         subarray = input.subarray.get()
+        if group_starter.get():
+            current_value = input.ngroup.get()
+        else:
+            current_value = 2
+            group_starter.set(True)
         preset = preset_ngroup.get()
         has_preset = (
             preset is not None and
@@ -2452,11 +2458,14 @@ def server(input, output, session):
             value = preset['ngroup']
             preset_ngroup.set(None)
         else:
-            value = 2
+            value = current_value
         if mode == 'target_acq':
             detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
 
+            value = str(value)
+            if value not in choices:
+                value = None
             return ui.input_select(
                 id="ngroup",
                 label="",
@@ -2467,7 +2476,7 @@ def server(input, output, session):
             return ui.input_numeric(
                 id="ngroup",
                 label='',
-                value=value,
+                value=int(value),
                 min=2, max=10000,
             )
 
