@@ -1,7 +1,7 @@
 # ✨ Gen TSO ✨
 ### A general ETC interface for time-series observations with JWST
 
-(Getting there...)
+(Nearly at official release...)
 
 <!--
 [![Tests](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml)
@@ -14,11 +14,9 @@
 
 ### Install as:
 
-Not yet on PyPI or Conda, but for the moment you can get the code from Github:
+Available for Python 3.9+ from PyPI:
 ```
-git clone https://github.com/pcubillos/gen_tso/
-cd gen_tso
-pip install .
+pip install gen_tso
 ```
 
 Then setup the pandeia reference files following these instructions: [https://pcubillos.github.io/gen_tso/install.html](https://pcubillos.github.io/gen_tso/install.html#pandeia-engine-installation)
@@ -39,4 +37,5 @@ tso
 ### Cite as:
 
 Comming soon ...
+
 
