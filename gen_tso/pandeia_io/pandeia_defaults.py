@@ -282,6 +282,12 @@ def get_configs(instrument=None, obs_type=None):
                 'sossfull': ['1', '2', '1 2'],
             }
             inst_dict['constraints']['orders'] = {'subarrays': constraints}
+            constraints = {
+                'substrip96': ['nisrapid'],
+                'substrip256': ['nisrapid'],
+                'sossfull': readouts,
+            }
+            inst_dict['constraints']['readouts'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
             group_constraints = inst_config['mode_config'][mode]['enum_ngroups']

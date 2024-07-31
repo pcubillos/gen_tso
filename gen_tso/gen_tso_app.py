@@ -1592,41 +1592,43 @@ def server(input, output, session):
             disperser = input.disperser.get()
 
         if mode == 'sw_tsgrism':
-            choices = detector.get_constrained_val('subarrays', aperture=disperser)
+            constraint = {'aperture': disperser}
         else:
-            choices = detector.get_constrained_val('subarrays', disperser=disperser)
+            constraint = {'disperser': disperser}
+        choices = detector.get_constrained_val('subarrays', **constraint)
 
         subarray = input.subarray.get()
         if subarray not in choices:
             subarray = detector.default_subarray
         if subarray not in choices:
             subarray = list(choices)[0]
-        ui.update_select(
-            'subarray',
-            choices=choices,
-            selected=subarray,
-        )
+        ui.update_select('subarray', choices=choices, selected=subarray)
 
 
     @reactive.Effect(priority=1)
-    @reactive.event(input.instrument, input.mode, input.disperser)
+    @reactive.event(
+        input.instrument, input.mode,
+        input.disperser, input.subarray,
+    )
     def update_readout():
         inst = input.instrument.get()
         mode = input.mode.get()
         disperser = input.disperser.get()
-        if not is_consistent(inst, mode, disperser):
+        subarray = input.subarray.get()
+        if not is_consistent(inst, mode, disperser, subarray=subarray):
             return
         detector = get_detector(inst, mode, detectors)
 
-        choices = detector.get_constrained_val('readouts', disperser=disperser)
+        if mode == 'soss':
+            constraint = {'subarray': subarray}
+        else:
+            constraint = {'disperser': disperser}
+        choices = detector.get_constrained_val('readouts', **constraint)
         readout = input.readout.get()
         if readout not in choices:
             readout = detector.default_readout
-        ui.update_select(
-            'readout',
-            choices=choices,
-            selected=readout,
-        )
+        ui.update_select('readout', choices=choices, selected=readout)
+
 
     @reactive.Effect
     @reactive.event(input.run_pandeia)
@@ -2434,7 +2436,7 @@ def server(input, output, session):
         order = input.order.get()
         if order not in choices:
             order = list(choices)[0]
-        ui.update_select(id='order', choices=choices, selected=order)
+        ui.update_select('order', choices=choices, selected=order)
 
 
     @render.ui
