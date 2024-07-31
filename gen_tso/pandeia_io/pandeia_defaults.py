@@ -255,7 +255,7 @@ def get_configs(instrument=None, obs_type=None):
         if mode == 'sw_tsgrism':
             aper_constraints = inst_config['config_constraints']['apertures']
             constraints = {
-                aperture: aper_constraints[aperture]['subarrays']
+                aperture: aper_constraints[aperture]['subarrays']['default']
                 for aperture in apertures
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
@@ -498,6 +498,11 @@ class Detector:
 def filter_throughputs():
     """
     Collect the throughput response curves for each instrument configuration
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> filter_throughputs = jwst.filter_throughputs()
     """
     detectors = generate_all_instruments()
     throughputs = {}
@@ -510,13 +515,15 @@ def filter_throughputs():
             throughputs[obs_type] = {}
         if inst not in throughputs[obs_type]:
             throughputs[obs_type][inst] = {}
+        if mode not in throughputs[obs_type][inst]:
+            throughputs[obs_type][inst][mode] = {}
 
         t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
             data = pickle.load(handle)
 
         for subarray in list(data.keys()):
-            throughputs[obs_type][inst][subarray] = data[subarray]
+            throughputs[obs_type][inst][mode][subarray] = data[subarray]
 
     return throughputs
 
@@ -568,6 +575,12 @@ def generate_all_instruments():
             disperser_label = 'Grism'
             filter_label = 'Filter'
             default_indices = 0, 3, 3, 0
+        if mode == 'sw_tsgrism':
+            # TBD: a hack, in the future, better have an 'aperture' show/hide
+            disperser_label = 'PSF Type'
+            dispersers = apertures
+            filter_label = 'Filter'
+            default_indices = 0, 4, 0, 0
         if mode == 'bots':
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
@@ -607,9 +620,9 @@ def generate_all_instruments():
         detectors.append(det)
 
     # Photometry observing modes
-    #photo_insts = get_configs(obs_type='photometry')
     # TBD: enable when the front-end app is ready to take these in
     if False:
+        photo_insts = get_configs(obs_type='photometry')
         for inst in photo_insts:
             mode = inst['mode']
             # Use pupil in place of 'disperser'
