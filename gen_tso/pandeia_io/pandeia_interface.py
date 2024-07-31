@@ -84,8 +84,14 @@ def read_noise_variance(report, ins_config):
     if report_config['mode'] == 'mrs_ts':
         aperture = report_config['aperture']
         aperture = ins_config['aperture_config'][aperture]['detector']
+    elif report_config['mode'] == 'sw_tsgrism':
+        aperture = report_config['aperture']
+        noise = ins_config['detector_config']['sw']['rn']
+        if aperture not in noise:
+            aperture = 'default'
+        read_noise = noise[aperture]
+        return read_noise
     else:
-        #aperture = self.calc['configuration']['instrument']['aperture']
         aperture = report_config['aperture']
 
     if aperture not in ins_config['detector_config']:
