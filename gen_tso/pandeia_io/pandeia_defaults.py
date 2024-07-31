@@ -485,6 +485,9 @@ class Detector:
         elif mode == 'lw_tsgrism':
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
+        elif mode == 'sw_tsgrism':
+            filter_label = self.filters[filter]
+            label = f'{inst} / {filter_label}'
         elif mode == 'bots':
             disperser_label = self.filters[filter]
             disperser_label = disperser_label[:disperser_label.index('/')]
@@ -761,7 +764,9 @@ def make_detector_label(
     if mode == 'lw_tsgrism':
         subarray = subarray.replace('grism', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
-    elif mode == 'bots':
+    if mode == 'sw_tsgrism':
+        return f'NIRCam {filter.upper()} {subarray} {readout}'
+    if mode == 'bots':
         if filter == 'f070lp':
             disperser = f'{disperser}/{filter}'
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
@@ -780,6 +785,8 @@ def make_saturation_label(
     elif mode == 'soss':
         order = f'_O{order[0]}' if len(order)==1 else ''
         sat_label = f'{sat_label}_{sed_label}{order}'
+    elif mode == 'sw_tsgrism':
+        sat_label = f'{sat_label}_{aperture}_{subarray}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
     elif mode == 'target_acq' and inst == 'niriss':
