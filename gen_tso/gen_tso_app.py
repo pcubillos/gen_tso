@@ -188,8 +188,10 @@ layout_kwargs = dict(
 app_ui = ui.page_fluid(
     ui.layout_columns(
         ui.span(
-            ui.HTML("<b>Gen TSO</b>: A general exoplanet ETC for JWST "
-            "time-series observations ("),
+            ui.HTML(
+                "<b>Gen TSO</b>: A general JWST simulator "
+                "for exoplanet time-series observations ("
+            ),
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("book", fill='black'),
@@ -1031,14 +1033,15 @@ def server(input, output, session):
         color = 'red' if my_pandeia != last_pandeia else '#0B980D'
         if color == 'red':
             advice = (
-                '. You may want to upgrade pandeia.engine with<br>'
-                'pip install --upgrade pandeia.engine'
+                '.<br>You may want to upgrade pandeia.engine with:<br>'
+                '<span style="font-weight:bold;">pip install --upgrade pandeia.engine</span>'
             )
         else:
             advice = ''
         pandeia_engine_status = ui.HTML(
-            f'<br><p><span style="color:{color}">You have version {my_pandeia},'
-            f' the latest version is {last_pandeia}</span>{advice}</p>'
+            f'<br><p><span style="color:{color}">You have pandeia.engine '
+            f'version {my_pandeia}, the latest version is '
+            f'{last_pandeia}</span>{advice}</p>'
         )
 
         pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
