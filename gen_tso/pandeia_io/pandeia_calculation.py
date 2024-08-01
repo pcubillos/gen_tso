@@ -34,11 +34,12 @@ try:
     detectors = generate_all_instruments()
     throughputs = filter_throughputs()
 except:
-    # TBD: more precise error message
     print(
-        "The '$pandeia_refdata' environment variable is missing. "
-        "Please follow the instructions in section 2.1 of\n"
-        "https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation"
+        "\n~~~  WARNING  ~~~"
+        "\n   Something went wrong with pandeia.engine."
+        "\n   Check that all databases are correctly installed:"
+        "\n   https://pcubillos.github.io/gen_tso/install.html"
+        "\n~~~  WARNING  ~~~\n\n"
     )
 
 
