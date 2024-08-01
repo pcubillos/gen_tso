@@ -19,17 +19,27 @@ To use `pandeia` you need to download some files as per their [documentation](ht
 
 ### 2.1 Reference data
 
-If this is your first time using pandeia, you likely need to setup a
-`$pandeia_refdata` environment variable (e.g., in your `~/.bashrc` file).
+If you don't have it yet, download the latest pandeia reference data,
+unzip it, and place it in the folder pointed by `$pandeia_refdata`.
+Here's the current latest version:
+[https://stsci.app.box.com/v/pandeia-refdata-v4p0-jwst](https://stsci.app.box.com/v/pandeia-refdata-v4p0-jwst)
 
-Then, download the pandeia reference data, unzip it, and place
-it in the folder pointed by `$pandeia_refdata`. Here's the current latest version: [https://stsci.app.box.com/v/pandeia-refdata-v3p2-jwst](https://stsci.app.box.com/v/pandeia-refdata-v3p2-jwst)
+If this is your first time using pandeia, you likely need to setup a
+`$pandeia_refdata` environment variable (e.g., in your `~/.bashrc`,
+`~/.bash_profile`, or whichever bash file your machine uses).
+
+Then you will need to start a new prompt terminal or source your bash
+file, e.g.:
+```bash
+source ~/.bashrc
+```
+
 
 You should end up with something like this:
 
 ```bash
 echo $pandeia_refdata
-/home/USERNAME/data/pandeia_data-3.2-jwst
+/home/USERNAME/data/pandeia_data-4.0-jwst
 ```
 
 ### 2.2 Atlases data
@@ -71,6 +81,7 @@ wget https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
 If everything went right, then you should see something similar to this:
 
 ```bash
+# (remember to source your bash file or start a new prompt terminal)
 echo $PYSYN_CDBS
 /home/USERNAME/data/pysynphot/trds
 
@@ -92,3 +103,21 @@ current date, you can run this prompt command:
 ```bash
 TSO --update_exo
 ```
+
+<br>
+
+## Live status check
+
+While you are running the `Gen TSO` application, click on this gear icon
+at the top right of the screen:
+
+![](images/status_gear.png){width=375px}
+
+This will pop up a more detailed panel indicating whether any database needs
+to be updated (and if needed, it will give you the instructions to do so):
+
+![](images/status_display.png){width=600px}
+
+
+
+
