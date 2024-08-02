@@ -27,6 +27,7 @@ from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
     ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
+    get_tso_wl_range,
 )
 import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
@@ -220,11 +221,11 @@ tso_popover = ui.popover(
         "Wavelength:",
         ui.input_numeric(
             id='tso_wl_min', label='',
-            value=None, min=0.5, max=30.0, step=0.5,
+            value=None, min=0.5, max=30.0, step=0.1,
         ),
         ui.input_numeric(
             id='tso_wl_max', label='',
-            value=None, min=0.5, max=30.0, step=0.5,
+            value=None, min=0.5, max=30.0, step=0.1,
         ),
         ui.input_select(
             "plot_tso_xscale",
@@ -1524,6 +1525,12 @@ def server(input, output, session):
             ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
             ui.update_numeric("teq_planet", value=tso['teq_planet'])
 
+        # TSO plot popover menu
+        min_wl, max_wl = get_tso_wl_range(tso)
+        ui.update_numeric('tso_wl_min', value=min_wl)
+        ui.update_numeric('tso_wl_max', value=max_wl)
+        #ui.update_numeric('tso_depth_min', value=None, step=None)
+        #ui.update_numeric('tso_depth_max', value=None, step=None)
 
     @render.image
     def tso_logo():
@@ -2700,7 +2707,7 @@ def server(input, output, session):
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
         wl_scale = input.plot_tso_xscale.get()
-        wl_range = None
+        wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
 
         tso_run = tso_runs[key][tso_label]
         planet = tso_run['depth_label']
