@@ -33,7 +33,7 @@ from .pandeia_defaults import (
 )
 try:
     detectors = generate_all_instruments()
-    throughputs = filter_throughputs()
+    bots_throughputs = filter_throughputs()['spectroscopy']['nirspec']['bots']
 except:
     print(
         "\n~~~  WARNING  ~~~"
@@ -183,7 +183,7 @@ class PandeiaCalculation():
         if self.mode == 'bots':
             subarray = self.calc['configuration']['detector']['subarray']
             filter = f'{disperser}/{filter}'
-            throughput = throughputs['spectroscopy'][self.instrument][subarray][filter]
+            throughput = bots_throughputs[subarray][filter]
             band_bounds = band_boundaries(throughput, threshold=0.03)
             bounds = [tuple(np.round(bounds, 3)) for bounds in band_bounds]
             if len(bounds) == 1:
