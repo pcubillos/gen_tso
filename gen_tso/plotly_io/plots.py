@@ -70,13 +70,40 @@ def band_boundaries(band, threshold=0.001):
     return bounds
 
 
-def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
+def plotly_filters(
+        passbands, inst_name, mode_name, subarray_name, filter_name,
+        show_all=False,
+    ):
     """
     Make a plotly figure of the passband filters.
-    """
-    if inst_name is None:
-        return go.Figure()
 
+    Parameters
+    ----------
+    passbands: Dictionary
+        Dictionary of passband arrays. See example below.
+    inst_name: String
+        Instrument to plot/highlight
+    mode_name: String
+        Mode to plot/highlight
+    subarray: String
+        Subarray to plot the passband.
+    filter_name: String
+        Filter to plot.
+    show_all: Bool
+        If True, plot a selection from all instruments for better comparison.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> import gen_tso.plotly_io as plots
+    >>>
+    >>> passbands = jwst.filter_throughputs()['spectroscopy']
+    >>> fig = plots.plotly_filters(
+    >>>     passbands, 'nircam', 'lw_tsgrism', 'subgrism64', 'f444w',
+    >>>     show_all=True,
+    >>> )
+    >>> fig.show()
+    """
     instruments = [inst_name]
     if show_all:
         instruments += [
@@ -85,40 +112,42 @@ def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
         ]
 
     show_all_subarrays = {
-        'miri': 'slitlessprism',
-        'nircam': 'subgrism64',
-        'nirspec': 'sub2048',
-        'niriss': 'substrip256',
+        'lrsslitless': 'slitlessprism',
+        'sw_tsgrism': 'sub40stripe1_dhs',
+        'lw_tsgrism': 'subgrism64',
+        'bots': 'sub2048',
+        'soss': 'substrip256',
     }
     show_all_filters = {
-        'miri': ['None'],
-        'nircam': ['f322w2', 'f444w'],
-        'nirspec': ['g140h/f100lp', 'g235h/f170lp', 'g395h/f290lp', 'prism/clear'],
-        'niriss': ['clear'],
+        'lrsslitless': ['None'],
+        'lw_tsgrism': ['f322w2', 'f444w'],
+        'sw_tsgrism': ['f150w2'],
+        'bots': ['g140m/f100lp', 'g235m/f170lp', 'g395m/f290lp', 'prism/clear'],
+        'soss': ['clear'],
     }
 
     # Parse filters to plot
     all_filters = {}
     nfilters = 0
     for inst in instruments:
+        modes = list(passbands[inst])
         all_filters[inst] = {}
 
-        if inst != inst_name:
-            subarray = show_all_subarrays[inst]
-        if subarray not in passbands[inst]:
-            return go.Figure()
+        for mode in modes:
+            if mode == mode_name:
+                filters = list(passbands[inst][mode][subarray_name].keys())
+            elif show_all and mode in show_all_subarrays:
+                subarray_name = show_all_subarrays[mode]
+                filters = show_all_filters[mode]
+            else:
+                filters = []
 
-        if inst == inst_name:
-            filters = list(passbands[inst][subarray].keys())
-        else:
-            filters = show_all_filters[inst]
-
-        for filter in filters:
-            band = passbands[inst][subarray][filter]
-            all_filters[inst][filter] = band
-            if 'order2' in band:
-                all_filters[inst]['order2'] = band['order2']
-            nfilters += len(all_filters[inst][filter])
+            for filter in filters:
+                band = passbands[inst][mode][subarray_name][filter]
+                all_filters[inst][filter] = band
+                if 'order2' in band:
+                    all_filters[inst]['order2'] = band['order2']
+        nfilters += len(all_filters[inst])
 
 
     visible = [None for _ in range(nfilters)]
@@ -127,20 +156,18 @@ def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
             hide = ('h' in filter_name) is not ('h' in filter)
             if hide and 'prism' not in filter:
                 visible[i] = 'legendonly'
-    elif mode == 'ssgrism':
+    elif mode in ['lw_tsgrism', 'sw_tsgrism']:
+        nircam_visibles = ['f070w', 'f090w', 'f150w2', 'f322w2', 'f444w']
         for i,filter in enumerate(all_filters[inst_name].keys()):
-            if filter != filter_name and filter not in ['f322w2', 'f444w']:
+            if filter != filter_name and filter not in nircam_visibles:
                 visible[i] = 'legendonly'
 
-    if mode == 'bots':
-        primary_colors = px.colors.sample_colorscale(
-            'Viridis', np.linspace(0, 0.8, 9),
-        )
-    else:
-        primary_colors = px.colors.sample_colorscale(
-            'Viridis', [0.1, 0.3, 0.5, 0.7],
-        )
+    ncols = len(all_filters[inst_name])
+    primary_colors = px.colors.sample_colorscale(
+        'Viridis', np.linspace(0, 0.8, ncols),
+    )
     secondary_colors = [
+        px.colors.sequential.gray[1],
         px.colors.sequential.gray[3],
         px.colors.sequential.gray[5],
         px.colors.sequential.gray[7],
@@ -163,6 +190,7 @@ def plotly_filters(passbands, inst_name, mode, subarray, filter_name, show_all):
     for inst in instruments:
         for filter, throughput in all_filters[inst].items():
             if filter == filter_name:
+                color = next(sel_cols)
                 color = 'Gold'
                 width = 3.5
                 filter_index = j

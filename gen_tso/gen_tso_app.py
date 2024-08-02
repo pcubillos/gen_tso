@@ -188,8 +188,10 @@ layout_kwargs = dict(
 app_ui = ui.page_fluid(
     ui.layout_columns(
         ui.span(
-            ui.HTML("<b>Gen TSO</b>: A general exoplanet ETC for JWST "
-            "time-series observations ("),
+            ui.HTML(
+                "<b>Gen TSO</b>: A general JWST simulator "
+                "for exoplanet time-series observations ("
+            ),
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("book", fill='black'),
@@ -518,7 +520,10 @@ app_ui = ui.page_fluid(
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The detector setup
         cs.custom_card(
-            ui.card_header("Detector setup", class_="bg-primary"),
+            ui.card_header(
+                ui.output_ui(id='detector_label'),
+                class_="bg-primary",
+            ),
             # Grism/filter
             ui.panel_well(
                 ui.input_select(
@@ -869,11 +874,11 @@ def get_throughput(input):
     else:
         filter = input.filter.get()
 
-    if subarray not in filter_throughputs[obs_type][inst]:
+    if subarray not in filter_throughputs[obs_type][inst][mode]:
         return None
-    if filter not in filter_throughputs[obs_type][inst][subarray]:
+    if filter not in filter_throughputs[obs_type][inst][mode][subarray]:
         return None
-    return filter_throughputs[obs_type][inst][subarray][filter]
+    return filter_throughputs[obs_type][inst][mode][subarray][filter]
 
 
 def get_auto_sed(input):
@@ -995,6 +1000,7 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
 
 
 def server(input, output, session):
+    group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_label = reactive.Value(None)
@@ -1027,14 +1033,15 @@ def server(input, output, session):
         color = 'red' if my_pandeia != last_pandeia else '#0B980D'
         if color == 'red':
             advice = (
-                '. You may want to upgrade pandeia.engine with<br>'
-                'pip install --upgrade pandeia.engine'
+                '.<br>You may want to upgrade pandeia.engine with:<br>'
+                '<span style="font-weight:bold;">pip install --upgrade pandeia.engine</span>'
             )
         else:
             advice = ''
         pandeia_engine_status = ui.HTML(
-            f'<br><p><span style="color:{color}">You have version {my_pandeia},'
-            f' the latest version is {last_pandeia}</span>{advice}</p>'
+            f'<br><p><span style="color:{color}">You have pandeia.engine '
+            f'version {my_pandeia}, the latest version is '
+            f'{last_pandeia}</span>{advice}</p>'
         )
 
         pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
@@ -1144,6 +1151,9 @@ def server(input, output, session):
             order = None
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'sw_tsgrism':
+            aperture = input.disperser.get()
+            disperser = 'dhs0'
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None
@@ -1340,14 +1350,15 @@ def server(input, output, session):
         instrument = detector.instrument
 
         # The instrumental setting
+        filter = tso['filter']
         if mode == 'bots':
             filter = f"{tso['disperser']}/{tso['filter']}"
             disperser = None
+        elif mode == 'sw_tsgrism':
+            disperser = tso['aperture']
         elif mode == 'target_acq':
-            filter = tso['filter']
             disperser = tso['aperture']
         else:
-            filter = tso['filter']
             disperser = tso['disperser']
         subarray = tso['subarray']
         readout = tso['readout']
@@ -1492,6 +1503,29 @@ def server(input, output, session):
         ui.update_select('mode', choices=mode_choices, selected=selected)
 
 
+    @render.ui
+    @reactive.event(input.mode)
+    def detector_label():
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        if not is_consistent(inst, mode):
+            return
+        detector = get_detector(inst, mode, detectors)
+        sw_warning = (
+            'The SW Grism Time Series mode is still being calibrated; '
+            'the SNR and saturation estimates provided by the ETC '
+            'may therefore be outside the expected 10% accuracy level'
+        )
+        if mode == 'sw_tsgrism':
+            return ui.tooltip(
+                'Detector setup (!)',
+                sw_warning,
+                placement='top',
+            )
+        else:
+            return 'Detector setup'
+
+
     @reactive.Effect(priority=2)
     @reactive.event(input.instrument, input.mode)
     def _():
@@ -1509,6 +1543,7 @@ def server(input, output, session):
         disperser = input.disperser.get()
         if disperser not in choices:
             disperser = detector.default_disperser
+
         ui.update_select(
             'disperser',
             label=detector.disperser_label,
@@ -1558,37 +1593,45 @@ def server(input, output, session):
             disperser = input.filter.get().split('/')[0]
         else:
             disperser = input.disperser.get()
-        choices = detector.get_constrained_val('subarrays', disperser=disperser)
+
+        if mode == 'sw_tsgrism':
+            constraint = {'aperture': disperser}
+        else:
+            constraint = {'disperser': disperser}
+        choices = detector.get_constrained_val('subarrays', **constraint)
 
         subarray = input.subarray.get()
         if subarray not in choices:
             subarray = detector.default_subarray
-        ui.update_select(
-            'subarray',
-            choices=choices,
-            selected=subarray,
-        )
+        if subarray not in choices:
+            subarray = list(choices)[0]
+        ui.update_select('subarray', choices=choices, selected=subarray)
 
 
     @reactive.Effect(priority=1)
-    @reactive.event(input.instrument, input.mode, input.disperser)
+    @reactive.event(
+        input.instrument, input.mode,
+        input.disperser, input.subarray,
+    )
     def update_readout():
         inst = input.instrument.get()
         mode = input.mode.get()
         disperser = input.disperser.get()
-        if not is_consistent(inst, mode, disperser):
+        subarray = input.subarray.get()
+        if not is_consistent(inst, mode, disperser, subarray=subarray):
             return
         detector = get_detector(inst, mode, detectors)
 
-        choices = detector.get_constrained_val('readouts', disperser=disperser)
+        if mode == 'soss':
+            constraint = {'subarray': subarray}
+        else:
+            constraint = {'disperser': disperser}
+        choices = detector.get_constrained_val('readouts', **constraint)
         readout = input.readout.get()
         if readout not in choices:
             readout = detector.default_readout
-        ui.update_select(
-            'readout',
-            choices=choices,
-            selected=readout,
-        )
+        ui.update_select('readout', choices=choices, selected=readout)
+
 
     @reactive.Effect
     @reactive.event(input.run_pandeia)
@@ -1933,7 +1976,7 @@ def server(input, output, session):
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
-            return ui.span('Known target?')
+            return ui.span('Science target')
 
         if len(target.aliases) > 0:
             aliases = ', '.join(target.aliases)
@@ -2396,7 +2439,7 @@ def server(input, output, session):
         order = input.order.get()
         if order not in choices:
             order = list(choices)[0]
-        ui.update_select(id='order', choices=choices, selected=order)
+        ui.update_select('order', choices=choices, selected=order)
 
 
     @render.ui
@@ -2405,6 +2448,11 @@ def server(input, output, session):
         inst = input.instrument.get()
         mode = input.mode.get()
         subarray = input.subarray.get()
+        if group_starter.get():
+            current_value = input.ngroup.get()
+        else:
+            current_value = 2
+            group_starter.set(True)
         preset = preset_ngroup.get()
         has_preset = (
             preset is not None and
@@ -2415,11 +2463,14 @@ def server(input, output, session):
             value = preset['ngroup']
             preset_ngroup.set(None)
         else:
-            value = 2
+            value = current_value
         if mode == 'target_acq':
             detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
 
+            value = str(value)
+            if value not in choices:
+                value = None
             return ui.input_select(
                 id="ngroup",
                 label="",
@@ -2430,7 +2481,7 @@ def server(input, output, session):
             return ui.input_numeric(
                 id="ngroup",
                 label='',
-                value=value,
+                value=int(value),
                 min=2, max=10000,
             )
 
@@ -2448,6 +2499,9 @@ def server(input, output, session):
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
 
         # Front-end to back-end exceptions:
+        if mode == 'sw_tsgrism':
+            aperture = input.disperser.get()
+            disperser = 'dhs0'
         if mode == 'bots':
             disperser, filter = filter.split('/')
         if mode == 'soss':
@@ -2519,6 +2573,8 @@ def server(input, output, session):
         mode = input.mode.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
+        if not is_consistent(inst, mode, filter=filter, subarray=subarray):
+            return
 
         if mode == 'lrsslitless':
             filter = 'None'
@@ -2653,6 +2709,9 @@ def server(input, output, session):
             disperser, filter = filter.split('/')
         if mode == 'mrs_ts':
             aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+        if mode == 'sw_tsgrism':
+            aperture = input.disperser.get()
+            disperser = 'dhs0'
         if mode == 'target_acq':
             aperture = input.disperser.get()
             disperser = None

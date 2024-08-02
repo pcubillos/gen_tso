@@ -26,18 +26,21 @@ from .pandeia_interface import (
     tso_print,
 )
 from .pandeia_defaults import (
+    default_aperture_strategy,
     generate_all_instruments,
     filter_throughputs,
     get_detector,
 )
 try:
     detectors = generate_all_instruments()
-    throughputs = filter_throughputs()
+    bots_throughputs = filter_throughputs()['spectroscopy']['nirspec']['bots']
 except:
     print(
-        "The '$pandeia_refdata' environment variable is missing. "
-        "Please follow the instructions in section 2.1 of\n"
-        "https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation"
+        "\n~~~  WARNING  ~~~"
+        "\n   Something went wrong with pandeia.engine."
+        "\n   Check that all databases are correctly installed:"
+        "\n   https://pcubillos.github.io/gen_tso/install.html"
+        "\n~~~  WARNING  ~~~\n\n"
     )
 
 
@@ -54,7 +57,7 @@ class PandeiaCalculation():
         each instrument from this list below:
           instrument   mode          comments
           ----------   ----          --------
-          nircam:      ssgrism       spectroscopy
+          nircam:      lw_tsgrism    spectroscopy
                        target_acq    aquisition
           niriss:      soss          spectroscopy
                        target_acq    aquisition
@@ -105,6 +108,11 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['subarray'] = subarray
         self.calc['configuration']['detector']['readout_pattern'] = readout
         self._ensure_wl_reference_in_range()
+        # Default aperture/sky annuli:
+        if self.instrument in default_aperture_strategy:
+            strat = default_aperture_strategy[self.instrument]
+            self.calc['strategy']['aperture_size'] = strat['aperture_size']
+            self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
 
     def get_configs(self, output=None):
@@ -175,15 +183,19 @@ class PandeiaCalculation():
         if self.mode == 'bots':
             subarray = self.calc['configuration']['detector']['subarray']
             filter = f'{disperser}/{filter}'
-            throughput = throughputs['spectroscopy'][self.instrument][subarray][filter]
+            throughput = bots_throughputs[subarray][filter]
             band_bounds = band_boundaries(throughput, threshold=0.03)
             bounds = [tuple(np.round(bounds, 3)) for bounds in band_bounds]
             if len(bounds) == 1:
                 bounds = bounds[0]
             return bounds
 
-        if self.mode in ['ssgrism', 'target_acq']:
+        if self.mode in ['lw_tsgrism', 'target_acq']:
             config = conf['range'][aperture][filter]
+        if self.mode in ['sw_tsgrism']:
+            ranges = conf['range'][aperture]['dhs0_2']
+            ranges.update(conf['range'][aperture]['dhs0_1'])
+            config = ranges[filter]
         elif self.mode in ['lrsslitless', 'mrs_ts']:
             config = conf['range'][aperture][disperser]
         elif self.mode == 'soss':
@@ -253,7 +265,7 @@ class PandeiaCalculation():
         >>> import pandeia_interface as jwst
 
         >>> instrument = 'nircam'
-        >>> mode = 'ssgrism'
+        >>> mode = 'lw_tsgrism'
         >>> pando = jwst.PandeiaCalculation(instrument, mode)
         >>> pando.set_scene(
         >>>     sed_type='phoenix', sed_model='k5v',
@@ -282,7 +294,7 @@ class PandeiaCalculation():
         >>> import gen_tso.pandeia_io as jwst
 
         >>> instrument = 'nircam'
-        >>> mode = 'ssgrism'
+        >>> mode = 'lw_tsgrism'
         >>> pando = jwst.PandeiaCalculation(instrument, mode)
         >>> pando.set_scene(
         >>>     sed_type='phoenix', sed_model='k2v',
@@ -451,7 +463,7 @@ class PandeiaCalculation():
         >>> import gen_tso.pandeia_io as jwst
 
         >>> instrument = 'nircam'
-        >>> mode = 'ssgrism'
+        >>> mode = 'lw_tsgrism'
         >>> pando = jwst.PandeiaCalculation(instrument, mode)
         >>> pando.set_scene(
         >>>     sed_type='phoenix', sed_model='k5v',
@@ -760,7 +772,7 @@ class PandeiaCalculation():
 
         >>> wl = np.logspace(0, 2, 1000)
         >>> depth = [wl, np.tile(0.03, len(wl))]
-        >>> pando = jwst.PandeiaCalculation('nircam', 'ssgrism')
+        >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
         >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
         >>> tso = pando.tso_calculation(
         >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,

@@ -33,7 +33,7 @@ def test_perform_calculation():
 #    inputs = (
 #        ('miri', 'mrs_ts', 'ch1'),
 #        ('miri', 'lrsslitless', 'imager'),
-#        ('nircam', 'ssgrism', 'lw'),
+#        ('nircam', 'lw_tsgrism', 'lw'),
 #        ('nirspec', 'bots',  's1600a1'),
 #        ('niriss', 'soss', 'soss'),
 #    )
@@ -107,7 +107,7 @@ def test_tso_calculation_multiple():
 
 def test_calc_saturation_single():
     instrument = 'nircam'
-    mode = 'ssgrism'
+    mode = 'lw_tsgrism'
     pando = jwst.PandeiaCalculation(instrument, mode)
     pando.set_scene('phoenix', 'k2v', '2mass,ks', 8.351)
     pixel_rate, full_well = pando.get_saturation_values(

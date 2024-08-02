@@ -15,7 +15,7 @@ os.chdir(ROOT+'../tests')
 
 
 def test_saturation_level_perform_calculation_single():
-    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(result)
@@ -41,7 +41,7 @@ def test_saturation_level_perform_calculation_multi():
 
 
 def test_saturation_level_tso_calculation_single():
-    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         tso = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(tso)
@@ -164,7 +164,7 @@ def test_bin_search_exposure_time_bad_readout():
 
 
 def test__print_pandeia_exposure_config():
-    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
     config = result['input']['configuration']
     text = jwst._print_pandeia_exposure(config=config)
@@ -183,7 +183,7 @@ def test__print_pandeia_exposure_vals():
 
 @pytest.mark.parametrize('format', [None, 'html', 'rich'])
 def test__print_pandeia_exposure_format(format):
-    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
     config = result['input']['configuration']
     text = jwst._print_pandeia_exposure(config=config, format=format)
@@ -191,7 +191,7 @@ def test__print_pandeia_exposure_format(format):
 
 
 def test__print_pandeia_saturation_perform_calc():
-    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
 
     text = jwst._print_pandeia_saturation(reports=[result], format=None)
@@ -234,7 +234,7 @@ def test__print_pandeia_stats():
 
 
 def test__print_pandeia_report_perform_calculation_single():
-    with open('mocks/perform_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
 
     report = jwst._print_pandeia_report([result], format=None)
@@ -299,7 +299,7 @@ Number of cosmic rays:      0.3122  events/pixel/read"""
 
 
 def test__print_pandeia_report_tso_calculation_single():
-    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
 
     report = jwst._print_pandeia_report(result, format=None)
@@ -365,7 +365,7 @@ Number of cosmic rays:      0.3122  events/pixel/read"""
 
 
 def test_tso_print_plain(capsys):
-    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
     # Make some troublesome figures
     result['report_in']['scalar']['duty_cycle'] = 0.25
@@ -407,7 +407,7 @@ def test_tso_print_plain(capsys):
 
 @pytest.mark.skip(reason='Having some issues with capsys IO')
 def test_tso_print_rich(capsys):
-    with open('mocks/tso_calculation_nircam_ssgrism.pkl', 'rb') as f:
+    with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
     # Make some troublesome figures
     result['report_in']['scalar']['duty_cycle'] = 0.25

@@ -47,7 +47,7 @@ def check_pandeia_ref_data(engine_version=None):
     )
 
     if "pandeia_refdata" not in os.environ:
-        output = "Missing 'pandeia_refdata' environment variable"
+        output = "Missing '$pandeia_refdata' environment variable"
     else:
         refdata_path = os.environ['pandeia_refdata']
         try:
@@ -185,8 +185,9 @@ def update_synphot_files(force_update=False):
                 return
             path = path / 'trds'
         print(
-            '\nNow, add this line to your bash file:\n'
-            f'export PYSYN_CDBS={path}\n'
+            "\nNow, add this line to your bash file:\n"
+            f"export PYSYN_CDBS={path}\nand then 'source' "
+            "the bash file or launch the app from a new terminal"
         )
         synphot_path = str(path)
     else:

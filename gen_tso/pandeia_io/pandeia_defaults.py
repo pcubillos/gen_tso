@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'default_aperture_strategy',
     'get_configs',
     'filter_throughputs',
     'generate_all_instruments',
@@ -24,7 +25,8 @@ inst_names = {
 spec_modes = [
    'lrsslitless',
    'mrs_ts',
-   'ssgrism',
+   'lw_tsgrism',
+   'sw_tsgrism',
    'soss',
    'bots',
 ]
@@ -36,6 +38,27 @@ photo_modes = [
 acq_modes = [
     'target_acq',
 ]
+
+
+# Spectra extraction apertures (arcsec) based on values reported in:
+# Ahrer et al. (2023)    NIRCam/LW
+# Alderson et al. (2023) NIRSpec/G395H
+# Bouwman et al. (2024)  MIRI/LRS
+# Bell et al. (2024)     MIRI/LRS
+default_aperture_strategy = {
+    'miri': dict(
+        aperture_size = 0.6,
+        sky_annulus = [1.0, 2.5],
+    ),
+    'nircam': dict(
+        aperture_size = 0.6,
+        sky_annulus = [0.9, 1.5],
+    ),
+    'nirspec': dict(
+        aperture_size = 0.7,
+        sky_annulus = [0.7, 1.5],
+    ),
+}
 
 
 def get_constrained_values(inst_config, aper, inst_property, mode):
@@ -129,7 +152,7 @@ def get_configs(instrument=None, obs_type=None):
     >>> insts = get_configs(obs_type='acquisition')
 
     >>> insts = get_configs(instrument='miri')
-    >>> insts = get_configs(instrument='niriss', obs_type='spectroscopy')
+    >>> insts = get_configs(instrument='nircam', obs_type='spectroscopy')
     """
     ta_apertures = {
         'miri': ['imager'],
@@ -190,7 +213,6 @@ def get_configs(instrument=None, obs_type=None):
                 aper for aper in apertures
                 if aper in ta_apertures[inst]
             ]
-        #print(f'\n{inst} / {mode}')
         inst_dict['apertures'] = {
             aperture: str_or_dict(aperture_names, aperture, mode)
             for aperture in apertures
@@ -252,6 +274,14 @@ def get_configs(instrument=None, obs_type=None):
 
         # Special constraints
         inst_dict['constraints'] = {}
+        if mode == 'sw_tsgrism':
+            aper_constraints = inst_config['config_constraints']['apertures']
+            constraints = {
+                aperture: aper_constraints[aperture]['subarrays']['default']
+                for aperture in apertures
+            }
+            inst_dict['constraints']['subarrays'] = {'apertures': constraints}
+
         if mode == 'bots':
             disp_constraints = inst_config['config_constraints']['dispersers']
             constraints = {
@@ -274,6 +304,12 @@ def get_configs(instrument=None, obs_type=None):
                 'sossfull': ['1', '2', '1 2'],
             }
             inst_dict['constraints']['orders'] = {'subarrays': constraints}
+            constraints = {
+                'substrip96': ['nisrapid'],
+                'substrip256': ['nisrapid'],
+                'sossfull': readouts,
+            }
+            inst_dict['constraints']['readouts'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
             group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
@@ -474,7 +510,10 @@ class Detector:
             label = f'{inst} / LRS'
         elif mode == 'soss':
             label = f'{inst} / SOSS'
-        elif mode == 'ssgrism':
+        elif mode == 'lw_tsgrism':
+            filter_label = self.filters[filter]
+            label = f'{inst} / {filter_label}'
+        elif mode == 'sw_tsgrism':
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
         elif mode == 'bots':
@@ -490,6 +529,11 @@ class Detector:
 def filter_throughputs():
     """
     Collect the throughput response curves for each instrument configuration
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> filter_throughputs = jwst.filter_throughputs()
     """
     detectors = generate_all_instruments()
     throughputs = {}
@@ -502,13 +546,15 @@ def filter_throughputs():
             throughputs[obs_type] = {}
         if inst not in throughputs[obs_type]:
             throughputs[obs_type][inst] = {}
+        if mode not in throughputs[obs_type][inst]:
+            throughputs[obs_type][inst][mode] = {}
 
         t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
             data = pickle.load(handle)
 
         for subarray in list(data.keys()):
-            throughputs[obs_type][inst][subarray] = data[subarray]
+            throughputs[obs_type][inst][mode][subarray] = data[subarray]
 
     return throughputs
 
@@ -556,10 +602,16 @@ def generate_all_instruments():
             filter_label = ''
             filters = {'': ''}
             default_indices = 0, 0, 0, 0
-        if mode == 'ssgrism':
+        if mode == 'lw_tsgrism':
             disperser_label = 'Grism'
             filter_label = 'Filter'
             default_indices = 0, 3, 3, 0
+        if mode == 'sw_tsgrism':
+            # TBD: a hack, in the future, better have an 'aperture' show/hide
+            disperser_label = 'PSF Type'
+            dispersers = apertures
+            filter_label = 'Filter'
+            default_indices = 0, 4, 0, 0
         if mode == 'bots':
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
@@ -599,9 +651,9 @@ def generate_all_instruments():
         detectors.append(det)
 
     # Photometry observing modes
-    photo_insts = get_configs(obs_type='photometry')
     # TBD: enable when the front-end app is ready to take these in
     if False:
+        photo_insts = get_configs(obs_type='photometry')
         for inst in photo_insts:
             mode = inst['mode']
             # Use pupil in place of 'disperser'
@@ -737,10 +789,12 @@ def make_detector_label(
     if mode == 'soss':
         order = f' O{order[0]}' if len(order)==1 else ''
         return f'NIRISS {mode.upper()} {subarray}{order}'
-    if mode == 'ssgrism':
-        subarray = subarray.replace('grism', '')
+    if mode == 'lw_tsgrism':
+        subarray = subarray.replace('grism', '').replace('_dhs', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
-    elif mode == 'bots':
+    if mode == 'sw_tsgrism':
+        return f'NIRCam {filter.upper()} {subarray} {readout}'
+    if mode == 'bots':
         if filter == 'f070lp':
             disperser = f'{disperser}/{filter}'
         return f'NIRSpec {disperser.upper()} {subarray} {readout}'
@@ -759,6 +813,8 @@ def make_saturation_label(
     elif mode == 'soss':
         order = f'_O{order[0]}' if len(order)==1 else ''
         sat_label = f'{sat_label}_{sed_label}{order}'
+    elif mode == 'sw_tsgrism':
+        sat_label = f'{sat_label}_{aperture}_{subarray}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
     elif mode == 'target_acq' and inst == 'niriss':
