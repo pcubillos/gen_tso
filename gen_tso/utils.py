@@ -13,6 +13,7 @@ __all__ = [
     'Tophat',
     'constant_resolution_spectrum',
     'bin_spectrum',
+    'get_tso_wl_range',
     'read_spectrum_file',
     'collect_spectra',
     'format_text',
@@ -302,6 +303,37 @@ def bin_spectrum(bin_wl, wl, spectrum, half_widths=None, ignore_gaps=False):
         else:
             band_flux[i] = np.trapz(spectrum[band.idx]*response, band.wn)
     return band_flux
+
+
+def get_tso_wl_range(tso_run):
+    """
+    Get the wavelength range covered by a TSO calculation
+
+    Parameters
+    ----------
+    tso_run: Dictionary
+        A TSO calculation output as computed by run_pandeia() in the app.
+    wl_scale: String
+        Wavelength scale: 'linear' or 'log'.
+
+    Returns
+    -------
+    min_wl: Float
+        Shorter-wavelength boundary.
+    max_wl: Float
+        Longer-wavelength boundary.
+    """
+    runs = tso_run['tso']
+    if not isinstance(runs, list):
+        runs = [runs]
+
+    min_wl = np.amin([np.amin(run['wl']) for run in runs])
+    max_wl = np.amax([np.amax(run['wl']) for run in runs])
+    # 5% margin
+    d_wl = 0.025 * (max_wl-min_wl)
+    min_wl = np.round(min_wl-d_wl, decimals=2)
+    max_wl = np.round(max_wl+d_wl, decimals=2)
+    return min_wl, max_wl
 
 
 def read_spectrum_file(file, on_fail=None):
