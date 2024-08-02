@@ -21,7 +21,7 @@ A drop down menu lets you search/type for confirmed planets and TESS candidates
 
 ---
 
-## 2 Select instrument and mode
+## 2 Set instrument and mode
 
 The top menu lets you select the JWST instrument and mode:
 
@@ -36,6 +36,15 @@ The top menu lets you select the JWST instrument and mode:
 ---
 
 ## 3 Set transit/eclipse model
+
+The transit or eclipse depth spectrum encodes the core of a science case,
+so this is the one bit of information that a user has to provide.
+In the `Gen TSO` application users can:
+
+- Search and upload specific transit/eclipse depth spectra
+- Pre-load spectra when launching the application
+- Use blackbody or flat-transmission spectra for a quick S/N assessment
+- Interactively view and compare spectra in the viewer panel
 
 ---
 
