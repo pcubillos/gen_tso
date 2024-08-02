@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'default_aperture_strategy',
     'get_configs',
     'filter_throughputs',
     'generate_all_instruments',
@@ -37,6 +38,27 @@ photo_modes = [
 acq_modes = [
     'target_acq',
 ]
+
+
+# Spectra extraction apertures (arcsec) based on values reported in:
+# Ahrer et al. (2023)    NIRCam/LW
+# Alderson et al. (2023) NIRSpec/G395H
+# Bouwman et al. (2024)  MIRI/LRS
+# Bell et al. (2024)     MIRI/LRS
+default_aperture_strategy = {
+    'miri': dict(
+        aperture_size = 0.6,
+        sky_annulus = [1.0, 2.5],
+    ),
+    'nircam': dict(
+        aperture_size = 0.6,
+        sky_annulus = [0.9, 1.5],
+    ),
+    'nirspec': dict(
+        aperture_size = 0.7,
+        sky_annulus = [0.7, 1.5],
+    ),
+}
 
 
 def get_constrained_values(inst_config, aper, inst_property, mode):

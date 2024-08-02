@@ -26,6 +26,7 @@ from .pandeia_interface import (
     tso_print,
 )
 from .pandeia_defaults import (
+    default_aperture_strategy,
     generate_all_instruments,
     filter_throughputs,
     get_detector,
@@ -107,6 +108,11 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['subarray'] = subarray
         self.calc['configuration']['detector']['readout_pattern'] = readout
         self._ensure_wl_reference_in_range()
+        # Default aperture/sky annuli:
+        if self.instrument in default_aperture_strategy:
+            strat = default_aperture_strategy[self.instrument]
+            self.calc['strategy']['aperture_size'] = strat['aperture_size']
+            self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
 
     def get_configs(self, output=None):
