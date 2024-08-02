@@ -184,8 +184,90 @@ layout_kwargs = dict(
     class_="pb-2 pt-0 m-0",
 )
 
+tso_popover = ui.popover(
+    ui.span(
+        fa.icon_svg("gear"),
+        style="position:absolute; top: 5px; right: 7px;",
+    ),
+    ui.layout_column_wrap(
+        ui.input_numeric(
+            id='n_obs',
+            label='Number of obs.:',
+            value=1.0,
+            min=1.0, max=3000.0, step=1.0,
+            width='200px',
+        ),
+        ui.input_numeric(
+            id='tso_resolution',
+            label='Resolution:',
+            value=250.0,
+            min=25.0, max=3000.0, step=25.0,
+            width='200px',
+        ),
+        ui.input_select(
+            "plot_tso_units",
+            "Depth units:",
+            choices = depth_units,
+            selected='percent',
+        ),
+        width=1/3,
+        fixed_width=False,
+        gap='5px',
+        fill=False,
+        fillable=True,
+    ),
+    ui.layout_column_wrap(
+        "Wavelength:",
+        ui.input_numeric(
+            id='tso_wl_min', label='',
+            value=None, min=0.5, max=30.0, step=0.5,
+        ),
+        ui.input_numeric(
+            id='tso_wl_max', label='',
+            value=None, min=0.5, max=30.0, step=0.5,
+        ),
+        ui.input_select(
+            "plot_tso_xscale",
+            label='',
+            selected='linear',
+            choices = ['linear', 'log'],
+        ),
+        "Depth:",
+        ui.input_numeric(
+            id='tso_depth_min',
+            label='',
+            value=None,
+        ),
+        ui.input_numeric(
+            id='tso_depth_max',
+            label='',
+            value=None,
+        ),
+        ui.input_select(
+            "plot_tso_yscale",
+            label='',
+            selected='linear',
+            choices = ['linear', 'log'],
+        ),
+        width=1/4,
+        fixed_width=False,
+        gap='5px',
+        fill=False,
+        fillable=True,
+    ),
+    placement="top",
+    id="tso_popover",
+)
+
 
 app_ui = ui.page_fluid(
+    ui.tags.style(
+        """
+        .popover {
+            --bs-popover-max-width: 450px;
+        }
+        """
+    ),
     ui.layout_columns(
         ui.span(
             ui.HTML(
@@ -749,42 +831,7 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "TSO",
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        ui.input_numeric(
-                            id='n_obs',
-                            label='Number of observations:',
-                            value=1.0,
-                            min=1.0, max=3000.0, step=1.0,
-                        ),
-                        ui.input_numeric(
-                            id='tso_resolution',
-                            label='Observation resolution:',
-                            value=250.0,
-                            min=25.0, max=3000.0, step=25.0,
-                        ),
-                        ui.input_select(
-                            "plot_tso_units",
-                            "Depth units:",
-                            choices = depth_units,
-                            selected='percent',
-                        ),
-                        ui.input_select(
-                            "plot_tso_xscale",
-                            "Wavelength axis:",
-                            choices = ['linear', 'log'],
-                        ),
-                        ui.input_select(
-                            "plot_tso_xrange",
-                            "Wavelength range:",
-                            choices = ['auto', 'JWST (0.6--12.0 um)'],
-                        ),
-                        placement="right",
-                        id="tso_popover",
-                    ),
+                    tso_popover,
                     cs.custom_card(
                         output_widget("plotly_tso", fillable=True),
                         body_args=dict(padding='0px'),
@@ -2653,11 +2700,7 @@ def server(input, output, session):
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
         wl_scale = input.plot_tso_xscale.get()
-        x_range = input.plot_tso_xrange.get()
-        if x_range == 'auto':
-            wl_range = None
-        else:
-            wl_range = [0.6, 13.0]
+        wl_range = None
 
         tso_run = tso_runs[key][tso_label]
         planet = tso_run['depth_label']
