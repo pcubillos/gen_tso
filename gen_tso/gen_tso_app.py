@@ -40,6 +40,7 @@ from gen_tso.pandeia_io.pandeia_setup import (
     check_pysynphot,
     update_synphot_files,
 )
+import viewer_popovers as pops
 
 
 def load_catalog():
@@ -184,87 +185,12 @@ layout_kwargs = dict(
     class_="pb-2 pt-0 m-0",
 )
 
-tso_popover = ui.popover(
-    ui.span(
-        fa.icon_svg("gear"),
-        style="position:absolute; top: 5px; right: 7px;",
-    ),
-    ui.layout_column_wrap(
-        ui.input_numeric(
-            id='n_obs',
-            label='Number of obs.:',
-            value=1.0,
-            min=1.0, max=3000.0, step=1.0,
-            width='200px',
-        ),
-        ui.input_numeric(
-            id='tso_resolution',
-            label='Resolution:',
-            value=250.0,
-            min=25.0, max=3000.0, step=25.0,
-            width='200px',
-        ),
-        ui.input_select(
-            "plot_tso_units",
-            "Depth units:",
-            choices = depth_units,
-            selected='percent',
-        ),
-        width=1/3,
-        fixed_width=False,
-        gap='5px',
-        fill=False,
-        fillable=True,
-    ),
-    ui.layout_column_wrap(
-        "Wavelength:",
-        ui.input_numeric(
-            id='tso_wl_min', label='',
-            value=None, min=0.5, max=30.0, step=0.1,
-        ),
-        ui.input_numeric(
-            id='tso_wl_max', label='',
-            value=None, min=0.5, max=30.0, step=0.1,
-        ),
-        ui.input_select(
-            "plot_tso_xscale",
-            label='',
-            selected='linear',
-            choices = ['linear', 'log'],
-        ),
-        "Depth:",
-        ui.input_numeric(
-            id='tso_depth_min',
-            label='',
-            value=None,
-        ),
-        ui.input_numeric(
-            id='tso_depth_max',
-            label='',
-            value=None,
-        ),
-        ui.input_select(
-            "plot_tso_yscale",
-            label='',
-            selected='linear',
-            choices = ['linear', 'log'],
-        ),
-        width=1/4,
-        fixed_width=False,
-        gap='5px',
-        fill=False,
-        fillable=True,
-    ),
-    placement="top",
-    id="tso_popover",
-)
-
 
 app_ui = ui.page_fluid(
     ui.tags.style(
         """
         .popover {
-            --bs-popover-max-width: 450px;
+            --bs-popover-max-width: 460px;
         }
         """
     ),
@@ -719,22 +645,7 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Filters",
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        "Show filter throughputs",
-                        ui.input_radio_buttons(
-                            id="filter_filter",
-                            label=None,
-                            choices=["none", "all"],
-                            inline=True,
-                        ),
-                        placement="right",
-                        #placement="top",
-                        id="filter_popover",
-                    ),
+                    pops.filter_popover,
                     cs.custom_card(
                         output_widget("plotly_filters", fillable=True),
                         body_args=dict(class_='m-0 p-0'),
@@ -761,77 +672,27 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Stellar SED",
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        ui.input_numeric(
-                            id='plot_sed_resolution',
-                            label='Resolution:',
-                            value=0.0,
-                            min=10.0, max=3000.0, step=25.0,
-                        ),
-                        ui.input_select(
-                            "plot_sed_units",
-                            "Flux units:",
-                            choices = ['mJy'],
-                            selected='mJy',
-                        ),
-                        ui.input_select(
-                            "plot_sed_xscale",
-                            "Wavelength axis:",
-                            choices = ['linear', 'log'],
-                            selected='log',
-                        ),
-                        placement="right",
-                        id="sed_popover",
-                    ),
+                    pops.sed_popover,
                     cs.custom_card(
                         output_widget("plotly_sed", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
-                        height='300px',
+                        height='350px',
                     ),
                 ),
                 ui.nav_panel(
                     ui.output_text('transit_depth_label'),
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        ui.input_numeric(
-                            id='depth_resolution',
-                            label='Resolution:',
-                            value=250.0,
-                            min=10.0, max=3000.0, step=25.0,
-                        ),
-                        ui.input_select(
-                            "plot_depth_units",
-                            "Depth units:",
-                            choices = depth_units,
-                            selected='percent',
-                        ),
-                        ui.input_select(
-                            "plot_depth_xscale",
-                            "Wavelength axis:",
-                            choices = ['linear', 'log'],
-                            selected='log',
-                        ),
-                        placement="right",
-                        id="depth_popover",
-                    ),
+                    pops.planet_popover,
                     cs.custom_card(
                         output_widget("plotly_depth", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
-                        height='300px',
+                        height='350px',
                     ),
                 ),
                 ui.nav_panel(
                     "TSO",
-                    tso_popover,
+                    pops.tso_popover,
                     cs.custom_card(
                         output_widget("plotly_tso", fillable=True),
                         body_args=dict(padding='0px'),
@@ -1293,6 +1154,7 @@ def server(input, output, session):
         )
 
         tso_run = dict(
+            is_tso=run_is_tso,
             # The detector
             inst=inst,
             mode=mode,
@@ -1329,7 +1191,6 @@ def server(input, output, session):
 
         if run_is_tso:
             # The planet
-            #tso_run['depth_model_name'] = depth_label
             tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
                 reports = (
@@ -1525,16 +1386,17 @@ def server(input, output, session):
             ui.update_numeric("teq_planet", value=tso['teq_planet'])
 
         # TSO plot popover menu
-        min_wl, max_wl = jwst.get_tso_wl_range(tso)
-        ui.update_numeric('tso_wl_min', value=min_wl)
-        ui.update_numeric('tso_wl_max', value=max_wl)
-        resolution = input.tso_resolution.get()
-        units = input.plot_tso_units.get()
-        min_depth, max_depth, step = jwst.get_tso_depth_range(
-            tso, resolution, units,
-        )
-        ui.update_numeric('tso_depth_min', value=min_depth, step=step)
-        ui.update_numeric('tso_depth_max', value=max_depth, step=step)
+        if tso['is_tso']:
+            min_wl, max_wl = jwst.get_tso_wl_range(tso)
+            ui.update_numeric('tso_wl_min', value=min_wl)
+            ui.update_numeric('tso_wl_max', value=max_wl)
+            resolution = input.tso_resolution.get()
+            units = input.plot_tso_units.get()
+            min_depth, max_depth, step = jwst.get_tso_depth_range(
+                tso, resolution, units,
+            )
+            ui.update_numeric('tso_depth_min', value=min_depth, step=step)
+            ui.update_numeric('tso_depth_max', value=max_depth, step=step)
 
 
     @render.image
@@ -2708,14 +2570,14 @@ def server(input, output, session):
         if tso_key is None:
             return go.Figure()
         key, tso_label = tso_key.split('_', maxsplit=1)
-        n_obs = input.n_obs.get()
+        tso_run = tso_runs[key][tso_label]
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
         wl_scale = input.plot_tso_xscale.get()
         wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
+        n_obs = input.n_obs.get()
         depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
 
-        tso_run = tso_runs[key][tso_label]
         planet = tso_run['depth_label']
         fig = tplots.plotly_tso_spectra(
             tso_run['tso'], resolution, n_obs,
