@@ -8,6 +8,7 @@ __all__ = [
     'plotly_depth_spectra',
     'plotly_tso_spectra',
     'plotly_tso_fluxes',
+    'plotly_tso_snr',
 ]
 
 from itertools import groupby
@@ -514,7 +515,7 @@ def plotly_tso_spectra(
     for j,bound in enumerate(partial_saturation):
         fig.add_vrect(
             x0=bound[0], x1=bound[1],
-            fillcolor="red", opacity=0.4,
+            fillcolor="red", opacity=0.3,
             layer="below", line_width=0,
             legendgrouptitle_text="Saturation",
             legendgroup='saturation',
@@ -573,7 +574,7 @@ def plotly_tso_spectra(
 
 
 def plotly_tso_fluxes(
-        tso_list, resolution,
+        tso_list,
         wl_range=None, wl_scale='linear',
         obs_geometry='transit',
     ):
@@ -599,8 +600,7 @@ def plotly_tso_fluxes(
             tso['report_out']['1d']['extracted_bg_only'][1],
         ]
         show_legend = j == 0
-        for i in range(3):
-            print(legends[i])
+        for i in range(len(fluxes)):
             fig.add_trace(go.Scatter(
                 x=wl,
                 y=fluxes[i],
@@ -618,8 +618,8 @@ def plotly_tso_fluxes(
     partial_saturation = response_boundaries(wl, partial, threshold=0)
     for j,bound in enumerate(partial_saturation):
         fig.add_vrect(
-            fillcolor="red", opacity=0.4,
             x0=bound[0], x1=bound[1],
+            fillcolor="red", opacity=0.3,
             layer="below", line_width=0,
             legendgrouptitle_text="Saturation",
             name='partial',
@@ -655,3 +655,83 @@ def plotly_tso_fluxes(
     fig.update_layout(showlegend=True)
     return fig
 
+
+def plotly_tso_snr(
+        tso_list,
+        wl_range=None, wl_scale='linear',
+        obs_geometry='transit',
+    ):
+    """
+    Plot 1D signal-to-noise ratios for in- and out-of-transit simulations
+    """
+    if not isinstance(tso_list, list):
+        tso_list = [tso_list]
+
+    colors = [
+        px.colors.sample_colorscale('Viridis', 0.15)[0],
+        px.colors.sample_colorscale('Viridis', 0.7)[0],
+    ]
+    legends = ['in-transit', 'out-transit']
+
+    fig = go.Figure()
+    for j,tso in enumerate(tso_list):
+        wl = tso['report_in']['1d']['sn'][0]
+        snr = [
+            tso['report_in']['1d']['sn'][1],
+            tso['report_out']['1d']['sn'][1],
+        ]
+        show_legend = j == 0
+        for i in range(len(snr)):
+            fig.add_trace(go.Scatter(
+                x=wl,
+                y=snr[i],
+                mode='lines',
+                line=dict(color=colors[i], width=1.75),
+                name=legends[i],
+                legendgroup=legends[i],
+                showlegend=show_legend,
+            ))
+
+    # Saturation (take report with highest e-/sec)
+    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    wl, partial = report['1d']['n_partial_saturated']
+    wl, full = report['1d']['n_full_saturated']
+    partial_saturation = response_boundaries(wl, partial, threshold=0)
+    for j,bound in enumerate(partial_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="red", opacity=0.3,
+            layer="below", line_width=0,
+            legendgrouptitle_text="Saturation",
+            name='partial',
+            legendgroup='saturation',
+            showlegend=(j==0),
+        )
+    full_saturation = response_boundaries(wl, full, threshold=0)
+    for j,bound in enumerate(full_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="black", opacity=0.75,
+            layer="below", line_width=0,
+            name='full',
+            legendgroup='saturation',
+            showlegend=(j==0),
+        )
+
+    fig.update_traces(
+        hovertemplate='wl = %{x:.2f}<br>' + 'flux = %{y:.3f}'
+    )
+    fig.update_yaxes(
+        title_text='signal-to-noise ratio',
+        title_standoff=0,
+    )
+    if wl_scale == 'log' and wl_range is not None:
+        wl_range = [np.log10(wave) for wave in wl_range]
+    fig.update_xaxes(
+        title_text='wavelength (um)',
+        title_standoff=0,
+        range=wl_range,
+        type=wl_scale,
+    )
+    fig.update_layout(showlegend=True)
+    return fig

@@ -2578,7 +2578,6 @@ def server(input, output, session):
         if input.tso_plot.get() == 'tso':
             n_obs = input.n_obs.get()
             depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
-
             planet = tso_run['depth_label']
             fig = tplots.plotly_tso_spectra(
                 tso_run['tso'], resolution, n_obs,
@@ -2586,13 +2585,19 @@ def server(input, output, session):
                 instrument_label=tso_run['inst_label'],
                 bin_widths=None,
                 units=units, wl_range=wl_range, wl_scale=wl_scale,
-                depth_range=depth_range, obs_geometry='transit',
+                depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
             )
         elif input.tso_plot.get() == 'fluxes':
             fig = tplots.plotly_tso_fluxes(
-                tso_run['tso'], resolution,
-                wl_range=None, wl_scale=wl_scale,
-                obs_geometry='transit',
+                tso_run['tso'],
+                wl_range=wl_range, wl_scale=wl_scale,
+                obs_geometry=tso_run['obs_geometry'],
+            )
+        elif input.tso_plot.get() == 'snr':
+            fig = tplots.plotly_tso_snr(
+                tso_run['tso'],
+                wl_range=wl_range, wl_scale=wl_scale,
+                obs_geometry=tso_run['obs_geometry'],
             )
         return fig
 
