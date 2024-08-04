@@ -12,13 +12,10 @@ from itertools import groupby
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-#import pyratbay.spectrum as ps
+from pyratbay.spectrum import bin_spectrum, constant_resolution_spectrum
 from pyratbay.tools import u
+
 from .. import pandeia_io as jwst
-from ..utils import (
-    bin_spectrum,
-    constant_resolution_spectrum,
-)
 
 
 COLOR_SEQUENCE = [
@@ -439,6 +436,7 @@ def plotly_tso_spectra(
         tso_list, resolution, n_obs, model_label, instrument_label,
         bin_widths=None,
         units='percent', wl_range=None, wl_scale='linear',
+        depth_range=None,
         obs_geometry='Transit',
     ):
     """
@@ -496,16 +494,17 @@ def plotly_tso_spectra(
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
-    ymax = ymax/u(units)
-    ymin = ymin/u(units)
-    dy = 0.1 * (ymax-ymin)
-    y_range = [ymin-dy, ymax+dy]
+    if depth_range is None:
+        ymax = ymax/u(units)
+        ymin = ymin/u(units)
+        dy = 0.1 * (ymax-ymin)
+        depth_range = [ymin-dy, ymax+dy]
     title = f'{obs_geometry} depth ({units})'
     title = title.replace('percent','%').replace(' (none)', '')
     fig.update_yaxes(
         title_text=title,
         title_standoff=0,
-        range=y_range,
+        range=depth_range,
     )
 
     if wl_scale == 'log' and wl_range is not None:
