@@ -230,6 +230,7 @@ tso_popover = ui.popover(
         gap='5px',
         fill=False,
         fillable=True,
+        class_="px-0 py-1 m-0",
     ),
     ui.layout_column_wrap(
         "Wavelength:",
@@ -247,39 +248,39 @@ tso_popover = ui.popover(
             choices=wl_scales,
             selected='linear',
         ),
-        ui.panel_conditional(
-            "input.tso_plot == 'tso'",
-            "Depth:",
-        ),
-        ui.panel_conditional(
-            "input.tso_plot == 'tso'",
-            ui.input_numeric(
-                id='tso_depth_min',
-                label='',
-                value=None,
-            ),
-        ),
-        ui.panel_conditional(
-            "input.tso_plot == 'tso'",
-            ui.input_numeric(
-                id='tso_depth_max',
-                label='',
-                value=None,
-            ),
-        ),
-        ui.panel_conditional(
-            "input.tso_plot == 'tso'",
-            ui.input_action_button(
-                id="redraw_tso",
-                label="Re-draw",
-                class_="btn btn-outline-primary btn-sm",
-            ),
-        ),
         width=1/4,
         fixed_width=False,
         gap='5px',
         fill=False,
         fillable=True,
+        class_="p-0 m-0",
+    ),
+    ui.panel_conditional(
+        "input.tso_plot == 'tso'",
+        ui.layout_column_wrap(
+            "Depth:",
+            ui.input_numeric(
+                id='tso_depth_min',
+                label='',
+                value=None,
+            ),
+            ui.input_numeric(
+                id='tso_depth_max',
+                label='',
+                value=None,
+            ),
+            ui.input_action_button(
+                id="redraw_tso",
+                label="Re-draw",
+                class_="btn btn-outline-primary btn-sm",
+            ),
+            width=1/4,
+            fixed_width=False,
+            gap='5px',
+            fill=False,
+            fillable=True,
+            class_="p-0 m-0",
+        ),
     ),
     placement="top",
     id="tso_popover",
