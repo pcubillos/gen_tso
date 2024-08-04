@@ -2575,18 +2575,25 @@ def server(input, output, session):
         units = input.plot_tso_units.get()
         wl_scale = input.plot_tso_xscale.get()
         wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
-        n_obs = input.n_obs.get()
-        depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
+        if input.tso_plot.get() == 'tso':
+            n_obs = input.n_obs.get()
+            depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
 
-        planet = tso_run['depth_label']
-        fig = tplots.plotly_tso_spectra(
-            tso_run['tso'], resolution, n_obs,
-            model_label=planet,
-            instrument_label=tso_run['inst_label'],
-            bin_widths=None,
-            units=units, wl_range=wl_range, wl_scale=wl_scale,
-            depth_range=depth_range, obs_geometry='transit',
-        )
+            planet = tso_run['depth_label']
+            fig = tplots.plotly_tso_spectra(
+                tso_run['tso'], resolution, n_obs,
+                model_label=planet,
+                instrument_label=tso_run['inst_label'],
+                bin_widths=None,
+                units=units, wl_range=wl_range, wl_scale=wl_scale,
+                depth_range=depth_range, obs_geometry='transit',
+            )
+        elif input.tso_plot.get() == 'fluxes':
+            fig = tplots.plotly_tso_fluxes(
+                tso_run['tso'], resolution,
+                wl_range=None, wl_scale=wl_scale,
+                obs_geometry='transit',
+            )
         return fig
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
