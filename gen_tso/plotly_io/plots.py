@@ -451,7 +451,8 @@ def plotly_depth_spectra(
 
 
 def plotly_tso_spectra(
-        tso_list, resolution, n_obs, model_label, instrument_label,
+        tso_list, sim_depths=None, resolution=250.0, n_obs=1,
+        model_label='model', instrument_label=None,
         bin_widths=None,
         units='percent', wl_range=None, wl_scale='linear',
         depth_range=None,
@@ -474,9 +475,14 @@ def plotly_tso_spectra(
     ymin = np.inf
     legends = []
     for i,tso in enumerate(tso_list):
-        bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
-           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
-        )
+        if sim_depths is None:
+            bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
+               tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+            )
+        else:
+            bin_wl = sim_depths[i]['wl']
+            bin_spec = sim_depths[i]['depth']
+            bin_err = sim_depths[i]['uncert']
         wl = tso['wl']
         spec = tso['depth_spectrum']
 

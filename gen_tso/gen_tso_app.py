@@ -190,7 +190,7 @@ app_ui = ui.page_fluid(
     ui.tags.style(
         """
         .popover {
-            --bs-popover-max-width: 460px;
+            --bs-popover-max-width: 480px;
         }
         """
     ),
@@ -907,6 +907,26 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
     return True
 
 
+def draw(tso_list, resolution, n_obs):
+    """
+    Draw a random noised-up transit/eclipse depth realization from a TSO
+    """
+    if not isinstance(tso_list, list):
+        tso_list = [tso_list]
+
+    sims = []
+    for tso in tso_list:
+        bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
+           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+        )
+        sims.append({
+            'wl': bin_wl,
+            'depth': bin_spec,
+            'uncert': bin_err,
+        })
+    return sims
+
+
 def server(input, output, session):
     group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
@@ -925,7 +945,7 @@ def server(input, output, session):
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
     trexo_info = reactive.Value(None)
-
+    tso_draw = reactive.Value(None)
 
     @reactive.effect
     @reactive.event(input.main_settings)
@@ -1387,11 +1407,13 @@ def server(input, output, session):
 
         # TSO plot popover menu
         if tso['is_tso']:
+            n_obs = input.n_obs.get()
+            resolution = input.tso_resolution.get()
+            units = input.plot_tso_units.get()
+            tso_draw.set(draw(tso['tso'], resolution, n_obs))
             min_wl, max_wl = jwst.get_tso_wl_range(tso)
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
-            resolution = input.tso_resolution.get()
-            units = input.plot_tso_units.get()
             min_depth, max_depth, step = jwst.get_tso_depth_range(
                 tso, resolution, units,
             )
@@ -2571,16 +2593,16 @@ def server(input, output, session):
             return go.Figure()
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso_run = tso_runs[key][tso_label]
-        resolution = input.tso_resolution.get()
-        units = input.plot_tso_units.get()
         wl_scale = input.plot_tso_xscale.get()
         wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
+
         if input.tso_plot.get() == 'tso':
-            n_obs = input.n_obs.get()
+            units = input.plot_tso_units.get()
+            sim_depths = tso_draw.get()
             depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
             planet = tso_run['depth_label']
             fig = tplots.plotly_tso_spectra(
-                tso_run['tso'], resolution, n_obs,
+                tso_run['tso'], sim_depths,
                 model_label=planet,
                 instrument_label=tso_run['inst_label'],
                 bin_widths=None,
@@ -2600,6 +2622,21 @@ def server(input, output, session):
                 obs_geometry=tso_run['obs_geometry'],
             )
         return fig
+
+    @reactive.effect
+    @reactive.event(input.redraw_tso, input.n_obs, input.tso_resolution)
+    def redraw_tso_scatter():
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
+
+        n_obs = input.n_obs.get()
+        resolution = input.tso_resolution.get()
+        units = input.plot_tso_units.get()
+        tso_draw.set(draw(tso['tso'], resolution, n_obs))
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results
