@@ -28,7 +28,7 @@ wl_scales = {
 tso_choices = {
     'tso': 'TSO',
     'fluxes': 'Flux rates',
-    'sn': 'S/N',
+    'snr': 'S/N',
     'saturation': 'Saturation',
 }
 
@@ -195,27 +195,35 @@ tso_popover = ui.popover(
             label="Plot:",
             choices=tso_choices,
             selected='tso',
-            #class_="btn btn-outline-primary btn-sm",
         ),
-        ui.input_numeric(
-            id='n_obs',
-            label='Number of obs:',
-            value=1.0,
-            min=1.0, max=3000.0, step=1.0,
-            width='200px',
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            ui.input_numeric(
+                id='n_obs',
+                label='Number of obs:',
+                value=1.0,
+                min=1.0, max=3000.0, step=1.0,
+                width='200px',
+            ),
         ),
-        ui.input_numeric(
-            id='tso_resolution',
-            label='Resolution:',
-            value=250.0,
-            min=25.0, max=3000.0, step=25.0,
-            width='200px',
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            ui.input_numeric(
+                id='tso_resolution',
+                label='Resolution:',
+                value=250.0,
+                min=25.0, max=3000.0, step=25.0,
+                width='200px',
+            ),
         ),
-        ui.input_select(
-            id="plot_tso_units",
-            label="Depth units:",
-            choices = depth_units,
-            selected='percent',
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            ui.input_select(
+                id="plot_tso_units",
+                label="Depth units:",
+                choices = depth_units,
+                selected='percent',
+            ),
         ),
         width=1/4,
         fixed_width=False,
@@ -239,21 +247,33 @@ tso_popover = ui.popover(
             choices=wl_scales,
             selected='linear',
         ),
-        "Depth:",
-        ui.input_numeric(
-            id='tso_depth_min',
-            label='',
-            value=None,
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            "Depth:",
         ),
-        ui.input_numeric(
-            id='tso_depth_max',
-            label='',
-            value=None,
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            ui.input_numeric(
+                id='tso_depth_min',
+                label='',
+                value=None,
+            ),
         ),
-        ui.input_action_button(
-            id="redraw_tso",
-            label="Re-draw",
-            class_="btn btn-outline-primary btn-sm",
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            ui.input_numeric(
+                id='tso_depth_max',
+                label='',
+                value=None,
+            ),
+        ),
+        ui.panel_conditional(
+            "input.tso_plot == 'tso'",
+            ui.input_action_button(
+                id="redraw_tso",
+                label="Re-draw",
+                class_="btn btn-outline-primary btn-sm",
+            ),
         ),
         width=1/4,
         fixed_width=False,
