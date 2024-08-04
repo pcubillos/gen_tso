@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'response_boundaries',
     'plotly_filters',
     'plotly_sed_spectra',
     'plotly_depth_spectra',
@@ -36,26 +37,38 @@ COLOR_SEQUENCE = [
 ]
 
 
-def band_boundaries(band, threshold=0.001):
+def response_boundaries(wl, response, threshold=0.001):
     """
-    Find the wavelength boundaries of a passband where the response
+    Find the wavelength boundaries where a response function
     is greater than the required threshold.
 
     Parameters
     ----------
-    band: dict
-        A dictionary of the band response and wavelength.
+    wl: 1D float iterable
+        Wavelength array where a response function is sampled
+    response: 1D float iterable
+        Response function.
     threshold: float
-        Minimum band response for highlight.
+        Minimum response value for flagging.
 
     Returns
     -------
     bounds: list of float pairs
         A list of the wavelength boundaries for each contiguous
         segment with non-zero response.
+
+    Examples
+    --------
+    >>> import gen_tso.plotly_io as plots
+    >>>
+    >>> nwave = 21
+    >>> wl = np.linspace(0.0, 1.0, nwave)
+    >>> response = np.zeros(nwave)
+    >>> response[2:6] = response[10:12] = 1.0
+    >>> bounds = plots.response_boundaries(wl, response, threshold=0.5)
+    >>> print(bounds)
+    [(0.1, 0.25), (0.5, 0.55)]
     """
-    wl = band['wl']
-    response = band['response']
     bounds = []
     # Contigous ranges where response > threshold:
     for group, indices in groupby(range(len(wl)), lambda x: response[x]>threshold):
@@ -257,21 +270,22 @@ def plotly_sed_spectra(
     """
     nmodels = len(sed_models)
     fig = go.Figure(
-        #layout={'colorway':px.colors.qualitative.Alphabet},
-        layout={'colorway':COLOR_SEQUENCE},
+        layout={'colorway': COLOR_SEQUENCE},
     )
 
     # Shaded area for filter:
     if throughput is not None:
         if 'order2' in throughput:
-            band_bounds = band_boundaries(throughput['order2'], threshold=0.03)
+            wl = throughput['order2']['wl']
+            response = throughput['order2']['response']
+            band_bounds = response_boundaries(wl, response, threshold=0.03)
             for bound in band_bounds:
                 fig.add_vrect(
-                    fillcolor="LightSalmon", opacity=0.4,
+                    fillcolor="orchid", opacity=0.4,
                     x0=bound[0], x1=bound[1],
                     layer="below", line_width=0,
                 )
-        band_bounds = band_boundaries(throughput)
+        band_bounds = response_boundaries(throughput['wl'], throughput['response'])
         for bound in band_bounds:
             fig.add_vrect(
                 fillcolor="#069af3", opacity=0.4,
@@ -344,7 +358,7 @@ def plotly_sed_spectra(
 
 def plotly_depth_spectra(
         depth_models, labels, highlight_model=None,
-        wl_range=[0.5,12], units='percent', wl_scale='linear', resolution=250.0,
+        wl_range=[0.5,28], units='percent', wl_scale='linear', resolution=250.0,
         obs_geometry='Transit',
         throughput=None,
     ):
@@ -358,14 +372,16 @@ def plotly_depth_spectra(
     # Shaded area for filter:
     if throughput is not None:
         if 'order2' in throughput:
-            band_bounds = band_boundaries(throughput['order2'], threshold=0.03)
+            wl = throughput['order2']['wl']
+            response = throughput['order2']['response']
+            band_bounds = response_boundaries(wl, response, threshold=0.03)
             for bound in band_bounds:
                 fig.add_vrect(
-                    fillcolor="LightSalmon", opacity=0.4,
+                    fillcolor="orchid", opacity=0.4,
                     x0=bound[0], x1=bound[1],
                     layer="below", line_width=0,
                 )
-        band_bounds = band_boundaries(throughput)
+        band_bounds = response_boundaries(throughput['wl'], throughput['response'])
         for bound in band_bounds:
             fig.add_vrect(
                 fillcolor="#069af3", opacity=0.4,
@@ -527,5 +543,4 @@ def plotly_tso_spectra(
     ))
     fig.update_layout(showlegend=True)
     return fig
-
 
