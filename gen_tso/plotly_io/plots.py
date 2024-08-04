@@ -505,6 +505,31 @@ def plotly_tso_spectra(
         ymax = np.amax([ymax, np.amax(spec)])
         ymin = np.amin([ymin, np.amin(spec)])
 
+    # saturation
+    wl, partial = tso['report_out']['1d']['n_partial_saturated']
+    wl, full = tso['report_out']['1d']['n_full_saturated']
+    partial_saturation = response_boundaries(wl, partial, threshold=0)
+    for j,bound in enumerate(partial_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="red", opacity=0.4,
+            layer="below", line_width=0,
+            legendgrouptitle_text="Saturation",
+            legendgroup='saturation',
+            name='partial',
+            showlegend=(j==0),
+        )
+    full_saturation = response_boundaries(wl, full, threshold=0)
+    for j,bound in enumerate(full_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="black", opacity=0.9,
+            layer="below", line_width=0,
+            legendgroup='saturation',
+            name='full',
+            showlegend=(j==0),
+        )
+
     fig.update_traces(
         hovertemplate=
             'wl = %{x:.2f}<br>'+
