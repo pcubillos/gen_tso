@@ -1344,7 +1344,6 @@ def server(input, output, session):
         sed_type = tso['sed_type']
         if sed_type == 'k93models':
             sed_type = 'kurucz'
-        ui.update_select('sed_type', selected=sed_type)
 
         if name != current_target:
             if name not in cache_target:
@@ -1355,27 +1354,32 @@ def server(input, output, session):
             cache_target[name]['depth_label'] = tso['depth_label']
             cache_target[name]['rprs_sq'] = tso['rprs_sq']
             cache_target[name]['teq_planet'] = tso['teq_planet']
-            cache_target[name]['norm_band'] = norm_band
-            cache_target[name]['norm_mag'] = norm_mag
+            if target_focus == 'science':
+                cache_target[name]['norm_band'] = norm_band
+                cache_target[name]['norm_mag'] = norm_mag
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
             ui.update_text('t_dur', value=t_dur)
-            ui.update_select('magnitude_band', selected=norm_band)
-            ui.update_text('magnitude', value=norm_mag)
+            if target_focus == 'science':
+                ui.update_select('magnitude_band', selected=norm_band)
+                ui.update_text('magnitude', value=norm_mag)
 
-        reset_sed = (
-            sed_type != input.sed_type.get() or
-            tso['t_eff']!=input.t_eff.get() or
-            tso['log_g'] != input.log_g.get()
-        )
-        if sed_type in ['kurucz', 'phoenix']:
-            if reset_sed:
-                preset_sed.set(tso['sed_model'])
-            else:
-                choices = sed_dict[sed_type]
-                selected = tso['sed_model']
-                ui.update_select("sed", choices=choices, selected=selected)
+        # sed_type, sed_model, norm_band, norm_mag, sed_label
+        if target_focus == 'science':
+            ui.update_select('sed_type', selected=sed_type)
+            reset_sed = (
+                sed_type != input.sed_type.get() or
+                tso['t_eff']!=input.t_eff.get() or
+                tso['log_g'] != input.log_g.get()
+            )
+            if sed_type in ['kurucz', 'phoenix']:
+                if reset_sed:
+                    preset_sed.set(tso['sed_model'])
+                else:
+                    choices = sed_dict[sed_type]
+                    selected = tso['sed_model']
+                    ui.update_select("sed", choices=choices, selected=selected)
 
         if target_focus == 'acquisition':
             selected = tso['sed_model']
