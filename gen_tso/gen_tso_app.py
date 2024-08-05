@@ -1407,13 +1407,15 @@ def server(input, output, session):
 
         # TSO plot popover menu
         if tso['is_tso']:
-            n_obs = input.n_obs.get()
-            resolution = input.tso_resolution.get()
-            units = input.plot_tso_units.get()
-            tso_draw.set(draw(tso['tso'], resolution, n_obs))
             min_wl, max_wl = jwst.get_tso_wl_range(tso)
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
+
+            resolution = input.tso_resolution.get()
+            n_obs = input.n_obs.get()
+            tso_draw.set(draw(tso['tso'], resolution, n_obs))
+            units = 'percent'  if obs_geometry=='transit' else 'ppm'
+            ui.update_select('plot_tso_units', selected=units)
             min_depth, max_depth, step = jwst.get_tso_depth_range(
                 tso, resolution, units,
             )
@@ -1453,7 +1455,6 @@ def server(input, output, session):
         mode = input.mode.get()
         if not is_consistent(inst, mode):
             return
-        detector = get_detector(inst, mode, detectors)
         sw_warning = (
             'The SW Grism Time Series mode is still being calibrated; '
             'the SNR and saturation estimates provided by the ETC '
@@ -2624,6 +2625,24 @@ def server(input, output, session):
         return fig
 
     @reactive.effect
+    @reactive.event(input.plot_tso_units)
+    def rescale_tso_depths():
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
+        resolution = input.tso_resolution.get()
+        units = input.plot_tso_units.get()
+
+        min_depth, max_depth, step = jwst.get_tso_depth_range(
+            tso, resolution, units,
+        )
+        ui.update_numeric('tso_depth_min', value=min_depth, step=step)
+        ui.update_numeric('tso_depth_max', value=max_depth, step=step)
+
+
+    @reactive.effect
     @reactive.event(input.redraw_tso, input.n_obs, input.tso_resolution)
     def redraw_tso_scatter():
         tso_key = input.display_tso_run.get()
@@ -2634,7 +2653,6 @@ def server(input, output, session):
 
         n_obs = input.n_obs.get()
         resolution = input.tso_resolution.get()
-        units = input.plot_tso_units.get()
         tso_draw.set(draw(tso['tso'], resolution, n_obs))
 
 
