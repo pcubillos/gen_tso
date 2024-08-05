@@ -117,7 +117,6 @@ planet_popover = ui.popover(
             label='Resolution:',
             value=250.0,
             min=10.0, max=3000.0, step=25.0,
-            width='200px',
         ),
         ui.input_select(
             id="plot_depth_units",
@@ -130,16 +129,17 @@ planet_popover = ui.popover(
         gap='5px',
         fill=False,
         fillable=True,
+        class_="p-0 pb-1 m-0",
     ),
     ui.layout_column_wrap(
         "Wavelength:",
         ui.input_numeric(
             id='depth_wl_min', label='',
-            value=0.5, min=0.5, max=30.0, step=0.25,
+            value=0.6, min=0.3, max=30.0, step=0.15,
         ),
         ui.input_numeric(
             id='depth_wl_max', label='',
-            value=15.0, min=0.5, max=30.0, step=0.5,
+            value=28.0, min=0.5, max=30.0, step=1.0,
         ),
         ui.input_select(
             "plot_depth_xscale",
@@ -168,6 +168,7 @@ planet_popover = ui.popover(
         gap='5px',
         fill=False,
         fillable=True,
+        class_="p-0 m-0",
     ),
     placement="top",
     id="depth_popover",

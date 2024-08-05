@@ -778,26 +778,25 @@ def planet_model_name(input):
 
 
 def get_throughput(input):
-    inst = req(input.instrument).get().lower()
-    mode = req(input.mode).get()
+    inst = input.instrument.get().lower()
+    mode = input.mode.get()
+    disperser = input.disperser.get()
+    filter = input.filter.get()
+    subarray = input.subarray.get()
+    if not is_consistent(inst, mode, disperser, filter, subarray):
+        return None
+
     if mode == 'target_acq':
         obs_type = 'acquisition'
     else:
+        # TBD: fix when photometry goes live
         obs_type = 'spectroscopy'
-
-    subarray = input.subarray.get()
 
     if mode == 'lrsslitless':
         filter = 'None'
     elif mode == 'mrs_ts':
-        filter = input.disperser.get()
-    else:
-        filter = input.filter.get()
+        filter = disperser
 
-    if subarray not in filter_throughputs[obs_type][inst][mode]:
-        return None
-    if filter not in filter_throughputs[obs_type][inst][mode][subarray]:
-        return None
     return filter_throughputs[obs_type][inst][mode][subarray][filter]
 
 
@@ -2580,12 +2579,15 @@ def server(input, output, session):
         current_model = planet_model_name(input)
         units = input.plot_depth_units.get()
         wl_scale = input.plot_depth_xscale.get()
+        wl_range = [input.depth_wl_min.get(), input.depth_wl_max.get()]
         resolution = input.depth_resolution.get()
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
         fig = tplots.plotly_depth_spectra(
             depth_models, model_names, current_model,
-            units=units, wl_scale=wl_scale, resolution=resolution,
+            units=units,
+            wl_range=wl_range, wl_scale=wl_scale,
+            resolution=resolution,
             obs_geometry=obs_geometry,
             throughput=throughput,
         )
