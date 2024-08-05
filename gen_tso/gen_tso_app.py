@@ -21,12 +21,17 @@ import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
+import gen_tso
 from gen_tso import catalogs as cat
 from gen_tso import pandeia_io as jwst
 from gen_tso import plotly_io as tplots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
-    ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
+    ROOT,
+    get_version_advice,
+    collect_spectra,
+    read_spectrum_file,
+    pretty_print_target,
 )
 import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
@@ -35,7 +40,6 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     make_saturation_label,
 )
 from gen_tso.pandeia_io.pandeia_setup import (
-    check_latest_pandeia_version,
     check_pandeia_ref_data,
     check_pysynphot,
     update_synphot_files,
@@ -190,7 +194,7 @@ app_ui = ui.page_fluid(
     ui.tags.style(
         """
         .popover {
-            --bs-popover-max-width: 480px;
+            --bs-popover-max-width: 500px;
         }
         """
     ),
@@ -957,21 +961,8 @@ def server(input, output, session):
         button_width = '95%'
 
         my_pandeia = pandeia.engine.__version__
-        last_pandeia = check_latest_pandeia_version()
-        color = 'red' if my_pandeia != last_pandeia else '#0B980D'
-        if color == 'red':
-            advice = (
-                '.<br>You may want to upgrade pandeia.engine with:<br>'
-                '<span style="font-weight:bold;">pip install --upgrade pandeia.engine</span>'
-            )
-        else:
-            advice = ''
-        pandeia_engine_status = ui.HTML(
-            f'<br><p><span style="color:{color}">You have pandeia.engine '
-            f'version {my_pandeia}, the latest version is '
-            f'{last_pandeia}</span>{advice}</p>'
-        )
-
+        pandeia_status = get_version_advice(pandeia.engine)
+        gen_tso_status = get_version_advice(gen_tso)
         pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
         pysynphot_data = check_pysynphot()
 
@@ -983,6 +974,7 @@ def server(input, output, session):
                 'are good to go modeling JWST observations.'
             ),
             ui.hr(),
+            gen_tso_status,
             ui.layout_columns(
                 # Trexolists
                 ui.input_task_button(
@@ -1015,7 +1007,7 @@ def server(input, output, session):
                 gap='10px',
                 class_="px-0 py-0 mx-0 my-0",
             ),
-            pandeia_engine_status,
+            pandeia_status,
             pandeia_ref_status,
             ui.hr(),
             title=ui.markdown("**Settings**"),
