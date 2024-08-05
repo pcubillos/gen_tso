@@ -55,5 +55,39 @@ In the `Gen TSO` application users can:
 
 ## 4 Run Pandeia
 
-TBD
+Now you are ready to simulate a TSO with JWST.  `Gen TSO` provides many
+features to facilitate this step as well:
+
+- The text display shows exposure and saturation values in real time
+- Estimate saturation for an SED and instrument combination
+- Automate number of integrations, matching a given observation duration
+
+Once a simulation has ran:
+
+- The text display summarizes it as in the official ETC
+- The TSO tab shows interactive displays of the transit/eclipse depth, S/N, and more
+- The warnings tab alerts users of potential risks
+- Runs can be saved to a pickle file for later use
+
+---
+
+{{< video images/run_pandeia.webm width='800'>}}
+
+---
+
+
+## Bonus: Target Acquisition
+
+Here's one my favorite features.  While `Gen TSO` offers acquisition on a
+science target, sometimes the target is just too bright.  For such cases you can:
+
+- Search for Gaia stellar sources around the science target
+- Use the `ESASky` viewer to guide and select a nearby target
+- Run the acquisition on the nearby target
+
+---
+
+{{< video images/target_acquisition.webm width='800'>}}
+
+
 
