@@ -179,6 +179,14 @@ sed_units = [
     "mJy",
 ]
 
+# 2D heatmap plots:
+heatmaps = {
+    '2d_flux': 'detector',
+    '2d_snr': 'snr',
+    '2d_saturation': 'saturation',
+    '2d_groups': 'ngroups_map',
+}
+
 layout_kwargs = dict(
     width=1/2,
     fixed_width=False,
@@ -2589,7 +2597,8 @@ def server(input, output, session):
         wl_scale = input.plot_tso_xscale.get()
         wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
 
-        if input.tso_plot.get() == 'tso':
+        plot_type = input.tso_plot.get()
+        if plot_type == 'tso':
             units = input.plot_tso_units.get()
             sim_depths = tso_draw.get()
             depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
@@ -2602,18 +2611,20 @@ def server(input, output, session):
                 units=units, wl_range=wl_range, wl_scale=wl_scale,
                 depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
             )
-        elif input.tso_plot.get() == 'fluxes':
+        elif plot_type == 'fluxes':
             fig = tplots.plotly_tso_fluxes(
                 tso_run['tso'],
                 wl_range=wl_range, wl_scale=wl_scale,
                 obs_geometry=tso_run['obs_geometry'],
             )
-        elif input.tso_plot.get() == 'snr':
+        elif plot_type == 'snr':
             fig = tplots.plotly_tso_snr(
                 tso_run['tso'],
                 wl_range=wl_range, wl_scale=wl_scale,
                 obs_geometry=tso_run['obs_geometry'],
             )
+        elif plot_type in heatmaps:
+            fig = tplots.plotly_tso_2d(tso_run['tso'], heatmaps[plot_type])
         return fig
 
     @reactive.effect
