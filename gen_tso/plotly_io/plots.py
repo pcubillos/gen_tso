@@ -9,6 +9,7 @@ __all__ = [
     'plotly_tso_spectra',
     'plotly_tso_fluxes',
     'plotly_tso_snr',
+    'plotly_tso_2d',
 ]
 
 from itertools import groupby
@@ -741,3 +742,150 @@ def plotly_tso_snr(
     )
     fig.update_layout(showlegend=True)
     return fig
+
+
+def plotly_tso_2d(tso, heatmap_name):
+    """
+    Make 2D pandeia plots as in the ETC.
+
+    Parameters
+    ----------
+    tso: Dictionary
+        A TSO output.
+    heatmap_name: String
+        Heat map property to plot, select from:
+        'snr', 'detector', 'saturation', or 'ngroups_map'
+    """
+    # TBD: Think how to multipanel MRS heatmaps
+    if isinstance(tso, list):
+        report = tso[0]['report_out']
+    else:
+        report = tso['report_out']
+    inst = report['input']['configuration']['instrument']['instrument']
+    mode = report['input']['configuration']['instrument']['mode']
+    heatmap = report['2d'][heatmap_name]
+    # Shiny can't handle nans
+    is_nan = ~np.isfinite(heatmap)
+    heatmap[is_nan] = 0.0
+
+
+    x_min = report['transform']['x_min']
+    x_max = report['transform']['x_max']
+    nx = report['transform']['x_size']
+    x = np.linspace(x_min, x_max, nx)
+    xstep = report['transform']['x_step']
+
+    y_min = report['transform']['y_min']
+    y_max = report['transform']['y_max']
+    ny = report['transform']['y_size']
+    y = np.linspace(y_min, y_max, ny)
+    ystep = report['transform']['y_step']
+
+    if inst == 'niriss':
+        nx = report['transform']['x_size']
+        ny = report['transform']['y_size']
+        xlabel = ylabel = 'pixels'
+        heatmap = np.flipud(heatmap)
+    elif mode == 'mrs_ts':
+        xlabel = 'arcsec'
+        ylabel = 'arcsec'
+    elif mode == 'lrsslitless':
+        y = np.flip(y)
+        xlabel = 'dispersion (arcsec)'
+        ylabel = 'wavelength (arcsec)'
+    else:
+        x = report['1d']['sn'][0]
+        xlabel = 'wavelength (um)'
+        ylabel = 'dispersion (arcsec)'
+
+    # Strategy:
+    apertures = []
+    if inst != 'niriss':
+        aperture = report['input']['strategy']['aperture_size']
+        annulus = report['input']['strategy']['sky_annulus']
+        apertures = [
+            np.tile( 0.5*aperture, 2),
+            np.tile(-0.5*aperture, 2),
+            np.tile( annulus[0], 2),
+            np.tile(-annulus[0], 2),
+            np.tile( annulus[1], 2),
+            np.tile(-annulus[1], 2),
+        ]
+
+    fig = go.Figure(
+        data=go.Heatmap(z=heatmap, x=x, y=y, showscale=False),
+    )
+    if mode == 'mrs_ts':
+        t = np.linspace(0.0, 2.0*np.pi, 100)
+        for i, aper in enumerate(apertures):
+            if i%2 == 1:
+                continue
+            xx = aper[0]*np.sin(t)
+            yy = aper[0]*np.cos(t)
+            if i < 2:
+                name = 'aperture'
+                color= 'gold'
+                dash = None
+            else:
+                name = 'background'
+                color= 'limegreen'
+                dash = 'dash'
+            showlegend = i in [0,2]
+            fig.add_trace(go.Scatter(
+                x=xx,
+                y=yy,
+                mode='lines',
+                line=dict(color=color, width=2.0, dash=dash),
+                name=name, legendgroup=name,
+                showlegend=showlegend,
+            ))
+        fig.update_layout(
+            yaxis=dict(scaleanchor='x', scaleratio=1),
+        )
+
+    elif inst != 'niriss':
+        for i, aper in enumerate(apertures):
+            if i < 2:
+                name = 'aperture'
+                color= 'gold'
+                dash = None
+            else:
+                name = 'background'
+                color= 'limegreen'
+                dash = 'dash'
+            showlegend = i in [0,2]
+            if mode == 'lrsslitless':
+                xx = aper
+                yy = [np.amin(y), np.amax(y)]
+            else:
+                xx = [np.amin(x), np.amax(x)]
+                yy = aper
+            fig.add_trace(go.Scatter(
+                x=xx,
+                y=yy,
+                mode='lines',
+                line=dict(color=color, width=2.0, dash=dash),
+                name=name, legendgroup=name,
+                showlegend=showlegend,
+            ))
+
+    fig.update_yaxes(
+        title_text=ylabel,
+        title_standoff=0,
+    )
+    fig.update_xaxes(
+        title_text=xlabel,
+        title_standoff=0,
+    )
+
+    fig.update_layout(legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="center",
+        x=0.5
+    ))
+
+    return fig
+
+

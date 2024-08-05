@@ -27,9 +27,12 @@ wl_scales = {
 
 tso_choices = {
     'tso': 'TSO',
-    'fluxes': 'Flux rates',
+    'fluxes': 'Flux rate',
     'snr': 'S/N',
-    'saturation': 'Saturation',
+    '2d_flux': '2D flux',
+    '2d_snr': '2D S/N',
+    '2d_saturation': '2D saturation',
+    '2d_groups': '2D groups',
 }
 
 filter_popover = ui.popover(
