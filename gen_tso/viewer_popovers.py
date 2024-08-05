@@ -86,7 +86,7 @@ sed_popover = ui.popover(
         ),
         ui.input_numeric(
             id='sed_wl_max', label='',
-            value=28.0, min=0.3, max=30.0, step=0.5,
+            value=28.0, min=0.5, max=30.0, step=1.0,
         ),
         ui.input_select(
             id="plot_sed_xscale",
@@ -159,7 +159,7 @@ planet_popover = ui.popover(
             value=None,
         ),
         ui.input_action_button(
-            id="planet_clear",
+            id="depth_bounds_clear",
             label="Clear",
             class_="btn btn-outline-primary btn-sm",
         ),

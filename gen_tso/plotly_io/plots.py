@@ -39,6 +39,12 @@ COLOR_SEQUENCE = [
     'Green',  # green
 ]
 
+depth_units_label = {
+    'none': '',
+    'percent': ' (%)',
+    'ppm': ' (ppm)',
+}
+
 
 def response_boundaries(wl, response, threshold=0.001):
     """
@@ -364,13 +370,17 @@ def plotly_sed_spectra(
 
 def plotly_depth_spectra(
         depth_models, labels, highlight_model=None,
-        wl_range=[0.5,28], units='percent', wl_scale='linear', resolution=250.0,
-        obs_geometry='Transit',
+        wl_range=None, units='percent', wl_scale='linear', resolution=250.0,
+        depth_range=None,
+        obs_geometry='transit',
         throughput=None,
     ):
     """
     Make a plotly figure of transit/eclipse depth spectra.
     """
+    if depth_range is None:
+        depth_range =[None, None]
+
     nmodels = len(depth_models)
     fig = go.Figure(
         layout={'colorway':COLOR_SEQUENCE},
@@ -387,14 +397,16 @@ def plotly_depth_spectra(
                     x0=bound[0], x1=bound[1],
                     layer="below", line_width=0,
                 )
-        band_bounds = response_boundaries(throughput['wl'], throughput['response'])
-        for bound in band_bounds:
+        bounds = response_boundaries(throughput['wl'], throughput['response'])
+        for bound in bounds:
             fig.add_vrect(
                 fillcolor="#069af3", opacity=0.4,
                 x0=bound[0], x1=bound[1],
                 layer="below", line_width=0,
             )
 
+    ymax = 0.0
+    ymin = np.inf
     for j,model in enumerate(depth_models):
         wl = model['wl']
         depth = model['depth']
@@ -402,7 +414,7 @@ def plotly_depth_spectra(
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
             bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
-            depth = bin_spectrum(bin_wl, wl, depth, ignore_gaps=True) / u(units)
+            depth = bin_spectrum(bin_wl, wl, depth, ignore_gaps=True)/u(units)
             mask = np.isfinite(depth)
             wl = bin_wl[mask]
             depth = depth[mask]
@@ -421,24 +433,36 @@ def plotly_depth_spectra(
             line=linedict,
             legendrank=rank,
         ))
+        ymax = np.amax([ymax, np.amax(depth)])
+        ymin = np.amin([ymin, np.amin(depth)])
+
 
     fig.update_traces(
         hovertemplate=
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
-    units_label = {
-        'none': '',
-        'percent': ' (%)',
-        'ppm': ' (ppm)',
-    }
+    if depth_range[0] is None or depth_range[1] is None:
+        ymin = ymin
+        ymax = ymax
+        dy = 0.05 * (ymax-ymin)
+    if depth_range[0] is None:
+        depth_range[0] = ymin - dy
+    if depth_range[1] is None:
+        depth_range[1] = ymax + dy
+
+    ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
     fig.update_yaxes(
-        title_text=f'{obs_geometry} depth{units_label[units]}',
+        title_text=ylabel,
         title_standoff=0,
+        range=depth_range,
     )
 
-    if wl_scale == 'log':
-        wl_range = [np.log10(wave) for wave in wl_range]
+    if wl_scale == 'log' and wl_range is not None:
+        wl_range = [
+            None if wave is None else np.log10(wave)
+            for wave in wl_range
+        ]
     fig.update_xaxes(
         title_text='wavelength (um)',
         title_standoff=0,
@@ -479,6 +503,7 @@ def plotly_tso_spectra(
     fig = go.Figure()
     obs_col = px.colors.sample_colorscale('Viridis', 0.2)[0]
     model_col = px.colors.sample_colorscale('Viridis', 0.75)[0]
+
 
     ymax = 0.0
     ymin = np.inf
@@ -558,10 +583,9 @@ def plotly_tso_spectra(
         ymin = ymin/u(units)
         dy = 0.1 * (ymax-ymin)
         depth_range = [ymin-dy, ymax+dy]
-    title = f'{obs_geometry} depth ({units})'
-    title = title.replace('percent','%').replace(' (none)', '')
+    ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
     fig.update_yaxes(
-        title_text=title,
+        title_text=ylabel,
         title_standoff=0,
         range=depth_range,
     )
