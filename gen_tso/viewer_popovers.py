@@ -147,22 +147,6 @@ planet_popover = ui.popover(
             choices=wl_scales,
             selected='log',
         ),
-        "Depth:",
-        ui.input_numeric(
-            id='planet_depth_min',
-            label='',
-            value=None,
-        ),
-        ui.input_numeric(
-            id='planet_depth_max',
-            label='',
-            value=None,
-        ),
-        ui.input_action_button(
-            id="depth_bounds_clear",
-            label="Clear",
-            class_="btn btn-outline-primary btn-sm",
-        ),
         width=1/4,
         fixed_width=False,
         gap='5px',

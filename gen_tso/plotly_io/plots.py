@@ -443,8 +443,6 @@ def plotly_depth_spectra(
             'depth = %{y:.3f}'
     )
     if depth_range[0] is None or depth_range[1] is None:
-        ymin = ymin
-        ymax = ymax
         dy = 0.05 * (ymax-ymin)
     if depth_range[0] is None:
         depth_range[0] = ymin - dy

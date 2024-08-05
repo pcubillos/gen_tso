@@ -16,6 +16,7 @@ import pandas as pd
 import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
+from pyratbay.spectrum import bin_spectrum, constant_resolution_spectrum
 import plotly.graph_objects as go
 import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
@@ -2581,28 +2582,17 @@ def server(input, output, session):
         wl_scale = input.plot_depth_xscale.get()
         wl_range = [input.depth_wl_min.get(), input.depth_wl_max.get()]
         resolution = input.depth_resolution.get()
-        depth_range = [
-            input.planet_depth_min.get(),
-            input.planet_depth_max.get(),
-        ]
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
         fig = plots.plotly_depth_spectra(
             depth_models, model_names, current_model,
             units=units,
             wl_range=wl_range, wl_scale=wl_scale,
-            depth_range=depth_range,
             resolution=resolution,
             obs_geometry=obs_geometry,
             throughput=throughput,
         )
         return fig
-
-    @reactive.effect
-    @reactive.event(input.depth_bounds_clear)
-    def _():
-        ui.update_numeric('planet_depth_min', value='')
-        ui.update_numeric('planet_depth_max', value='')
 
 
     @render_plotly
