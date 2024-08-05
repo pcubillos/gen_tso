@@ -35,6 +35,7 @@ tso_choices = {
     '2d_groups': '2D groups',
 }
 
+
 filter_popover = ui.popover(
     ui.span(
         fa.icon_svg("gear"),
@@ -75,16 +76,17 @@ sed_popover = ui.popover(
         gap='5px',
         fill=False,
         fillable=True,
+        class_="p-0 pb-1 m-0",
     ),
     ui.layout_column_wrap(
         "Wavelength:",
         ui.input_numeric(
             id='sed_wl_min', label='',
-            value=0.5, min=0.5, max=30.0, step=0.25,
+            value=0.45, min=0.3, max=30.0, step=0.15,
         ),
         ui.input_numeric(
             id='sed_wl_max', label='',
-            value=28.0, min=0.5, max=30.0, step=0.5,
+            value=28.0, min=0.3, max=30.0, step=0.5,
         ),
         ui.input_select(
             id="plot_sed_xscale",
@@ -92,27 +94,12 @@ sed_popover = ui.popover(
             choices=wl_scales,
             selected='log',
         ),
-        "Flux:",
-        ui.input_numeric(
-            id='sed_flux_min',
-            label='',
-            value=None,
-        ),
-        ui.input_numeric(
-            id='sed_flux_max',
-            label='',
-            value=None,
-        ),
-        ui.input_action_button(
-            id="sed_clear",
-            label="Clear",
-            class_="btn btn-outline-primary btn-sm",
-        ),
         width=1/4,
         fixed_width=False,
         gap='5px',
         fill=False,
         fillable=True,
+        class_="p-0 m-0",
     ),
     placement="top",
     id="sed_popover",

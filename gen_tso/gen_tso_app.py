@@ -2550,13 +2550,17 @@ def server(input, output, session):
         # Get current SED:
         sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
 
+        wl_scale = input.plot_sed_xscale.get()
+        wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
+
         throughput = get_throughput(input)
         units = input.plot_sed_units.get()
-        wl_scale = input.plot_sed_xscale.get()
         resolution = input.plot_sed_resolution.get()
         fig = tplots.plotly_sed_spectra(
             sed_models, model_names, current_model,
-            units=units, wl_scale=wl_scale, resolution=resolution,
+            units=units,
+            wl_range=wl_range, wl_scale=wl_scale,
+            resolution=resolution,
             throughput=throughput,
         )
         return fig

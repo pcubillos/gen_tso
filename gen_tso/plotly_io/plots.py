@@ -265,7 +265,7 @@ def plotly_filters(
 
 def plotly_sed_spectra(
         sed_models, labels, highlight_model=None,
-        wl_range=[0.5,28], units='mJy', wl_scale='linear', resolution=250.0,
+        wl_range=None, units='mJy', wl_scale='linear', resolution=250.0,
         throughput=None,
     ):
     """
@@ -338,7 +338,10 @@ def plotly_sed_spectra(
     )
 
     if wl_scale == 'log':
-        wl_range = [np.log10(wave) for wave in wl_range]
+        wl_range = [
+            None if wave is None else np.log10(wave)
+            for wave in wl_range
+        ]
     fig.update_xaxes(
         title_text='wavelength (um)',
         title_standoff=0,
