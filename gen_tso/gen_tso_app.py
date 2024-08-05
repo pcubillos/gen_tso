@@ -24,7 +24,7 @@ from shinywidgets import output_widget, render_plotly
 import gen_tso
 from gen_tso import catalogs as cat
 from gen_tso import pandeia_io as jwst
-from gen_tso import plotly_io as tplots
+from gen_tso import plotly_io as plots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
     ROOT,
@@ -2529,7 +2529,7 @@ def server(input, output, session):
         else:
             throughputs = filter_throughputs['spectroscopy']
 
-        fig = tplots.plotly_filters(
+        fig = plots.plotly_filters(
             throughputs, inst, mode, subarray, filter, show_all,
         )
         return fig
@@ -2555,7 +2555,7 @@ def server(input, output, session):
         throughput = get_throughput(input)
         units = input.plot_sed_units.get()
         resolution = input.plot_sed_resolution.get()
-        fig = tplots.plotly_sed_spectra(
+        fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
             units=units,
             wl_range=wl_range, wl_scale=wl_scale,
@@ -2583,7 +2583,7 @@ def server(input, output, session):
         resolution = input.depth_resolution.get()
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
-        fig = tplots.plotly_depth_spectra(
+        fig = plots.plotly_depth_spectra(
             depth_models, model_names, current_model,
             units=units,
             wl_range=wl_range, wl_scale=wl_scale,
@@ -2609,7 +2609,7 @@ def server(input, output, session):
             sim_depths = tso_draw.get()
             depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
             planet = tso_run['depth_label']
-            fig = tplots.plotly_tso_spectra(
+            fig = plots.plotly_tso_spectra(
                 tso_run['tso'], sim_depths,
                 model_label=planet,
                 instrument_label=tso_run['inst_label'],
@@ -2618,19 +2618,19 @@ def server(input, output, session):
                 depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
             )
         elif plot_type == 'fluxes':
-            fig = tplots.plotly_tso_fluxes(
+            fig = plots.plotly_tso_fluxes(
                 tso_run['tso'],
                 wl_range=wl_range, wl_scale=wl_scale,
                 obs_geometry=tso_run['obs_geometry'],
             )
         elif plot_type == 'snr':
-            fig = tplots.plotly_tso_snr(
+            fig = plots.plotly_tso_snr(
                 tso_run['tso'],
                 wl_range=wl_range, wl_scale=wl_scale,
                 obs_geometry=tso_run['obs_geometry'],
             )
         elif plot_type in heatmaps:
-            fig = tplots.plotly_tso_2d(tso_run['tso'], heatmaps[plot_type])
+            fig = plots.plotly_tso_2d(tso_run['tso'], heatmaps[plot_type])
         return fig
 
     @reactive.effect
