@@ -25,11 +25,9 @@ __all__ = [
 import copy
 from decimal import Decimal
 import json
-import os
 import random
 
 import numpy as np
-import requests
 import scipy.interpolate as si
 import pandeia.engine.sed as sed
 from pandeia.engine.calc_utils import get_instrument_config
@@ -37,36 +35,8 @@ from pandeia.engine.normalization import NormalizationFactory
 from pyratbay.spectrum import constant_resolution_spectrum
 from pyratbay.tools import u
 import prompt_toolkit
-from synphot.config import conf, Conf
 
 from ..utils import format_text
-
-
-def check_pandeia_version():
-    has_refdata = "pandeia_refdata" in os.environ
-    has_synphot = "PYSYN_CDBS" in os.environ
-    if not has_refdata:
-        print('Unset reference data environment variable ("pandeia_refdata")')
-    if not has_synphot:
-        print('Unset synphot environment variable ("PYSYN_CDBS")')
-    return
-
-
-def fetch_vega():
-    # TBD: check synphot path exists
-    vega = Conf.vega_file
-    url = vega.defaultvalue
-    query_parameters = {}
-    response = requests.get(url, params=query_parameters)
-    if not response.ok:
-        print('Could not download Vega reference spectrum')
-        # show url, download manually?, put it in path
-
-    path = os.path.dirname(conf.vega_file)
-    if not os.path.exists(path):
-        os.mkdir(path)
-    with open(conf.vega_file, mode="wb") as file:
-        file.write(response.content)
 
 
 def read_noise_variance(report, ins_config):
