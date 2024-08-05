@@ -3,6 +3,8 @@
 
 __all__ = [
     'ROOT',
+    'check_latest_version',
+    'get_version_advice',
     'read_spectrum_file',
     'collect_spectra',
     'format_text',
@@ -12,10 +14,38 @@ __all__ = [
 import os
 
 import numpy as np
+import requests
 from shiny import ui
 
 ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 from .catalogs.utils import as_str
+
+
+def check_latest_version(package):
+    response = requests.get(f'https://pypi.org/pypi/{package}/json')
+    latest_version = response.json()['info']['version']
+    return latest_version
+
+
+def get_version_advice(package):
+    my_version = package.__version__
+    name = package.__name__
+    latest_version = check_latest_version(name)
+    if my_version != latest_version:
+        color = 'red'
+        advice = (
+            f'.<br>You may want to upgrade {name} with:<br>'
+            f'<span style="font-weight:bold;">pip install --upgrade {name}</span>'
+        )
+    else:
+        color = '#0B980D'
+        advice = ''
+    status_advice = ui.HTML(
+        f'<br><p><span style="color:{color}">You have {name} '
+        f'version {my_version}, the latest version is '
+        f'{latest_version}</span>{advice}</p>'
+    )
+    return status_advice
 
 
 def read_spectrum_file(file, on_fail=None):
