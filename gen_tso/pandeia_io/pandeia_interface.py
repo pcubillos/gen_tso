@@ -13,6 +13,8 @@ __all__ = [
     'make_scene',
     'set_depth_scene',
     'simulate_tso',
+    'get_tso_wl_range',
+    'get_tso_depth_range',
     '_print_pandeia_exposure',
     '_print_pandeia_saturation',
     '_print_pandeia_stats',
@@ -21,47 +23,20 @@ __all__ = [
 ]
 
 import copy
+from decimal import Decimal
 import json
-import os
 import random
 
 import numpy as np
-import requests
 import scipy.interpolate as si
 import pandeia.engine.sed as sed
 from pandeia.engine.calc_utils import get_instrument_config
 from pandeia.engine.normalization import NormalizationFactory
+from pyratbay.spectrum import constant_resolution_spectrum
+from pyratbay.tools import u
 import prompt_toolkit
-from synphot.config import conf, Conf
 
-from ..utils import constant_resolution_spectrum, format_text
-
-
-def check_pandeia_version():
-    has_refdata = "pandeia_refdata" in os.environ
-    has_synphot = "PYSYN_CDBS" in os.environ
-    if not has_refdata:
-        print('Unset reference data environment variable ("pandeia_refdata")')
-    if not has_synphot:
-        print('Unset synphot environment variable ("PYSYN_CDBS")')
-    return
-
-
-def fetch_vega():
-    # TBD: check synphot path exists
-    vega = Conf.vega_file
-    url = vega.defaultvalue
-    query_parameters = {}
-    response = requests.get(url, params=query_parameters)
-    if not response.ok:
-        print('Could not download Vega reference spectrum')
-        # show url, download manually?, put it in path
-
-    path = os.path.dirname(conf.vega_file)
-    if not os.path.exists(path):
-        os.mkdir(path)
-    with open(conf.vega_file, mode="wb") as file:
-        file.write(response.content)
+from ..utils import format_text
 
 
 def read_noise_variance(report, ins_config):
@@ -866,6 +841,86 @@ def simulate_tso(
 
     mask = bin_out > 0
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
+
+
+def get_tso_wl_range(tso_run):
+    """
+    Get the wavelength range covered by a TSO calculation
+
+    Parameters
+    ----------
+    tso_run: Dictionary
+        A TSO calculation output as computed by run_pandeia() in the app.
+    wl_scale: String
+        Wavelength scale: 'linear' or 'log'.
+
+    Returns
+    -------
+    min_wl: Float
+        Shorter-wavelength boundary.
+    max_wl: Float
+        Longer-wavelength boundary.
+    """
+    runs = tso_run['tso']
+    if not isinstance(runs, list):
+        runs = [runs]
+
+    min_wl = np.amin([np.amin(run['wl']) for run in runs])
+    max_wl = np.amax([np.amax(run['wl']) for run in runs])
+    # 5% margin
+    d_wl = 0.025 * (max_wl-min_wl)
+    min_wl = np.round(min_wl-d_wl, decimals=2)
+    max_wl = np.round(max_wl+d_wl, decimals=2)
+    return min_wl, max_wl
+
+
+def get_tso_depth_range(tso_run, resolution, units):
+    """
+    Get the transit/eclipse depth range covered by a TSO calculation
+
+    Parameters
+    ----------
+    tso_run: Dictionary
+        A TSO calculation output as computed by run_pandeia() in the app.
+    resolution: Float
+        Spectral resolution at which to sample the spectrum.
+    units: String
+        Depth units, select from: 'none', 'percent', 'ppm'.
+
+    Returns
+    -------
+    min_depth: Float
+        Lower depth boundary (~min depth - 3*sigma_depth).
+    max_depth: Float
+        Higher depth boundary (~max depth + 3*sigma_depth).
+    step: Float
+        A quarter of the peak-to-peak depth distance.
+    """
+    runs = tso_run['tso']
+    if not isinstance(runs, list):
+        runs = [runs]
+
+    max_depth = []
+    min_depth = []
+    for tso in runs:
+        bin_wl, bin_spec, bin_err, widths = simulate_tso(
+            tso, resolution=resolution, noiseless=True,
+        )
+        err_median = np.median(bin_err)
+        d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
+        d_min1 = np.amin(tso['depth_spectrum'] - 3*err_median)
+        max_depth.append(d_max1)
+        min_depth.append(d_min1)
+
+    min_depth = np.amin(min_depth) / u(units)
+    max_depth = np.amax(max_depth) / u(units)
+    step = 0.25*(max_depth - min_depth)
+    # Only one significant digit on the step size:
+    digits = - Decimal(step).adjusted()
+    min_depth = np.round(min_depth, decimals=digits)
+    max_depth = np.round(max_depth, decimals=digits)
+    step = np.round(step, decimals=digits)
+    return min_depth, max_depth, step
 
 
 def _print_pandeia_exposure(

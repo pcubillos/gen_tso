@@ -16,17 +16,23 @@ import pandas as pd
 import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
+from pyratbay.spectrum import bin_spectrum, constant_resolution_spectrum
 import plotly.graph_objects as go
 import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
+import gen_tso
 from gen_tso import catalogs as cat
 from gen_tso import pandeia_io as jwst
-from gen_tso import plotly_io as tplots
+from gen_tso import plotly_io as plots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
-    ROOT, collect_spectra, read_spectrum_file, pretty_print_target,
+    ROOT,
+    get_version_advice,
+    collect_spectra,
+    read_spectrum_file,
+    pretty_print_target,
 )
 import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
@@ -35,11 +41,11 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     make_saturation_label,
 )
 from gen_tso.pandeia_io.pandeia_setup import (
-    check_latest_pandeia_version,
     check_pandeia_ref_data,
     check_pysynphot,
     update_synphot_files,
 )
+import viewer_popovers as pops
 
 
 def load_catalog():
@@ -174,6 +180,14 @@ sed_units = [
     "mJy",
 ]
 
+# 2D heatmap plots:
+heatmaps = {
+    '2d_flux': 'detector',
+    '2d_snr': 'snr',
+    '2d_saturation': 'saturation',
+    '2d_groups': 'ngroups_map',
+}
+
 layout_kwargs = dict(
     width=1/2,
     fixed_width=False,
@@ -186,6 +200,13 @@ layout_kwargs = dict(
 
 
 app_ui = ui.page_fluid(
+    ui.tags.style(
+        """
+        .popover {
+            --bs-popover-max-width: 500px;
+        }
+        """
+    ),
     ui.layout_columns(
         ui.span(
             ui.HTML(
@@ -637,22 +658,7 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Filters",
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        "Show filter throughputs",
-                        ui.input_radio_buttons(
-                            id="filter_filter",
-                            label=None,
-                            choices=["none", "all"],
-                            inline=True,
-                        ),
-                        placement="right",
-                        #placement="top",
-                        id="filter_popover",
-                    ),
+                    pops.filter_popover,
                     cs.custom_card(
                         output_widget("plotly_filters", fillable=True),
                         body_args=dict(class_='m-0 p-0'),
@@ -679,112 +685,27 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Stellar SED",
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        ui.input_numeric(
-                            id='plot_sed_resolution',
-                            label='Resolution:',
-                            value=0.0,
-                            min=10.0, max=3000.0, step=25.0,
-                        ),
-                        ui.input_select(
-                            "plot_sed_units",
-                            "Flux units:",
-                            choices = ['mJy'],
-                            selected='mJy',
-                        ),
-                        ui.input_select(
-                            "plot_sed_xscale",
-                            "Wavelength axis:",
-                            choices = ['linear', 'log'],
-                            selected='log',
-                        ),
-                        placement="right",
-                        id="sed_popover",
-                    ),
+                    pops.sed_popover,
                     cs.custom_card(
                         output_widget("plotly_sed", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
-                        height='300px',
+                        height='350px',
                     ),
                 ),
                 ui.nav_panel(
                     ui.output_text('transit_depth_label'),
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        ui.input_numeric(
-                            id='depth_resolution',
-                            label='Resolution:',
-                            value=250.0,
-                            min=10.0, max=3000.0, step=25.0,
-                        ),
-                        ui.input_select(
-                            "plot_depth_units",
-                            "Depth units:",
-                            choices = depth_units,
-                            selected='percent',
-                        ),
-                        ui.input_select(
-                            "plot_depth_xscale",
-                            "Wavelength axis:",
-                            choices = ['linear', 'log'],
-                            selected='log',
-                        ),
-                        placement="right",
-                        id="depth_popover",
-                    ),
+                    pops.planet_popover,
                     cs.custom_card(
                         output_widget("plotly_depth", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
-                        height='300px',
+                        height='350px',
                     ),
                 ),
                 ui.nav_panel(
                     "TSO",
-                    ui.popover(
-                        ui.span(
-                            fa.icon_svg("gear"),
-                            style="position:absolute; top: 5px; right: 7px;",
-                        ),
-                        ui.input_numeric(
-                            id='n_obs',
-                            label='Number of observations:',
-                            value=1.0,
-                            min=1.0, max=3000.0, step=1.0,
-                        ),
-                        ui.input_numeric(
-                            id='tso_resolution',
-                            label='Observation resolution:',
-                            value=250.0,
-                            min=25.0, max=3000.0, step=25.0,
-                        ),
-                        ui.input_select(
-                            "plot_tso_units",
-                            "Depth units:",
-                            choices = depth_units,
-                            selected='percent',
-                        ),
-                        ui.input_select(
-                            "plot_tso_xscale",
-                            "Wavelength axis:",
-                            choices = ['linear', 'log'],
-                        ),
-                        ui.input_select(
-                            "plot_tso_xrange",
-                            "Wavelength range:",
-                            choices = ['auto', 'JWST (0.6--12.0 um)'],
-                        ),
-                        placement="right",
-                        id="tso_popover",
-                    ),
+                    pops.tso_popover,
                     cs.custom_card(
                         output_widget("plotly_tso", fillable=True),
                         body_args=dict(padding='0px'),
@@ -858,26 +779,25 @@ def planet_model_name(input):
 
 
 def get_throughput(input):
-    inst = req(input.instrument).get().lower()
-    mode = req(input.mode).get()
+    inst = input.instrument.get().lower()
+    mode = input.mode.get()
+    disperser = input.disperser.get()
+    filter = input.filter.get()
+    subarray = input.subarray.get()
+    if not is_consistent(inst, mode, disperser, filter, subarray):
+        return None
+
     if mode == 'target_acq':
         obs_type = 'acquisition'
     else:
+        # TBD: fix when photometry goes live
         obs_type = 'spectroscopy'
-
-    subarray = input.subarray.get()
 
     if mode == 'lrsslitless':
         filter = 'None'
     elif mode == 'mrs_ts':
-        filter = input.disperser.get()
-    else:
-        filter = input.filter.get()
+        filter = disperser
 
-    if subarray not in filter_throughputs[obs_type][inst][mode]:
-        return None
-    if filter not in filter_throughputs[obs_type][inst][mode][subarray]:
-        return None
     return filter_throughputs[obs_type][inst][mode][subarray][filter]
 
 
@@ -999,6 +919,26 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
     return True
 
 
+def draw(tso_list, resolution, n_obs):
+    """
+    Draw a random noised-up transit/eclipse depth realization from a TSO
+    """
+    if not isinstance(tso_list, list):
+        tso_list = [tso_list]
+
+    sims = []
+    for tso in tso_list:
+        bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
+           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+        )
+        sims.append({
+            'wl': bin_wl,
+            'depth': bin_spec,
+            'uncert': bin_err,
+        })
+    return sims
+
+
 def server(input, output, session):
     group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
@@ -1017,7 +957,7 @@ def server(input, output, session):
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
     trexo_info = reactive.Value(None)
-
+    tso_draw = reactive.Value(None)
 
     @reactive.effect
     @reactive.event(input.main_settings)
@@ -1029,21 +969,8 @@ def server(input, output, session):
         button_width = '95%'
 
         my_pandeia = pandeia.engine.__version__
-        last_pandeia = check_latest_pandeia_version()
-        color = 'red' if my_pandeia != last_pandeia else '#0B980D'
-        if color == 'red':
-            advice = (
-                '.<br>You may want to upgrade pandeia.engine with:<br>'
-                '<span style="font-weight:bold;">pip install --upgrade pandeia.engine</span>'
-            )
-        else:
-            advice = ''
-        pandeia_engine_status = ui.HTML(
-            f'<br><p><span style="color:{color}">You have pandeia.engine '
-            f'version {my_pandeia}, the latest version is '
-            f'{last_pandeia}</span>{advice}</p>'
-        )
-
+        pandeia_status = get_version_advice(pandeia.engine)
+        gen_tso_status = get_version_advice(gen_tso)
         pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
         pysynphot_data = check_pysynphot()
 
@@ -1055,6 +982,7 @@ def server(input, output, session):
                 'are good to go modeling JWST observations.'
             ),
             ui.hr(),
+            gen_tso_status,
             ui.layout_columns(
                 # Trexolists
                 ui.input_task_button(
@@ -1087,7 +1015,7 @@ def server(input, output, session):
                 gap='10px',
                 class_="px-0 py-0 mx-0 my-0",
             ),
-            pandeia_engine_status,
+            pandeia_status,
             pandeia_ref_status,
             ui.hr(),
             title=ui.markdown("**Settings**"),
@@ -1246,6 +1174,7 @@ def server(input, output, session):
         )
 
         tso_run = dict(
+            is_tso=run_is_tso,
             # The detector
             inst=inst,
             mode=mode,
@@ -1282,7 +1211,6 @@ def server(input, output, session):
 
         if run_is_tso:
             # The planet
-            #tso_run['depth_model_name'] = depth_label
             tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
                 reports = (
@@ -1477,6 +1405,23 @@ def server(input, output, session):
             ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
             ui.update_numeric("teq_planet", value=tso['teq_planet'])
 
+        # TSO plot popover menu
+        if tso['is_tso']:
+            min_wl, max_wl = jwst.get_tso_wl_range(tso)
+            ui.update_numeric('tso_wl_min', value=min_wl)
+            ui.update_numeric('tso_wl_max', value=max_wl)
+
+            resolution = input.tso_resolution.get()
+            n_obs = input.n_obs.get()
+            tso_draw.set(draw(tso['tso'], resolution, n_obs))
+            units = 'percent'  if obs_geometry=='transit' else 'ppm'
+            ui.update_select('plot_tso_units', selected=units)
+            min_depth, max_depth, step = jwst.get_tso_depth_range(
+                tso, resolution, units,
+            )
+            ui.update_numeric('tso_depth_min', value=min_depth, step=step)
+            ui.update_numeric('tso_depth_max', value=max_depth, step=step)
+
 
     @render.image
     def tso_logo():
@@ -1510,7 +1455,6 @@ def server(input, output, session):
         mode = input.mode.get()
         if not is_consistent(inst, mode):
             return
-        detector = get_detector(inst, mode, detectors)
         sw_warning = (
             'The SW Grism Time Series mode is still being calibrated; '
             'the SNR and saturation estimates provided by the ETC '
@@ -2586,7 +2530,7 @@ def server(input, output, session):
         else:
             throughputs = filter_throughputs['spectroscopy']
 
-        fig = tplots.plotly_filters(
+        fig = plots.plotly_filters(
             throughputs, inst, mode, subarray, filter, show_all,
         )
         return fig
@@ -2606,13 +2550,17 @@ def server(input, output, session):
         # Get current SED:
         sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
 
+        wl_scale = input.plot_sed_xscale.get()
+        wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
+
         throughput = get_throughput(input)
         units = input.plot_sed_units.get()
-        wl_scale = input.plot_sed_xscale.get()
         resolution = input.plot_sed_resolution.get()
-        fig = tplots.plotly_sed_spectra(
+        fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
-            units=units, wl_scale=wl_scale, resolution=resolution,
+            units=units,
+            wl_range=wl_range, wl_scale=wl_scale,
+            resolution=resolution,
             throughput=throughput,
         )
         return fig
@@ -2632,16 +2580,20 @@ def server(input, output, session):
         current_model = planet_model_name(input)
         units = input.plot_depth_units.get()
         wl_scale = input.plot_depth_xscale.get()
+        wl_range = [input.depth_wl_min.get(), input.depth_wl_max.get()]
         resolution = input.depth_resolution.get()
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
-        fig = tplots.plotly_depth_spectra(
+        fig = plots.plotly_depth_spectra(
             depth_models, model_names, current_model,
-            units=units, wl_scale=wl_scale, resolution=resolution,
+            units=units,
+            wl_range=wl_range, wl_scale=wl_scale,
+            resolution=resolution,
             obs_geometry=obs_geometry,
             throughput=throughput,
         )
         return fig
+
 
     @render_plotly
     def plotly_tso():
@@ -2649,27 +2601,71 @@ def server(input, output, session):
         if tso_key is None:
             return go.Figure()
         key, tso_label = tso_key.split('_', maxsplit=1)
-        n_obs = input.n_obs.get()
+        tso_run = tso_runs[key][tso_label]
+        wl_scale = input.plot_tso_xscale.get()
+        wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
+
+        plot_type = input.tso_plot.get()
+        if plot_type == 'tso':
+            units = input.plot_tso_units.get()
+            sim_depths = tso_draw.get()
+            depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
+            planet = tso_run['depth_label']
+            fig = plots.plotly_tso_spectra(
+                tso_run['tso'], sim_depths,
+                model_label=planet,
+                instrument_label=tso_run['inst_label'],
+                bin_widths=None,
+                units=units, wl_range=wl_range, wl_scale=wl_scale,
+                depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
+            )
+        elif plot_type == 'fluxes':
+            fig = plots.plotly_tso_fluxes(
+                tso_run['tso'],
+                wl_range=wl_range, wl_scale=wl_scale,
+                obs_geometry=tso_run['obs_geometry'],
+            )
+        elif plot_type == 'snr':
+            fig = plots.plotly_tso_snr(
+                tso_run['tso'],
+                wl_range=wl_range, wl_scale=wl_scale,
+                obs_geometry=tso_run['obs_geometry'],
+            )
+        elif plot_type in heatmaps:
+            fig = plots.plotly_tso_2d(tso_run['tso'], heatmaps[plot_type])
+        return fig
+
+    @reactive.effect
+    @reactive.event(input.plot_tso_units)
+    def rescale_tso_depths():
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
-        wl_scale = input.plot_tso_xscale.get()
-        x_range = input.plot_tso_xrange.get()
-        if x_range == 'auto':
-            wl_range = None
-        else:
-            wl_range = [0.6, 13.0]
 
-        tso_run = tso_runs[key][tso_label]
-        planet = tso_run['depth_label']
-        fig = tplots.plotly_tso_spectra(
-            tso_run['tso'], resolution, n_obs,
-            model_label=planet,
-            instrument_label=tso_run['inst_label'],
-            bin_widths=None,
-            units=units, wl_range=wl_range, wl_scale=wl_scale,
-            obs_geometry='transit',
+        min_depth, max_depth, step = jwst.get_tso_depth_range(
+            tso, resolution, units,
         )
-        return fig
+        ui.update_numeric('tso_depth_min', value=min_depth, step=step)
+        ui.update_numeric('tso_depth_max', value=max_depth, step=step)
+
+
+    @reactive.effect
+    @reactive.event(input.redraw_tso, input.n_obs, input.tso_resolution)
+    def redraw_tso_scatter():
+        tso_key = input.display_tso_run.get()
+        if tso_key is None:
+            return
+        key, tso_label = tso_key.split('_', maxsplit=1)
+        tso = tso_runs[key][tso_label]
+
+        n_obs = input.n_obs.get()
+        resolution = input.tso_resolution.get()
+        tso_draw.set(draw(tso['tso'], resolution, n_obs))
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Results

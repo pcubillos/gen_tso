@@ -15,7 +15,7 @@ from pandeia.engine.calc_utils import (
 )
 from pandeia.engine.perform_calculation import perform_calculation
 
-from ..plotly_io.plots import band_boundaries
+from ..plotly_io.plots import response_boundaries
 from .pandeia_interface import (
     read_noise_variance,
     bin_search_exposure_time,
@@ -109,8 +109,8 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['readout_pattern'] = readout
         self._ensure_wl_reference_in_range()
         # Default aperture/sky annuli:
-        if self.instrument in default_aperture_strategy:
-            strat = default_aperture_strategy[self.instrument]
+        if self.mode in default_aperture_strategy:
+            strat = default_aperture_strategy[self.mode]
             self.calc['strategy']['aperture_size'] = strat['aperture_size']
             self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
@@ -184,7 +184,9 @@ class PandeiaCalculation():
             subarray = self.calc['configuration']['detector']['subarray']
             filter = f'{disperser}/{filter}'
             throughput = bots_throughputs[subarray][filter]
-            band_bounds = band_boundaries(throughput, threshold=0.03)
+            wl = throughput['wl']
+            response = throughput['response']
+            band_bounds = response_boundaries(wl, response, threshold=0.03)
             bounds = [tuple(np.round(bounds, 3)) for bounds in band_bounds]
             if len(bounds) == 1:
                 bounds = bounds[0]

@@ -2,23 +2,24 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'response_boundaries',
     'plotly_filters',
     'plotly_sed_spectra',
     'plotly_depth_spectra',
     'plotly_tso_spectra',
+    'plotly_tso_fluxes',
+    'plotly_tso_snr',
+    'plotly_tso_2d',
 ]
 
 from itertools import groupby
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-#import pyratbay.spectrum as ps
+from pyratbay.spectrum import bin_spectrum, constant_resolution_spectrum
 from pyratbay.tools import u
+
 from .. import pandeia_io as jwst
-from ..utils import (
-    bin_spectrum,
-    constant_resolution_spectrum,
-)
 
 
 COLOR_SEQUENCE = [
@@ -38,27 +39,45 @@ COLOR_SEQUENCE = [
     'Green',  # green
 ]
 
+depth_units_label = {
+    'none': '',
+    'percent': ' (%)',
+    'ppm': ' (ppm)',
+}
 
-def band_boundaries(band, threshold=0.001):
+
+def response_boundaries(wl, response, threshold=0.001):
     """
-    Find the wavelength boundaries of a passband where the response
+    Find the wavelength boundaries where a response function
     is greater than the required threshold.
 
     Parameters
     ----------
-    band: dict
-        A dictionary of the band response and wavelength.
+    wl: 1D float iterable
+        Wavelength array where a response function is sampled
+    response: 1D float iterable
+        Response function.
     threshold: float
-        Minimum band response for highlight.
+        Minimum response value for flagging.
 
     Returns
     -------
     bounds: list of float pairs
         A list of the wavelength boundaries for each contiguous
         segment with non-zero response.
+
+    Examples
+    --------
+    >>> import gen_tso.plotly_io as plots
+    >>>
+    >>> nwave = 21
+    >>> wl = np.linspace(0.0, 1.0, nwave)
+    >>> response = np.zeros(nwave)
+    >>> response[2:6] = response[10:12] = 1.0
+    >>> bounds = plots.response_boundaries(wl, response, threshold=0.5)
+    >>> print(bounds)
+    [(0.1, 0.25), (0.5, 0.55)]
     """
-    wl = band['wl']
-    response = band['response']
     bounds = []
     # Contigous ranges where response > threshold:
     for group, indices in groupby(range(len(wl)), lambda x: response[x]>threshold):
@@ -252,7 +271,7 @@ def plotly_filters(
 
 def plotly_sed_spectra(
         sed_models, labels, highlight_model=None,
-        wl_range=[0.5,28], units='mJy', wl_scale='linear', resolution=250.0,
+        wl_range=None, units='mJy', wl_scale='linear', resolution=250.0,
         throughput=None,
     ):
     """
@@ -260,21 +279,22 @@ def plotly_sed_spectra(
     """
     nmodels = len(sed_models)
     fig = go.Figure(
-        #layout={'colorway':px.colors.qualitative.Alphabet},
-        layout={'colorway':COLOR_SEQUENCE},
+        layout={'colorway': COLOR_SEQUENCE},
     )
 
     # Shaded area for filter:
     if throughput is not None:
         if 'order2' in throughput:
-            band_bounds = band_boundaries(throughput['order2'], threshold=0.03)
+            wl = throughput['order2']['wl']
+            response = throughput['order2']['response']
+            band_bounds = response_boundaries(wl, response, threshold=0.03)
             for bound in band_bounds:
                 fig.add_vrect(
-                    fillcolor="LightSalmon", opacity=0.4,
+                    fillcolor="orchid", opacity=0.4,
                     x0=bound[0], x1=bound[1],
                     layer="below", line_width=0,
                 )
-        band_bounds = band_boundaries(throughput)
+        band_bounds = response_boundaries(throughput['wl'], throughput['response'])
         for bound in band_bounds:
             fig.add_vrect(
                 fillcolor="#069af3", opacity=0.4,
@@ -324,7 +344,10 @@ def plotly_sed_spectra(
     )
 
     if wl_scale == 'log':
-        wl_range = [np.log10(wave) for wave in wl_range]
+        wl_range = [
+            None if wave is None else np.log10(wave)
+            for wave in wl_range
+        ]
     fig.update_xaxes(
         title_text='wavelength (um)',
         title_standoff=0,
@@ -347,13 +370,17 @@ def plotly_sed_spectra(
 
 def plotly_depth_spectra(
         depth_models, labels, highlight_model=None,
-        wl_range=[0.5,12], units='percent', wl_scale='linear', resolution=250.0,
-        obs_geometry='Transit',
+        wl_range=None, units='percent', wl_scale='linear', resolution=250.0,
+        depth_range=None,
+        obs_geometry='transit',
         throughput=None,
     ):
     """
     Make a plotly figure of transit/eclipse depth spectra.
     """
+    if depth_range is None:
+        depth_range =[None, None]
+
     nmodels = len(depth_models)
     fig = go.Figure(
         layout={'colorway':COLOR_SEQUENCE},
@@ -361,21 +388,25 @@ def plotly_depth_spectra(
     # Shaded area for filter:
     if throughput is not None:
         if 'order2' in throughput:
-            band_bounds = band_boundaries(throughput['order2'], threshold=0.03)
+            wl = throughput['order2']['wl']
+            response = throughput['order2']['response']
+            band_bounds = response_boundaries(wl, response, threshold=0.03)
             for bound in band_bounds:
                 fig.add_vrect(
-                    fillcolor="LightSalmon", opacity=0.4,
+                    fillcolor="orchid", opacity=0.4,
                     x0=bound[0], x1=bound[1],
                     layer="below", line_width=0,
                 )
-        band_bounds = band_boundaries(throughput)
-        for bound in band_bounds:
+        bounds = response_boundaries(throughput['wl'], throughput['response'])
+        for bound in bounds:
             fig.add_vrect(
                 fillcolor="#069af3", opacity=0.4,
                 x0=bound[0], x1=bound[1],
                 layer="below", line_width=0,
             )
 
+    ymax = 0.0
+    ymin = np.inf
     for j,model in enumerate(depth_models):
         wl = model['wl']
         depth = model['depth']
@@ -383,7 +414,7 @@ def plotly_depth_spectra(
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
             bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
-            depth = bin_spectrum(bin_wl, wl, depth, ignore_gaps=True) / u(units)
+            depth = bin_spectrum(bin_wl, wl, depth, ignore_gaps=True)/u(units)
             mask = np.isfinite(depth)
             wl = bin_wl[mask]
             depth = depth[mask]
@@ -402,19 +433,34 @@ def plotly_depth_spectra(
             line=linedict,
             legendrank=rank,
         ))
+        ymax = np.amax([ymax, np.amax(depth)])
+        ymin = np.amin([ymin, np.amin(depth)])
+
 
     fig.update_traces(
         hovertemplate=
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
+    if depth_range[0] is None or depth_range[1] is None:
+        dy = 0.05 * (ymax-ymin)
+    if depth_range[0] is None:
+        depth_range[0] = ymin - dy
+    if depth_range[1] is None:
+        depth_range[1] = ymax + dy
+
+    ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
     fig.update_yaxes(
-        title_text=f'{obs_geometry} depth ({units})'.replace('percent','%'),
+        title_text=ylabel,
         title_standoff=0,
+        range=depth_range,
     )
 
-    if wl_scale == 'log':
-        wl_range = [np.log10(wave) for wave in wl_range]
+    if wl_scale == 'log' and wl_range is not None:
+        wl_range = [
+            None if wave is None else np.log10(wave)
+            for wave in wl_range
+        ]
     fig.update_xaxes(
         title_text='wavelength (um)',
         title_standoff=0,
@@ -436,10 +482,12 @@ def plotly_depth_spectra(
 
 
 def plotly_tso_spectra(
-        tso_list, resolution, n_obs, model_label, instrument_label,
+        tso_list, sim_depths=None, resolution=250.0, n_obs=1,
+        model_label='model', instrument_label=None,
         bin_widths=None,
         units='percent', wl_range=None, wl_scale='linear',
-        obs_geometry='Transit',
+        depth_range=None,
+        obs_geometry='transit',
     ):
     """
     Make a plotly figure of transit/eclipse depth TSO spectra.
@@ -454,13 +502,19 @@ def plotly_tso_spectra(
     obs_col = px.colors.sample_colorscale('Viridis', 0.2)[0]
     model_col = px.colors.sample_colorscale('Viridis', 0.75)[0]
 
+
     ymax = 0.0
     ymin = np.inf
     legends = []
     for i,tso in enumerate(tso_list):
-        bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
-           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
-        )
+        if sim_depths is None:
+            bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
+               tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+            )
+        else:
+            bin_wl = sim_depths[i]['wl']
+            bin_spec = sim_depths[i]['depth']
+            bin_err = sim_depths[i]['uncert']
         wl = tso['wl']
         spec = tso['depth_spectrum']
 
@@ -491,21 +545,47 @@ def plotly_tso_spectra(
         ymax = np.amax([ymax, np.amax(spec)])
         ymin = np.amin([ymin, np.amin(spec)])
 
+    # Saturation (take report with highest e-/sec)
+    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    wl, partial = report['1d']['n_partial_saturated']
+    wl, full = report['1d']['n_full_saturated']
+    partial_saturation = response_boundaries(wl, partial, threshold=0)
+    for j,bound in enumerate(partial_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="red", opacity=0.3,
+            layer="below", line_width=0,
+            legendgrouptitle_text="Saturation",
+            legendgroup='saturation',
+            name='partial',
+            showlegend=(j==0),
+        )
+    full_saturation = response_boundaries(wl, full, threshold=0)
+    for j,bound in enumerate(full_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="black", opacity=0.75,
+            layer="below", line_width=0,
+            legendgroup='saturation',
+            name='full',
+            showlegend=(j==0),
+        )
+
     fig.update_traces(
         hovertemplate=
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
-    ymax = ymax/u(units)
-    ymin = ymin/u(units)
-    dy = 0.1 * (ymax-ymin)
-    y_range = [ymin-dy, ymax+dy]
-    title = f'{obs_geometry} depth ({units})'
-    title = title.replace('percent','%').replace(' (none)', '')
+    if depth_range is None:
+        ymax = ymax/u(units)
+        ymin = ymin/u(units)
+        dy = 0.1 * (ymax-ymin)
+        depth_range = [ymin-dy, ymax+dy]
+    ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
     fig.update_yaxes(
-        title_text=title,
+        title_text=ylabel,
         title_standoff=0,
-        range=y_range,
+        range=depth_range,
     )
 
     if wl_scale == 'log' and wl_range is not None:
@@ -527,6 +607,315 @@ def plotly_tso_spectra(
         x=1
     ))
     fig.update_layout(showlegend=True)
+    return fig
+
+
+def plotly_tso_fluxes(
+        tso_list,
+        wl_range=None, wl_scale='linear',
+        obs_geometry='transit',
+    ):
+    """
+    Plot 1D source and background flux rates
+    """
+    if not isinstance(tso_list, list):
+        tso_list = [tso_list]
+
+    colors = [
+        px.colors.sample_colorscale('Viridis', 0.15)[0],
+        px.colors.sample_colorscale('Viridis', 0.7)[0],
+        px.colors.sample_colorscale('Viridis', 0.9)[0],
+    ]
+    legends = ['in-transit', 'out-transit', 'background']
+
+    fig = go.Figure()
+    for j,tso in enumerate(tso_list):
+        wl = tso['report_in']['1d']['extracted_flux'][0]
+        fluxes = [
+            tso['report_in']['1d']['extracted_flux'][1],
+            tso['report_out']['1d']['extracted_flux'][1],
+            tso['report_out']['1d']['extracted_bg_only'][1],
+        ]
+        show_legend = j == 0
+        for i in range(len(fluxes)):
+            fig.add_trace(go.Scatter(
+                x=wl,
+                y=fluxes[i],
+                mode='lines',
+                line=dict(color=colors[i], width=1.75),
+                name=legends[i],
+                legendgroup=legends[i],
+                showlegend=show_legend,
+            ))
+
+    # Saturation (take report with highest e-/sec)
+    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    wl, partial = report['1d']['n_partial_saturated']
+    wl, full = report['1d']['n_full_saturated']
+    partial_saturation = response_boundaries(wl, partial, threshold=0)
+    for j,bound in enumerate(partial_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="red", opacity=0.3,
+            layer="below", line_width=0,
+            legendgrouptitle_text="Saturation",
+            name='partial',
+            legendgroup='saturation',
+            showlegend=(j==0),
+        )
+    full_saturation = response_boundaries(wl, full, threshold=0)
+    for j,bound in enumerate(full_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="black", opacity=0.75,
+            layer="below", line_width=0,
+            name='full',
+            legendgroup='saturation',
+            showlegend=(j==0),
+        )
+
+    fig.update_traces(
+        hovertemplate='wl = %{x:.2f}<br>' + 'flux = %{y:.3f}'
+    )
+    fig.update_yaxes(
+        title_text='flux rate (e-/sec)',
+        title_standoff=0,
+    )
+    if wl_scale == 'log' and wl_range is not None:
+        wl_range = [np.log10(wave) for wave in wl_range]
+    fig.update_xaxes(
+        title_text='wavelength (um)',
+        title_standoff=0,
+        range=wl_range,
+        type=wl_scale,
+    )
+    fig.update_layout(showlegend=True)
+    return fig
+
+
+def plotly_tso_snr(
+        tso_list,
+        wl_range=None, wl_scale='linear',
+        obs_geometry='transit',
+    ):
+    """
+    Plot 1D signal-to-noise ratios for in- and out-of-transit simulations
+    """
+    if not isinstance(tso_list, list):
+        tso_list = [tso_list]
+
+    colors = [
+        px.colors.sample_colorscale('Viridis', 0.15)[0],
+        px.colors.sample_colorscale('Viridis', 0.7)[0],
+    ]
+    legends = ['in-transit', 'out-transit']
+
+    fig = go.Figure()
+    for j,tso in enumerate(tso_list):
+        wl = tso['report_in']['1d']['sn'][0]
+        snr = [
+            tso['report_in']['1d']['sn'][1],
+            tso['report_out']['1d']['sn'][1],
+        ]
+        show_legend = j == 0
+        for i in range(len(snr)):
+            fig.add_trace(go.Scatter(
+                x=wl,
+                y=snr[i],
+                mode='lines',
+                line=dict(color=colors[i], width=1.75),
+                name=legends[i],
+                legendgroup=legends[i],
+                showlegend=show_legend,
+            ))
+
+    # Saturation (take report with highest e-/sec)
+    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    wl, partial = report['1d']['n_partial_saturated']
+    wl, full = report['1d']['n_full_saturated']
+    partial_saturation = response_boundaries(wl, partial, threshold=0)
+    for j,bound in enumerate(partial_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="red", opacity=0.3,
+            layer="below", line_width=0,
+            legendgrouptitle_text="Saturation",
+            name='partial',
+            legendgroup='saturation',
+            showlegend=(j==0),
+        )
+    full_saturation = response_boundaries(wl, full, threshold=0)
+    for j,bound in enumerate(full_saturation):
+        fig.add_vrect(
+            x0=bound[0], x1=bound[1],
+            fillcolor="black", opacity=0.75,
+            layer="below", line_width=0,
+            name='full',
+            legendgroup='saturation',
+            showlegend=(j==0),
+        )
+
+    fig.update_traces(
+        hovertemplate='wl = %{x:.2f}<br>' + 'flux = %{y:.3f}'
+    )
+    fig.update_yaxes(
+        title_text='signal-to-noise ratio',
+        title_standoff=0,
+    )
+    if wl_scale == 'log' and wl_range is not None:
+        wl_range = [np.log10(wave) for wave in wl_range]
+    fig.update_xaxes(
+        title_text='wavelength (um)',
+        title_standoff=0,
+        range=wl_range,
+        type=wl_scale,
+    )
+    fig.update_layout(showlegend=True)
+    return fig
+
+
+def plotly_tso_2d(tso, heatmap_name):
+    """
+    Make 2D pandeia plots as in the ETC.
+
+    Parameters
+    ----------
+    tso: Dictionary
+        A TSO output.
+    heatmap_name: String
+        Heat map property to plot, select from:
+        'snr', 'detector', 'saturation', or 'ngroups_map'
+    """
+    # TBD: Think how to multipanel MRS heatmaps
+    if isinstance(tso, list):
+        report = tso[0]['report_out']
+    else:
+        report = tso['report_out']
+    inst = report['input']['configuration']['instrument']['instrument']
+    mode = report['input']['configuration']['instrument']['mode']
+    heatmap = report['2d'][heatmap_name]
+    # Shiny can't handle nans
+    is_nan = ~np.isfinite(heatmap)
+    heatmap[is_nan] = 0.0
+
+
+    x_min = report['transform']['x_min']
+    x_max = report['transform']['x_max']
+    nx = report['transform']['x_size']
+    x = np.linspace(x_min, x_max, nx)
+    xstep = report['transform']['x_step']
+
+    y_min = report['transform']['y_min']
+    y_max = report['transform']['y_max']
+    ny = report['transform']['y_size']
+    y = np.linspace(y_min, y_max, ny)
+    ystep = report['transform']['y_step']
+
+    if inst == 'niriss':
+        nx = report['transform']['x_size']
+        ny = report['transform']['y_size']
+        xlabel = ylabel = 'pixels'
+        heatmap = np.flipud(heatmap)
+    elif mode == 'mrs_ts':
+        xlabel = 'arcsec'
+        ylabel = 'arcsec'
+    elif mode == 'lrsslitless':
+        y = np.flip(y)
+        xlabel = 'dispersion (arcsec)'
+        ylabel = 'wavelength (arcsec)'
+    else:
+        x = report['1d']['sn'][0]
+        xlabel = 'wavelength (um)'
+        ylabel = 'dispersion (arcsec)'
+
+    # Strategy:
+    apertures = []
+    if inst != 'niriss':
+        aperture = report['input']['strategy']['aperture_size']
+        annulus = report['input']['strategy']['sky_annulus']
+        apertures = [
+            np.tile( 0.5*aperture, 2),
+            np.tile(-0.5*aperture, 2),
+            np.tile( annulus[0], 2),
+            np.tile(-annulus[0], 2),
+            np.tile( annulus[1], 2),
+            np.tile(-annulus[1], 2),
+        ]
+
+    fig = go.Figure(
+        data=go.Heatmap(z=heatmap, x=x, y=y, showscale=False),
+    )
+    if mode == 'mrs_ts':
+        t = np.linspace(0.0, 2.0*np.pi, 100)
+        for i, aper in enumerate(apertures):
+            if i%2 == 1:
+                continue
+            xx = aper[0]*np.sin(t)
+            yy = aper[0]*np.cos(t)
+            if i < 2:
+                name = 'aperture'
+                color= 'gold'
+                dash = None
+            else:
+                name = 'background'
+                color= 'limegreen'
+                dash = 'dash'
+            showlegend = i in [0,2]
+            fig.add_trace(go.Scatter(
+                x=xx,
+                y=yy,
+                mode='lines',
+                line=dict(color=color, width=2.0, dash=dash),
+                name=name, legendgroup=name,
+                showlegend=showlegend,
+            ))
+        fig.update_layout(
+            yaxis=dict(scaleanchor='x', scaleratio=1),
+        )
+
+    elif inst != 'niriss':
+        for i, aper in enumerate(apertures):
+            if i < 2:
+                name = 'aperture'
+                color= 'gold'
+                dash = None
+            else:
+                name = 'background'
+                color= 'limegreen'
+                dash = 'dash'
+            showlegend = i in [0,2]
+            if mode == 'lrsslitless':
+                xx = aper
+                yy = [np.amin(y), np.amax(y)]
+            else:
+                xx = [np.amin(x), np.amax(x)]
+                yy = aper
+            fig.add_trace(go.Scatter(
+                x=xx,
+                y=yy,
+                mode='lines',
+                line=dict(color=color, width=2.0, dash=dash),
+                name=name, legendgroup=name,
+                showlegend=showlegend,
+            ))
+
+    fig.update_yaxes(
+        title_text=ylabel,
+        title_standoff=0,
+    )
+    fig.update_xaxes(
+        title_text=xlabel,
+        title_standoff=0,
+    )
+
+    fig.update_layout(legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="center",
+        x=0.5
+    ))
+
     return fig
 
 
