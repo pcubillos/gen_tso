@@ -427,8 +427,13 @@ def plotly_depth_spectra(
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
+    units_label = {
+        'none': '',
+        'percent': ' (%)',
+        'ppm': ' (ppm)',
+    }
     fig.update_yaxes(
-        title_text=f'{obs_geometry} depth ({units})'.replace('percent','%'),
+        title_text=f'{obs_geometry} depth{units_label[units]}',
         title_standoff=0,
     )
 
