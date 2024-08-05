@@ -46,15 +46,23 @@ acq_modes = [
 # Bouwman et al. (2024)  MIRI/LRS
 # Bell et al. (2024)     MIRI/LRS
 default_aperture_strategy = {
-    'miri': dict(
+    'lrsslitless': dict(
         aperture_size = 0.6,
         sky_annulus = [1.0, 2.5],
     ),
-    'nircam': dict(
+    'mrs_ts': dict(
+        aperture_size = 0.6,
+        sky_annulus = [1.0, 1.5],
+    ),
+    'lw_tsgrism': dict(
         aperture_size = 0.6,
         sky_annulus = [0.9, 1.5],
     ),
-    'nirspec': dict(
+    'sw_tsgrism': dict(
+        aperture_size = 0.6,
+        sky_annulus = [0.9, 1.5],
+    ),
+    'bots': dict(
         aperture_size = 0.7,
         sky_annulus = [0.7, 1.5],
     ),

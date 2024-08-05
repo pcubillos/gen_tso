@@ -109,8 +109,8 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['readout_pattern'] = readout
         self._ensure_wl_reference_in_range()
         # Default aperture/sky annuli:
-        if self.instrument in default_aperture_strategy:
-            strat = default_aperture_strategy[self.instrument]
+        if self.mode in default_aperture_strategy:
+            strat = default_aperture_strategy[self.mode]
             self.calc['strategy']['aperture_size'] = strat['aperture_size']
             self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
