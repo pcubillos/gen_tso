@@ -6,11 +6,17 @@ __all__ = [
     'get_configs',
     'filter_throughputs',
     'generate_all_instruments',
+    'load_flux_rate_splines',
     'Detector',
 ]
 
+import os
 from itertools import product
 import pickle
+
+import numpy as np
+from scipy.interpolate import CubicSpline
+
 from pandeia.engine.calc_utils import get_instrument_config
 from gen_tso.utils import ROOT
 
@@ -848,4 +854,57 @@ def make_obs_label(
         f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
     )
     return label
+
+
+def load_flux_rate_splines():
+    """
+    Construct a ridiculously nested dictionary of cubic splines
+    from a similar set of dictionaries containing pre-calculated
+    brightest pixel flux rate for a instrumental config and SED.
+    """
+    flux_rate_data = {}
+    for instrument in ['miri', 'nircam', 'niriss', 'nirspec']:
+        inst = instrument.lower()
+        rate_file = f'{ROOT}data/flux_rates_{inst}.pickle'
+        if not os.path.exists(rate_file):
+            continue
+        #print(rate_file)
+        with open(rate_file, 'rb') as handle:
+            rates = pickle.load(handle)
+        mag = rates.pop('magnitude')
+        flux_rate_data[inst] = rates
+
+    flux_rates = {}
+    full_wells = {}
+    order = 1
+    for inst, mode_rates in flux_rate_data.items():
+        for mode, disp_rates in mode_rates.items():
+            for disperser, filter_rates in disp_rates.items():
+                for filter, sub_rates in filter_rates.items():
+                    print(inst, mode, disperser, filter)
+                    for subarray, sed_rates in sub_rates.items():
+                        if mode in ['sw_tsgrism', 'miri']:
+                            aperture = disperser
+                        else:
+                            aperture = ''
+                        filter = filter.replace('None', '')
+                        inst_label = make_saturation_label(
+                            inst, mode, aperture, disperser, filter,
+                            subarray, order, ''
+                        )
+                        for i,rate in enumerate(sed_rates['phoenix']):
+                            log_rate = np.log10(rate)
+                            sed = sed_rates['p_names'][i]
+                            label = f'{inst_label}phoenix_{sed}'
+                            flux_rates[label] = CubicSpline(mag, log_rate)
+                            full_wells[label] = sed_rates['full_well']
+
+                        for i,rate in enumerate(sed_rates['k93models']):
+                            log_rate = np.log10(rate)
+                            sed = sed_rates['k_names'][i]
+                            label = f'{inst_label}kurucz_{sed}'
+                            flux_rates[label] = CubicSpline(mag, log_rate)
+                            full_wells[label] = sed_rates['full_well']
+    return flux_rates, full_wells
+
 
