@@ -868,7 +868,6 @@ def load_flux_rate_splines():
         rate_file = f'{ROOT}data/flux_rates_{inst}.pickle'
         if not os.path.exists(rate_file):
             continue
-        #print(rate_file)
         with open(rate_file, 'rb') as handle:
             rates = pickle.load(handle)
         mag = rates.pop('magnitude')
@@ -881,7 +880,6 @@ def load_flux_rate_splines():
         for mode, disp_rates in mode_rates.items():
             for disperser, filter_rates in disp_rates.items():
                 for filter, sub_rates in filter_rates.items():
-                    print(inst, mode, disperser, filter)
                     for subarray, sed_rates in sub_rates.items():
                         if mode in ['sw_tsgrism', 'miri']:
                             aperture = disperser

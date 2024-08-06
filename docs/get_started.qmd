@@ -41,8 +41,8 @@ The transit or eclipse depth spectrum encodes the core of a science case,
 so this is the one bit of information that a user has to provide.
 In the `Gen TSO` application users can:
 
-- Search and upload specific transit/eclipse depth spectra
-- Pre-load spectra when launching the application
+- Search and [upload transit/eclipse depth spectra#uploading-model-files](select_planet_model.qmd)
+- [Pre-load spectra](select_planet_model.qmd#pre-loading-models-at-launch) when launching the application
 - Use blackbody or flat-transmission spectra for a quick S/N assessment
 - Interactively view and compare spectra in the viewer panel
 
