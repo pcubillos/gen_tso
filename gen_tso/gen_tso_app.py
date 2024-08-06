@@ -16,7 +16,6 @@ import pandas as pd
 import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
-from pyratbay.spectrum import bin_spectrum, constant_resolution_spectrum
 import plotly.graph_objects as go
 import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
@@ -39,6 +38,7 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     get_detector,
     make_obs_label,
     make_saturation_label,
+    load_flux_rate_splines,
 )
 from gen_tso.pandeia_io.pandeia_setup import (
     check_pandeia_ref_data,
@@ -97,6 +97,9 @@ for inst in instruments:
             acq_modes[det.mode] = 'Target Acquisition'
     choices['Acquisition'] = acq_modes
     modes[inst] = choices
+
+# Pre-computed flux rates
+flux_rate_splines, full_wells = load_flux_rate_splines()
 
 
 depth_choices = {
@@ -2762,11 +2765,25 @@ def server(input, output, session):
             ngroup, nint, run_type, sed_label, depth_label,
         )
 
+        sed_items = sat_label.split('_')
+        band_label = sed_items[-1]
+        sat_guess_label = '_'.join(sed_items[0:-2])
+        can_guess = band_label == 'Ks' and sat_guess_label in flux_rate_splines
+
         if sat_label in cache_saturation:
             pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
             full_well = cache_saturation[sat_label]['full_well']
             saturation_text = jwst._print_pandeia_saturation(
                 inst, subarray, readout, ngroup, pixel_rate, full_well,
+                format='html',
+            )
+            report_text += f'<br>{saturation_text}'
+        elif can_guess:
+            cs = flux_rate_splines[sat_guess_label]
+            estimated_rate = 10**cs(norm_mag)
+            full_well = full_wells[sat_guess_label]
+            saturation_text = jwst._print_pandeia_saturation(
+                inst, subarray, readout, ngroup, estimated_rate, full_well,
                 format='html',
             )
             report_text += f'<br>{saturation_text}'
