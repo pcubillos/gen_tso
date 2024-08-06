@@ -902,7 +902,10 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
+def is_consistent(
+        inst, mode,
+        disperser=None, filter=None, subarray=None, readout=None,
+    ):
     """
     Check that detector configuration settings are consistent
     between them.
@@ -915,6 +918,8 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
     if filter is not None and filter not in detector.filters:
         return False
     if subarray is not None and subarray not in detector.subarrays:
+        return False
+    if readout is not None and readout not in detector.readouts:
         return False
     return True
 
@@ -2696,7 +2701,9 @@ def server(input, output, session):
         depth_label = parse_obs(input)[1]
         transit_dur = float(input.t_dur.get())
 
-        consistent = is_consistent(inst, mode, disperser, filter, subarray)
+        consistent = is_consistent(
+            inst, mode, disperser, filter, subarray, readout,
+        )
         if ngroup is None or not consistent or sed_label is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
@@ -2763,7 +2770,6 @@ def server(input, output, session):
                 format='html',
             )
             report_text += f'<br>{saturation_text}'
-
 
         if tso_label in tso_runs[run_type]:
             tso_run = tso_runs[run_type][tso_label]
