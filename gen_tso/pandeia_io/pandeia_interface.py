@@ -412,7 +412,7 @@ def load_sed_list(source):
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
 
 
-def find_closest_sed(models_teff, models_logg, teff, logg):
+def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='phoenix'):
     """
     A very simple cost-function to find the closest stellar model
     within a non-regular Teff-log_g grid.
@@ -442,15 +442,21 @@ def find_closest_sed(models_teff, models_logg, teff, logg):
     >>> import gen_tso.pandeia as jwst
     >>> # PHOENIX models
     >>> keys, names, p_teff, p_logg = jwst.load_sed_list('phoenix')
-    >>> idx = jwst.find_closest_sed(p_teff, p_logg, teff=4143.0, logg=4.66)
+    >>> idx = jwst.find_closest_sed(teff=4143.0, logg=4.66, p_teff, p_logg)
     >>> print(f'{keys[idx]}: {repr(names[idx])}')
     k5v: 'K5V 4250K log(g)=4.5'
     """
+    return_key = False
+    if models_teff is None or models_logg is None:
+        keys, names, models_teff, models_logg = load_sed_list(sed_type)
+        return_key = True
     cost = (
         np.abs(np.log10(teff/models_teff)) +
         np.abs(logg-models_logg) / 15.0
     )
     idx = np.argmin(cost)
+    if return_key:
+        return keys[idx]
     return idx
 
 

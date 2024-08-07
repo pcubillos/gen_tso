@@ -822,7 +822,7 @@ def get_auto_sed(input):
         log_g = float(input.log_g.get())
     except ValueError:
         return sed_models, None
-    idx = jwst.find_closest_sed(m_teff, m_logg, t_eff, log_g)
+    idx = jwst.find_closest_sed(t_eff, log_g, m_teff, m_logg)
     chosen_sed = list(sed_models)[idx]
     return sed_models, chosen_sed
 
@@ -2941,7 +2941,7 @@ def server(input, output, session):
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
+        i = jwst.find_closest_sed(t_eff, log_g, p_teff, p_logg)
         chosen_sed = p_keys[i]
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
 
