@@ -237,7 +237,7 @@ app_ui = ui.page_fluid(
                 placement='bottom',
             ),
             ')',
-            style="font-size: 28px;",
+            style="font-size: 26px;",
         ),
         ui.output_image("tso_logo", height='50px', inline=True),
         col_widths=(11,1),
