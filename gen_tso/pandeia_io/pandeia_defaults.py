@@ -777,6 +777,31 @@ def get_detector(instrument=None, mode=None, detectors=None):
     return None
 
 
+def make_save_label(
+        target, inst, mode, aperture, disperser, filter,
+        subarray=None, readout=None, order=None,
+    ):
+    """
+    A nice short name when saving to file via the application
+    """
+    if target is not None:
+        target = '_' + target.replace(' ', '')
+    if mode == 'target_acq':
+        return f'tso{target}_{inst}_{mode}.pickle'
+    # Shorter miri and nircam mode names:
+    mode = mode.replace('lrsslitless', 'lrs').replace('mrs_ts', 'mrs')
+    mode = mode.replace('w_tsgrism', 'w')
+
+    if inst in ['miri', 'niriss']:
+        return f'tso{target}_{inst}_{mode}.pickle'
+    elif inst == 'nirspec':
+        return f'tso{target}_{inst}_{mode}_{disperser}.pickle'
+    elif mode == 'lw':
+        return f'tso{target}_{inst}_{mode}_{filter}.pickle'
+    elif mode == 'sw':
+        return f'tso{target}_{inst}_{mode}_{filter}_{aperture}.pickle'
+
+
 def make_detector_label(
         inst, mode, aperture, disperser, filter, subarray, readout, order,
     ):
