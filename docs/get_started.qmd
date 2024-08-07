@@ -41,7 +41,7 @@ The transit or eclipse depth spectrum encodes the core of a science case,
 so this is the one bit of information that a user has to provide.
 In the `Gen TSO` application users can:
 
-- Search and [upload transit/eclipse depth spectra#uploading-model-files](select_planet_model.qmd)
+- Search and [upload transit/eclipse depth spectra](select_planet_model.qmd#uploading-model-files)
 - [Pre-load spectra](select_planet_model.qmd#pre-loading-models-at-launch) when launching the application
 - Use blackbody or flat-transmission spectra for a quick S/N assessment
 - Interactively view and compare spectra in the viewer panel
@@ -56,18 +56,18 @@ In the `Gen TSO` application users can:
 ## 4 Run Pandeia
 
 Now you are ready to simulate a TSO with JWST.  `Gen TSO` provides many
-features to facilitate this step as well:
+features to facilitate this step as well. Before a run:
 
-- The text display shows exposure and saturation values in real time
-- Estimate saturation for an SED and instrument combination
-- Automate number of integrations, matching a given observation duration
+- the text display shows [real-time exposure and saturation](run_pandeia.qmd) values in real time
+- The number of integrations can [automatically match the observation duration](run_pandeia.qmd#exposure-times)
+- [Saturation times](run_pandeia.qmd#saturation) inform on the optimal number of groups for a target/instrument combination
 
-Once a simulation has ran:
+Once a Pandeia simulation has finished:
 
-- The text display summarizes it as in the official ETC
-- The TSO tab shows interactive displays of the transit/eclipse depth, S/N, and more
+- The TSO tab shows [interactive displays](run_pandeia.qmd#figures) of the transit/eclipse depth, S/N, and more
+- The *Results* panel shows a [text summary](run_pandeia.qmd#text-outputs) of the simulation, as seen in the official ETC
 - The warnings tab alerts users of potential risks
-- Runs can be saved to a pickle file for later use
+- Finally, [TSO runs can be saved](run_pandeia.qmd#collecting-outputs) into Python pickle files for later use
 
 ---
 
