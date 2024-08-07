@@ -38,6 +38,7 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     get_detector,
     make_obs_label,
     make_saturation_label,
+    make_save_label,
     load_flux_rate_splines,
 )
 from gen_tso.pandeia_io.pandeia_setup import (
@@ -45,7 +46,7 @@ from gen_tso.pandeia_io.pandeia_setup import (
     check_pysynphot,
     update_synphot_files,
 )
-import viewer_popovers as pops
+import gen_tso.viewer_popovers as pops
 
 
 def load_catalog():
@@ -1262,8 +1263,8 @@ def server(input, output, session):
         saturation_label.set(sat_label)
         warning_text.set(warnings)
 
-        print(inst, mode, aperture, disperser, filter, subarray, readout, order)
-        print(sed_type, sed_model, norm_band, repr(norm_mag))
+        #print(inst, mode, aperture, disperser, filter, subarray, readout, order)
+        #print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
 
@@ -1449,7 +1450,7 @@ def server(input, output, session):
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
-        print(f"You selected me: {inst}")
+        #print(f"You selected me: {inst}")
         mode_choices = modes[inst]
         choices = []
         for m in mode_choices.values():
@@ -1641,24 +1642,37 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
         inst = tso['inst']
-        filename = f'tso_{inst}.pickle'
 
+        filename = make_save_label(
+            tso['target'], tso['inst'], tso['mode'],
+            tso['aperture'], tso['disperser'], tso['filter'],
+        )
+        overwrite_warning = ''
+        if os.path.exists(f'{current_dir}/{filename}'):
+            overwrite_warning = (
+                ' (a file with same name already exists, '
+                'edit name to avoid overwriting)'
+            )
         m = ui.modal(
             ui.input_text(
                 id='tso_save_file',
-                label='Save TSO run to file:',
+                label=f'Save TSO run to this file{overwrite_warning}:',
                 value=filename,
                 placeholder=tso_label,
                 width='100%',
             ),
-            ui.HTML(f"Located in current folder:<br>'{current_dir}/'<br>"),
+            ui.input_text(
+                id='tso_save_dir',
+                label='Located in this folder:',
+                value=current_dir,
+                placeholder='select a folder',
+                width='100%',
+            ),
             # TBD: I wish this could be used to browse a folder :(
             #ui.input_file(
             #    id="save_file_x",
             #    label="Into this folder:",
             #    button_label="Browse",
-            #    multiple=True,
-            #    width='100%',
             #),
             ui.input_action_button(
                 id='tso_save_button',
@@ -1679,20 +1693,15 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso_run = tso_runs[key][tso_label]
 
+        folder = input.tso_save_dir.get().strip()
+        if folder == '':
+            folder = '.'
         filename = input.tso_save_file.get()
         if filename.strip() == '':
             filename = 'tso_run.pickle'
-        savefile = Path(f'{current_dir}/{filename}')
+        savefile = Path(f'{folder}/{filename}')
         if savefile.suffix == '':
             savefile = savefile.parent / f'{savefile.name}.pickle'
-        if savefile.exists():
-            stem = str(savefile.parent / savefile.stem)
-            extension = savefile.suffix
-            i = 1
-            savefile = Path(f'{stem}{i}{extension}')
-            while savefile.exists():
-                i += 1
-                savefile = Path(f'{stem}{i}{extension}')
 
         with open(savefile, 'wb') as handle:
             pickle.dump(tso_run, handle, protocol=4)
