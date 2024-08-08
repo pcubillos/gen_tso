@@ -7,6 +7,7 @@ __all__ = [
 
 from collections.abc import Iterable
 from itertools import product
+import pickle
 
 import numpy as np
 from pandeia.engine.calc_utils import (
@@ -58,6 +59,7 @@ class PandeiaCalculation():
           instrument   mode          comments
           ----------   ----          --------
           nircam:      lw_tsgrism    spectroscopy
+                       sw_tsgrism    spectroscopy
                        target_acq    aquisition
           niriss:      soss          spectroscopy
                        target_acq    aquisition
@@ -264,7 +266,7 @@ class PandeiaCalculation():
 
         Examples
         --------
-        >>> import pandeia_interface as jwst
+        >>> import gen_tso.pandeia_io as jwst
 
         >>> instrument = 'nircam'
         >>> mode = 'lw_tsgrism'
@@ -575,34 +577,58 @@ class PandeiaCalculation():
 
         Examples
         --------
-        >>> import pandeia_interface as jwst
-        >>> from pandeia_interface import set_depth_scene
+        >>> import gen_tso.pandeia_io as jwst
+        >>> import numpy as np
+        >>> import matplotlib.pyplot as plt
+        >>> import pyratbay.constants as pc
+        >>>
+        >>> transit_dur = 2.131
+        >>> obs_dur = 6.01
+        >>> # Planet model: wl(um) and transit depth (no units):
+        >>> depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
 
-        >>> # Set the stellar scene and transit:
-        >>> scene = jwst.make_scene(
+        >>> # Set a NIRCam observation
+        >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+        >>> # The star:
+        >>> pando.set_scene(
         >>>     sed_type='phoenix', sed_model='k5v',
-        >>>     norm_band='2mass,ks', norm_magnitude=8.637,
+        >>>     norm_band='2mass,ks', norm_magnitude=8.351,
         >>> )
-        >>> transit_dur = 2.753
-        >>> obs_dur = 7.1
+        >>> # Take a look at the default cofiguration:
+        >>> pando.calc['configuration']
+        >>>
+        >>> # Edit disperser, filter, readout, subarray, or aperture if needed
+        >>> # See options with pando.get_configs()
+        >>> ngroup = 90
+
+        >>> # Run TSO:
         >>> obs_type = 'transit'
-        >>> depth_model = np.loadtxt(
-        >>>     '../planet_spectra/WASP80b_transit.dat', unpack=True)
-
-        >>> # Set a NIRSpec observation
-        >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
-        >>> pando.calc['scene'] = [scene]
-        >>> disperser = 'g395h'
-        >>> filter = 'f290lp'
-        >>> readout = 'nrsrapid'
-        >>> subarray = 'sub2048'
-        >>> ngroup = 16
-
         >>> tso = pando.tso_calculation(
-        >>>     obs_type, transit_dur, obs_dur, depth_model,
-        >>>     ngroup, disperser, filter, subarray, readout,
+        >>>     obs_type, transit_dur, obs_dur, depth_model, ngroup,
         >>> )
-
+        >>>
+        >>> # Draw a simulated transit spectrum at selected resolution
+        >>> obs_wl, obs_depth, obs_error, band_widths = jwst.simulate_tso(
+        >>>     tso, resolution=250.0,
+        >>> )
+        >>> plt.figure(4)
+        >>> plt.clf()
+        >>> plt.plot(
+        >>> tso['wl'], tso['depth_spectrum']/pc.percent,
+        >>>     c='salmon', label='depth at instrumental resolution',
+        >>> )
+        >>> plt.errorbar(
+        >>>     obs_wl, obs_depth/pc.percent, yerr=obs_error/pc.percent,
+        >>>     fmt='o', ms=5, color='xkcd:blue', mfc=(1,1,1,0.85),
+        >>>     label='simulated (noised up) transit spectrum',
+        >>> )
+        >>> plt.legend(loc='best')
+        >>> plt.xlim(3.6, 5.05)
+        >>> plt.ylim(2.88, 3.00)
+        >>> plt.xlabel('Wavelength (um)')
+        >>> plt.ylabel('Transit depth (%)')
+        >>> plt.title('WASP-80 b / NIRCam F444W')
+        >>>
         >>> # Fluxes and Flux rates
         >>> col1, col2 = plt.cm.viridis(0.8), plt.cm.viridis(0.25)
         >>> plt.figure(0, (8.5, 4))
@@ -612,7 +638,7 @@ class PandeiaCalculation():
         >>> plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
         >>> plt.legend(loc='best')
         >>> plt.xlabel('Wavelength (um)')
-        >>> plt.ylabel('Collected flux (e-)')
+        >>> plt.ylabel('Total collected flux (e-)')
         >>> plt.subplot(122)
         >>> plt.plot(tso['wl'], tso['flux_out']/tso['time_out'], c=col2, label='out of transit')
         >>> plt.plot(tso['wl'], tso['flux_in']/tso['time_in'], c=col1, label='in transit')
@@ -621,16 +647,6 @@ class PandeiaCalculation():
         >>> plt.ylabel('Flux rate (e-/s)')
         >>> plt.tight_layout()
 
-        >>> # Model and instrument-observed transit depth spectrum
-        >>> wl_depth, depth = depth_model
-        >>> plt.figure(4)
-        >>> plt.clf()
-        >>> plt.plot(wl_depth, 100*depth, c='orange', label='model depth')
-        >>> plt.plot(tso['wl'], 100*tso['depth_spectrum'], c='b', label='obs depth')
-        >>> plt.legend(loc='best')
-        >>> plt.xlim(2.75, 5.25)
-        >>> plt.xlabel('Wavelength (um)')
-        >>> plt.ylabel('Transit depth (%)')
         """
         if transit_dur >= obs_dur:
             raise ValueError(
@@ -805,4 +821,19 @@ class PandeiaCalculation():
         >>> TBD
         """
         return simulate_tso(self.tso, n_obs, resolution, bins, noiseless)
+
+    def save_tso(self, filename=None, tso=None):
+        if tso is None:
+            tso = self.tso
+        if filename is None:
+            mode = self.mode
+            filter = self.calc['configuration']['instrument']['filter']
+            if self.instrument in ['miri', 'niriss'] and mode != 'target_acq':
+                filter = ''
+            else:
+                filter = f'_{filter}'
+            filename = f'tso_{self.instrument}_{self.mode}{filter}.pickle'
+            print(f'Saving latest TSO run to: {repr(filename)}')
+        with open(filename, 'wb') as handle:
+            pickle.dump(self.tso, handle, protocol=4)
 

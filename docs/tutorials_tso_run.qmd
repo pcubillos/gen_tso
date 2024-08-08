@@ -1,0 +1,222 @@
+---
+title: Runing Pandeia TSO from the terminal
+page-navigation: true
+---
+
+This Python script shows how to run TSO simulations with `Gen TSO` from
+an interactive Python session
+
+## Setup target
+
+Lets set the target properties first:
+
+```python
+import gen_tso.pandeia_io as jwst
+import gen_tso.catalogs as cat
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pyratbay.constants as pc
+
+# Lets simulate a WASP-80b transit taking the NASA values:
+catalog = cat.Catalog()
+target = catalog.get_target('WASP-80 b')
+# For something cool, do: print(target)
+
+transit_dur = target.transit_dur
+mag = target.ks_mag
+obs_dur = 2*transit_dur + 1 + 0.75
+
+# Lets find a suitable stellar SED model:
+sed = jwst.find_closest_sed(target.teff, target.logg_star, sed_type='phoenix')
+
+# Check the output:
+print(f"Teff = {target.teff}\nlog_g = {target.logg_star}\nSED = {sed}")
+```
+
+Which returns:
+```bash
+Teff = 4143.0
+log_g = 4.66
+SED = k5v
+```
+
+
+## Setup transit depth
+
+Now we need a model, ask your favorite modeler.
+We need the model as two 1D arrays with the wavelength (in microns)
+and the transit/eclipse depth (no units).
+
+Here we'll use the WASP-80b model from the
+[demo](https://github.com/pcubillos/gen_tso/blob/master/gen_tso/data/models/WASP80b_transit.dat),
+download this to your current folder, and then load the file:
+
+```python
+# Planet model: wl(um) and transit depth (no units):
+depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
+```
+
+## Setup instrument
+
+Now lets set up a NIRCam/F444W observation and run the TSO calculation.
+First, we need to know what are the available options.  These are the
+instruments and their respective modes:
+
+```{=html}
+<table>
+
+  <thead>
+    <tr>
+      <th><span data-qmd="Instrument"></span></th>
+      <th><span data-qmd="Spectroscopy modes"></span></th>
+      <th><span data-qmd="Acquisition modes"></span></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+        <td rowspan="2"><span data-qmd="__miri__"></span></td> <td>lrsslitless</td> <td>target_acq</td>
+    </tr>
+    <tr>
+        <td>miri_ts</td> <td></td>
+    </tr>
+
+    <tr>
+        <td rowspan="2"><span data-qmd="__nircam__"></span></td> <td>lw_tsgrism</td><td>target_acq</td>
+    </tr>
+    <tr>
+        <td>sw_tsgrism</td> <td></td>
+    </tr>
+    <tr>
+        <td><span data-qmd="__niriss__"></span></td> <td>soss</td> <td>target_acq</td>
+    </tr>
+
+    <tr>
+        <td><span data-qmd="__nirspec__"></span></td> <td>bots</td> <td>target_acq</td>
+    </tr>
+  </tbody>
+</table>
+
+```
+
+Lets move on then:
+
+```python
+# Initialize the instrument config object:
+pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+
+# The star:
+pando.set_scene(
+    sed_type='phoenix', sed_model=sed,
+    norm_band='2mass,ks', norm_magnitude=mag,
+)
+
+# Now lets take a look at the default cofiguration:
+pando.calc['configuration']
+```
+Which outputs:
+```bash
+{'detector': {'nexp': 1,
+  'ngroup': 10,
+  'nint': 1,
+  'readout_pattern': 'rapid',
+  'subarray': 'subgrism64'},
+ 'instrument': {'aperture': 'lw',
+  'disperser': 'grismr',
+  'filter': 'f444w',
+  'instrument': 'nircam',
+  'mode': 'lw_tsgrism'}}
+```
+
+We can take a look at the available options for disperser, filter, readout, subarray, or aperture with this command:
+```python
+pando.get_configs()
+```
+
+```bash
+dispersers: ['grismr']
+filters: ['f277w', 'f322w2', 'f356w', 'f444w']
+subarrays: ['full', 'subgrism128', 'subgrism256', 'subgrism64', 'full (noutputs=1)', 'subgrism128 (noutputs=1)', 'subgrism256 (noutputs=1)', 'subgrism64 (noutputs=1)', 'sub40stripe1_dhs', 'sub80stripe2_dhs', 'sub160stripe4_dhs', 'sub256stripe4_dhs']
+readout patterns: ['rapid', 'bright1', 'bright2', 'shallow2', 'shallow4', 'medium2', 'medium8', 'deep2', 'deep8']
+```
+
+## Run Pandeia and check results
+
+I'm OK with the defaults above, so, lets run a TSO simulation:
+```python
+# Run a transit TSO simulation:
+obs_type = 'transit'
+tso = pando.tso_calculation(
+    obs_type, transit_dur, obs_dur, depth_model,
+    ngroup=90,
+)
+```
+
+::: {.callout-note}
+At the moment is best to use [the `Gen TSO` application](get_started.qmd) to check for the optimal number of groups.
+:::
+
+
+Thats it, now we can generate some transit-depth simulated spectra:
+
+```python
+# Draw a simulated transit spectrum at selected resolution
+obs_wl, obs_depth, obs_error, band_widths = jwst.simulate_tso(
+    tso, resolution=250.0, n_obs=1,
+)
+
+# Plot the results:
+plt.figure(4)
+plt.clf()
+plt.plot(
+tso['wl'], tso['depth_spectrum']/pc.percent,
+    c='salmon', label='depth at instrumental resolution',
+)
+plt.errorbar(
+    obs_wl, obs_depth/pc.percent, yerr=obs_error/pc.percent,
+    fmt='o', ms=5, color='xkcd:blue', mfc=(1,1,1,0.85),
+    label='simulated (noised up) transit spectrum',
+)
+plt.legend(loc='best')
+plt.xlim(3.6, 5.05)
+plt.ylim(2.88, 3.00)
+plt.xlabel('Wavelength (um)')
+plt.ylabel('Transit depth (%)')
+plt.title('WASP-80 b / NIRCam F444W')
+```
+
+![](images/WASP80b_nircam_transit_tutorial.png){width=600px}
+
+Or plot the flux rates:
+```python
+# Fluxes and Flux rates
+col1, col2 = plt.cm.viridis(0.8), plt.cm.viridis(0.25)
+plt.figure(0, (8.5, 4))
+plt.clf()
+plt.subplot(121)
+plt.plot(tso['wl'], tso['flux_out'], c=col2, label='out of transit')
+plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
+plt.legend(loc='best')
+plt.xlabel('Wavelength (um)')
+plt.ylabel('Total collected flux (e-)')
+plt.subplot(122)
+plt.plot(tso['wl'], tso['flux_out']/tso['time_out'], c=col2, label='out of transit')
+plt.plot(tso['wl'], tso['flux_in']/tso['time_in'], c=col1, label='in transit')
+plt.legend(loc='best')
+plt.xlabel('Wavelength (um)')
+plt.ylabel('Flux rate (e-/s)')
+plt.tight_layout()
+```
+
+![](images/WASP80b_nircam_flux_rates_tutorial.png){width=600px}
+
+
+## Save TSO outputs
+
+The latest TSO run for a given Pandeia object can be saved with this method: 
+```python
+pando.save_tso(filename='tso_transit_WASP-80b_nircam_lw_f444w.picke')
+```
+
+See [this tutorial](tutorials_tso_post_processing.qmd) to load that pickle file and simulate some spectra.
+

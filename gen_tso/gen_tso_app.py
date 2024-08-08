@@ -16,7 +16,6 @@ import pandas as pd
 import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
-from pyratbay.spectrum import bin_spectrum, constant_resolution_spectrum
 import plotly.graph_objects as go
 import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
@@ -39,13 +38,15 @@ from gen_tso.pandeia_io.pandeia_defaults import (
     get_detector,
     make_obs_label,
     make_saturation_label,
+    make_save_label,
+    load_flux_rate_splines,
 )
 from gen_tso.pandeia_io.pandeia_setup import (
     check_pandeia_ref_data,
     check_pysynphot,
     update_synphot_files,
 )
-import viewer_popovers as pops
+import gen_tso.viewer_popovers as pops
 
 
 def load_catalog():
@@ -97,6 +98,9 @@ for inst in instruments:
             acq_modes[det.mode] = 'Target Acquisition'
     choices['Acquisition'] = acq_modes
     modes[inst] = choices
+
+# Pre-computed flux rates
+flux_rate_splines, full_wells = load_flux_rate_splines()
 
 
 depth_choices = {
@@ -233,7 +237,7 @@ app_ui = ui.page_fluid(
                 placement='bottom',
             ),
             ')',
-            style="font-size: 28px;",
+            style="font-size: 26px;",
         ),
         ui.output_image("tso_logo", height='50px', inline=True),
         col_widths=(11,1),
@@ -818,7 +822,7 @@ def get_auto_sed(input):
         log_g = float(input.log_g.get())
     except ValueError:
         return sed_models, None
-    idx = jwst.find_closest_sed(m_teff, m_logg, t_eff, log_g)
+    idx = jwst.find_closest_sed(t_eff, log_g, m_teff, m_logg)
     chosen_sed = list(sed_models)[idx]
     return sed_models, chosen_sed
 
@@ -902,7 +906,10 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
+def is_consistent(
+        inst, mode,
+        disperser=None, filter=None, subarray=None, readout=None,
+    ):
     """
     Check that detector configuration settings are consistent
     between them.
@@ -915,6 +922,8 @@ def is_consistent(inst, mode, disperser=None, filter=None, subarray=None):
     if filter is not None and filter not in detector.filters:
         return False
     if subarray is not None and subarray not in detector.subarrays:
+        return False
+    if readout is not None and readout not in detector.readouts:
         return False
     return True
 
@@ -1254,8 +1263,8 @@ def server(input, output, session):
         saturation_label.set(sat_label)
         warning_text.set(warnings)
 
-        print(inst, mode, aperture, disperser, filter, subarray, readout, order)
-        print(sed_type, sed_model, norm_band, repr(norm_mag))
+        #print(inst, mode, aperture, disperser, filter, subarray, readout, order)
+        #print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
 
@@ -1344,7 +1353,6 @@ def server(input, output, session):
         sed_type = tso['sed_type']
         if sed_type == 'k93models':
             sed_type = 'kurucz'
-        ui.update_select('sed_type', selected=sed_type)
 
         if name != current_target:
             if name not in cache_target:
@@ -1355,27 +1363,32 @@ def server(input, output, session):
             cache_target[name]['depth_label'] = tso['depth_label']
             cache_target[name]['rprs_sq'] = tso['rprs_sq']
             cache_target[name]['teq_planet'] = tso['teq_planet']
-            cache_target[name]['norm_band'] = norm_band
-            cache_target[name]['norm_mag'] = norm_mag
+            if target_focus == 'science':
+                cache_target[name]['norm_band'] = norm_band
+                cache_target[name]['norm_mag'] = norm_mag
         else:
             ui.update_text('t_eff', value=tso['t_eff'])
             ui.update_text('log_g', value=tso['log_g'])
             ui.update_text('t_dur', value=t_dur)
-            ui.update_select('magnitude_band', selected=norm_band)
-            ui.update_text('magnitude', value=norm_mag)
+            if target_focus == 'science':
+                ui.update_select('magnitude_band', selected=norm_band)
+                ui.update_text('magnitude', value=norm_mag)
 
-        reset_sed = (
-            sed_type != input.sed_type.get() or
-            tso['t_eff']!=input.t_eff.get() or
-            tso['log_g'] != input.log_g.get()
-        )
-        if sed_type in ['kurucz', 'phoenix']:
-            if reset_sed:
-                preset_sed.set(tso['sed_model'])
-            else:
-                choices = sed_dict[sed_type]
-                selected = tso['sed_model']
-                ui.update_select("sed", choices=choices, selected=selected)
+        # sed_type, sed_model, norm_band, norm_mag, sed_label
+        if target_focus == 'science':
+            ui.update_select('sed_type', selected=sed_type)
+            reset_sed = (
+                sed_type != input.sed_type.get() or
+                tso['t_eff']!=input.t_eff.get() or
+                tso['log_g'] != input.log_g.get()
+            )
+            if sed_type in ['kurucz', 'phoenix']:
+                if reset_sed:
+                    preset_sed.set(tso['sed_model'])
+                else:
+                    choices = sed_dict[sed_type]
+                    selected = tso['sed_model']
+                    ui.update_select("sed", choices=choices, selected=selected)
 
         if target_focus == 'acquisition':
             selected = tso['sed_model']
@@ -1437,7 +1450,7 @@ def server(input, output, session):
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
-        print(f"You selected me: {inst}")
+        #print(f"You selected me: {inst}")
         mode_choices = modes[inst]
         choices = []
         for m in mode_choices.values():
@@ -1629,24 +1642,39 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
         inst = tso['inst']
-        filename = f'tso_{inst}.pickle'
 
+        filename = make_save_label(
+            tso['target'], tso['inst'], tso['mode'],
+            tso['aperture'], tso['disperser'], tso['filter'],
+        )
+        if key != 'Acquisition':
+            filename = filename.replace('tso_', f'tso_{key.lower()}_')
+        overwrite_warning = ''
+        if os.path.exists(f'{current_dir}/{filename}'):
+            overwrite_warning = (
+                ' (a file with same name already exists, '
+                'edit name to avoid overwriting)'
+            )
         m = ui.modal(
             ui.input_text(
                 id='tso_save_file',
-                label='Save TSO run to file:',
+                label=f'Save TSO run to this file{overwrite_warning}:',
                 value=filename,
                 placeholder=tso_label,
                 width='100%',
             ),
-            ui.HTML(f"Located in current folder:<br>'{current_dir}/'<br>"),
+            ui.input_text(
+                id='tso_save_dir',
+                label='Located in this folder:',
+                value=current_dir,
+                placeholder='select a folder',
+                width='100%',
+            ),
             # TBD: I wish this could be used to browse a folder :(
             #ui.input_file(
             #    id="save_file_x",
             #    label="Into this folder:",
             #    button_label="Browse",
-            #    multiple=True,
-            #    width='100%',
             #),
             ui.input_action_button(
                 id='tso_save_button',
@@ -1667,23 +1695,18 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso_run = tso_runs[key][tso_label]
 
+        folder = input.tso_save_dir.get().strip()
+        if folder == '':
+            folder = '.'
         filename = input.tso_save_file.get()
         if filename.strip() == '':
-            filename = 'tso_run.pickle'
-        savefile = Path(f'{current_dir}/{filename}')
+            filename = f'tso_{key.lower()}_run.pickle'
+        savefile = Path(f'{folder}/{filename}')
         if savefile.suffix == '':
             savefile = savefile.parent / f'{savefile.name}.pickle'
-        if savefile.exists():
-            stem = str(savefile.parent / savefile.stem)
-            extension = savefile.suffix
-            i = 1
-            savefile = Path(f'{stem}{i}{extension}')
-            while savefile.exists():
-                i += 1
-                savefile = Path(f'{stem}{i}{extension}')
 
         with open(savefile, 'wb') as handle:
-            pickle.dump(tso_run, handle, protocol=4)
+            pickle.dump(tso_run['tso'], handle, protocol=4)
         ui.modal_remove()
         ui.notification_show(
             f"TSO model saved to file: '{savefile}'",
@@ -2692,7 +2715,9 @@ def server(input, output, session):
         depth_label = parse_obs(input)[1]
         transit_dur = float(input.t_dur.get())
 
-        consistent = is_consistent(inst, mode, disperser, filter, subarray)
+        consistent = is_consistent(
+            inst, mode, disperser, filter, subarray, readout,
+        )
         if ngroup is None or not consistent or sed_label is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
@@ -2751,6 +2776,11 @@ def server(input, output, session):
             ngroup, nint, run_type, sed_label, depth_label,
         )
 
+        sed_items = sat_label.split('_')
+        band_label = sed_items[-1]
+        sat_guess_label = '_'.join(sed_items[0:-2])
+        can_guess = band_label == 'Ks' and sat_guess_label in flux_rate_splines
+
         if sat_label in cache_saturation:
             pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
             full_well = cache_saturation[sat_label]['full_well']
@@ -2759,7 +2789,15 @@ def server(input, output, session):
                 format='html',
             )
             report_text += f'<br>{saturation_text}'
-
+        elif can_guess:
+            cs = flux_rate_splines[sat_guess_label]
+            estimated_rate = 10**cs(norm_mag)
+            full_well = full_wells[sat_guess_label]
+            saturation_text = jwst._print_pandeia_saturation(
+                inst, subarray, readout, ngroup, estimated_rate, full_well,
+                format='html',
+            )
+            report_text += f'<br>{saturation_text}'
 
         if tso_label in tso_runs[run_type]:
             tso_run = tso_runs[run_type][tso_label]
@@ -2905,7 +2943,7 @@ def server(input, output, session):
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        i = jwst.find_closest_sed(p_teff, p_logg, t_eff, log_g)
+        i = jwst.find_closest_sed(t_eff, log_g, p_teff, p_logg)
         chosen_sed = p_keys[i]
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
 

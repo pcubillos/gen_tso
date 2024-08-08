@@ -15,13 +15,32 @@ quartodoc:
   - title: Pandeia
     desc: Pandeia interface functions
     contents:
-    - pandeia_io.make_scene
     - pandeia_io.PandeiaCalculation
+    - pandeia_io.simulate_tso
+    - pandeia_io.make_scene
     - pandeia_io.exposure_time
+    - pandeia_io.load_sed_list
+    - pandeia_io.find_closest_sed
+    - pandeia_io.extract_sed
+    - pandeia_io.exposure_time
+    - pandeia_io.bin_search_exposure_time
 
-  - title: catalogs
-    desc: Exoplanet catalogs
-    package: gen_tso.catalogs
+  - title: Catalogs
+    desc: Exoplanet and JWST catalogs
     contents:
-    - Catalog
-    - load_trexolists
+    - catalogs.Catalog
+    - catalogs.Target
+    - catalogs.find_target
+    - catalogs.load_trexolists
+    - catalogs.load_targets
+
+  - title: Plotly
+    desc: Plots
+    contents:
+    - plotly_io.plotly_depth_spectra
+    - plotly_io.plotly_filters
+    - plotly_io.plotly_sed_spectra
+    - plotly_io.plotly_tso_fluxes
+    - plotly_io.plotly_tso_snr
+    - plotly_io.plotly_tso_spectra
+    - plotly_io.plotly_tso_2d

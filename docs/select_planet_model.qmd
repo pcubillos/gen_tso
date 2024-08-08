@@ -1,0 +1,123 @@
+---
+title: Transit/eclipse depth models
+page-navigation: true
+---
+
+## Uploading model files
+
+
+Users can upload a planetary depth model through the TSO application
+by clicking the *upload* button in the lower section of the **Target**
+panel:
+
+![](images/upload_button.png){width=250px}
+
+This will prompt an upload panel where users can browse for their
+models.
+
+![](images/upload_model.png){width=350px}
+
+Transit or eclipse models are plain-text files with two columns specifying
+the wavelength in the first column (in microns) and the eclipse or transit
+depth in the second column.  The transit/eclipse depth can have no units,
+be in percent units, or in ppm units.  Be sure to set the right units
+when uploading to match those of your file.
+
+Here's an example of a [transit model](https://github.com/pcubillos/gen_tso/blob/master/gen_tso/data/models/WASP80b_transit.dat) for WASP-80 b, which looks like this:
+
+```default
+# Wavelength        (Rp/Rs)**2
+#         um          unitless
+     0.65000   2.925465860e-02
+     0.65043   2.924718769e-02
+     0.65087   2.924386021e-02
+     0.65130   2.925036286e-02
+     0.65174   2.925147078e-02
+     0.65217   2.924379653e-02
+     0.65261   2.924312047e-02
+     0.65304   2.924513224e-02
+     0.65348   2.924248270e-02
+...
+```
+
+::: {.callout-note}
+Lines starting with a pawn character *#* are considered as comments.
+:::
+
+
+## Pre-loading models at launch
+
+If you plan to work with multiple models or make many simulation over
+and over, it's more convenient to pre-load them when launching the TSO
+application.  Users can do this by indicating a folder from where to
+look for models when initializing the application from the prompt, e.g.:
+
+```bash
+tso path_to_model_files
+```
+
+A convenient technique is to `cd` into the folder where one has the models
+and then start the application with:
+
+```bash
+tso .
+```
+
+Transit models in the selected folder will be identified as such if they
+contain *'transit'* or *'transmission'* in their names, or if they are in a
+sub-folder named *'transit'*.
+
+Similarly, eclipse models in the selected folder will be identified as
+such if they contain *'eclipse'* or *'emission'* in their names, or if they
+are in a sub-folder named *'eclipse'*.
+
+
+::: {.callout-note}
+When pre-loading planetary models, the depth units of the files must
+always be 'none'
+:::
+
+
+
+## Basic models for quick assessment
+
+If you only want to make a quick S/N assessment before investing more
+time for a given target, it's possible to use flat transit-depth models
+or blackbody eclipse-depth models.  For each of these, the user can
+adjust the basic model properties.
+
+
+::: {layout-ncol=2}
+
+![transit](images/flat_model.png){width=250px}
+
+![eclipse](images/blackbody_model.png){width=250px}
+
+:::
+
+::: {.callout-note}
+When selecting either of these models, default values for Rp/Rs and
+temperatures are taken from the planet system parameters.
+:::
+
+
+## Interactive visualization
+
+For any user-input or basic planet models, by clicking the bookmark
+button (earth), the viewer panel on the right will display them:
+
+![](images/bookmark_transit.png){width=250px}
+
+
+The viewer panel will show all bookmarked models, and overlay the bandpass
+of the current instrumental setting, facilitating comparison between
+models
+
+![WASP-80b transit models with NIRSpec/G395H shade](images/transit_depth_viewer.png){width=500px}
+
+Clicking on the gear icon opens a little menu with some options
+to adjust the display:
+
+![](images/transit_depth_menu.png){width=400px}
+
+

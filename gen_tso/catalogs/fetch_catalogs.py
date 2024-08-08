@@ -8,22 +8,18 @@ __all__ = [
     'fetch_gaia_targets',
 ]
 
-# Importing grequests break shiny when setting dev_mode=True,
-# hence this if-exception when running on debug mode
-import sys
-if '--debug' not in sys.argv:
-    import grequests
-import requests
 
-import os
+import concurrent.futures
 import multiprocessing as mp
 from datetime import datetime, timezone
-import urllib
+import os
 import pickle
-import warnings
 import re
 import socket
 import ssl
+import urllib
+import warnings
+
 
 from astropy.coordinates import SkyCoord
 import numpy as np
@@ -34,6 +30,7 @@ from astropy.table import Table
 from astropy.units import arcsec, deg
 from bs4 import BeautifulSoup
 import pyratbay.constants as pc
+import requests
 
 from ..utils import ROOT
 from .catalogs import load_targets, load_trexolists, load_aliases
@@ -534,8 +531,6 @@ def fetch_nea_aliases(targets):
 
     >>> host_aliases, planet_aliases = cat.fetch_nea_aliases('WASP-999')
     """
-    # TBD: Need to import grequest (before requests) to work properly,
-    # but that breaks shiny
     if isinstance(targets, str):
         targets = [targets]
     ntargets = len(targets)
@@ -546,20 +541,28 @@ def fetch_nea_aliases(targets):
         for target in targets
     ])
 
+    def fetch_url(url):
+        try:
+            response = requests.get(url)
+            return response
+        except:
+            return None
+
     fetch_status = np.tile(2, ntargets)
     responses = np.tile({}, ntargets)
-    batch_size = 25
     n_attempts = 0
     while np.any(fetch_status>0) and n_attempts < 10:
         n_attempts += 1
         mask = fetch_status > 0
-        rs = (grequests.get(u) for u in urls[mask])
-        resps = iter(grequests.map(rs, size=batch_size))
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = list(executor.map(fetch_url, urls[mask]))
 
+        j = 0
         for i in range(ntargets):
             if fetch_status[i] <= 0:
                 continue
-            r = next(resps)
+            r = results[j]
+            j += 1
             if r is None:
                 continue
             if not r.ok:
@@ -569,7 +572,7 @@ def fetch_nea_aliases(targets):
             responses[i] = r.json()
             fetch_status[i] = 0
         fetched = np.sum(fetch_status <= 0)
-        print(f'Fetched {fetched}/{ntargets} entries on {n_attempts} try')
+        print(f'Fetched {fetched}/{ntargets} entries on try {n_attempts}')
 
     host_aliases_list = []
     planet_aliases_list = []
@@ -637,7 +640,7 @@ def fetch_simbad_aliases(target, verbose=True):
             end = target.rindex('.')
             host = target[:end]
         else:
-            target_id = simbad_info['MAIN_ID'].value.data[0]
+            #target_id = simbad_info['MAIN_ID'].value.data[0]
             return host_alias, kmag
         # go after star
         simbad_info = simbad.query_object(host)

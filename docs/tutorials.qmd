@@ -1,51 +1,15 @@
 ---
-title: Notebooks
+title: Tutorial notebooks
 page-navigation: true
-format: 
-  html:
-    code-fold: false
-jupyter: python3
 ---
 
-## Notebook demos
+## A few tutorials to try at home
 
+**Time series observation simulations:**
 
-For a demonstration of a line plot on a polar axis
-Show all transiting exoplanets observed in transmission:
+- [Set up and run a Pandeia TSO calculation](tutorials_tso_run.qmd)
+- [Compute simulated spectra from a saved TSO file](tutorials_tso_post_processing.qmd)
 
-```{python}
+**Databases:**
 
-import gen_tso.catalogs as cat
-
-catalog = cat.Catalog()
-host = ''
-info = {}
-nplanets = len(catalog.targets)
-for target in catalog.targets:
-    has_transits = (
-        target.is_jwst and
-        target.is_transiting and
-        'transit' in target.trexo_data['event']
-    )
-
-    if has_transits:
-        obs = target.trexo_data
-        programs = obs['program']
-        events = obs['event']
-        status = obs['status']
-        mode = obs['mode']
-        nobs = len(events)
-        info[target.host] = [
-            f"    {programs[i]:24}  {mode[i]:20}  {status[i]}"
-            for i in range(nobs)
-            if events[i] == 'transit'
-            if status[i] not in ['Skipped', 'Failed', 'Withdrawn']
-        ]
-
-for key, observations in info.items():
-    print(f'\n{key}:')
-    for obs in observations:
-        print(obs)
-```
-
-
+- [Display and parse existing JWST programs](tutorials_jwst_programs.qmd)

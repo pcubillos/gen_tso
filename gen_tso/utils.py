@@ -160,7 +160,7 @@ def format_text(text, warning=False, danger=False, format=None):
     See also
     --------
     gen_tso.pandeia_io.tso_print
-        
+
     Examples
     --------
     >>> import gen_tso.utils as u
