@@ -1,8 +1,6 @@
 # ✨ Gen TSO ✨
 ### A general ETC interface for time-series observations with JWST
 
-(Nearly at official release...)
-
 <!--
 [![Tests](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/gen_tso.svg)](https://anaconda.org/conda-forge/gen_tso)
@@ -26,16 +24,19 @@ To launch the application use this prompt command:
 tso
 ```
 
-### Docs at:
+### Docs:
 
-<https://pcubillos.github.io/gen_tso/>
+**Take the tour:**
 
-### Take a look:
+[https://pcubillos.github.io/gen_tso/get_started.html](https://pcubillos.github.io/gen_tso/get_started.html)
+
+**And take a look:**
 
 <img alt="Gen_TSO" src="https://github.com/pcubillos/gen_tso/blob/master/docs/gen_tso_screenshot.png">
 
 ### Cite as:
 
 Comming soon ...
+
 
 
