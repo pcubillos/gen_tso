@@ -5,6 +5,11 @@ page-navigation: true
 
 ## A few tutorials to play at home
 
+**Time series observation simulations:**
+
 - [Set up and run a Pandeia TSO calculation](tutorials_tso_run.qmd)
-- [Compute simulated spectra from a saved TSO file](tutorials_tso_run.qmd)
+- [Compute simulated spectra from a saved TSO file](tutorials_tso_post_processing.qmd)
+
+**Databases:**
+
 - [Display and parse existing JWST programs](tutorials_jwst_programs.qmd)

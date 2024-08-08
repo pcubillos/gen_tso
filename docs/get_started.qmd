@@ -67,7 +67,7 @@ Once a Pandeia simulation has finished:
 - The TSO tab shows [interactive displays](run_pandeia.qmd#figures) of the transit/eclipse depth, S/N, and more
 - The *Results* panel shows a [text summary](run_pandeia.qmd#text-outputs) of the simulation, as seen in the official ETC
 - The warnings tab alerts users of potential risks
-- Finally, [TSO runs can be saved](run_pandeia.qmd#collecting-outputs) into Python pickle files for later use
+- Finally, [TSO runs can be saved](run_pandeia.qmd#collecting-outputs) into Python pickle files for [later use](tutorials_tso_post_processing.qmd)
 
 ---
 

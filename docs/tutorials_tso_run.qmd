@@ -152,6 +152,11 @@ tso = pando.tso_calculation(
 )
 ```
 
+::: {.callout-note}
+At the moment is best to use [the `Gen TSO` application](get_started.qmd) to check for the optimal number of groups.
+:::
+
+
 Thats it, now we can generate some transit-depth simulated spectra:
 
 ```python
@@ -210,13 +215,8 @@ plt.tight_layout()
 
 The latest TSO run for a given Pandeia object can be saved with this method: 
 ```python
-pando.save_tso(filename='tso_WASP-80b_nircam_lw_f444w.picke')
+pando.save_tso(filename='tso_transit_WASP-80b_nircam_lw_f444w.picke')
 ```
 
-Later you can open the saved TSO with `pickle`:
+See [this tutorial](tutorials_tso_post_processing.qmd) to load that pickle file and simulate some spectra.
 
-```python
-import pickle
-with open('tso_WASP-80b_nircam_lw_f444w.picke', 'rb') as f:
-    tso = pickle.load(f)
-```
