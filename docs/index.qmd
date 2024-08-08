@@ -39,6 +39,11 @@ for known exoplanets.
 pip install gen_tso
 ```
 
+Then, you can launch the `Gen TSO` application with this prompt command:
+```bash
+tso
+```
+
 More information in the links below.
 
 - [Installation](install.qmd)

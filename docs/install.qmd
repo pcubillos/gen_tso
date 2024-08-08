@@ -5,11 +5,26 @@ page-navigation: true
 
 ## 1 Gen TSO Installation
 
-You can install `Gen TSO` from [PyPI](https://pypi.org/project/gen_tso/) with the following command:
+You can install `Gen TSO` from [PyPI](https://pypi.org/project/gen_tso/) with the following command (compatible with Python3.9+):
 
 ```bash
 pip install gen_tso
 ```
+
+Now you are ready to launch the `Gen TSO` application. You can do that with this prompt command:
+```bash
+tso
+```
+
+::: {.callout-note}
+If this is your first time or see any warning,
+you may need to look at the Pandeia installation section below
+:::
+
+::: {.callout-note}
+If you find Numpy compilation issues when instaling `gen_tso`, it's better to install into a freshly new virtual environment, since the new Numpy2 is incompatible with many older installed packages.
+:::
+
 
 <br>
 

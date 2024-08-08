@@ -3,7 +3,11 @@ title: Getting started
 page-navigation: true
 ---
 
-With `Gen TSO` you can produce JWST simulated spectra in as few as four simple steps.
+With `Gen TSO` you can produce JWST simulated spectra in as few as four simple steps.<br>
+Lets start launching the application from the prompt:
+```bash
+tso
+```
 
 ## 1 Select target
 
