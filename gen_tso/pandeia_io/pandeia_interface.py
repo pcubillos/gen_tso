@@ -341,9 +341,9 @@ def saturation_level(reports, get_max=False):
     >>>     integ_time = jwst.integration_time(inst, subarray, readout, ngroup)
     >>>     sat_level = pixel_rate * integ_time / full_well * 100
     >>>     print(f'Sat. fraction for {ngroup:3d} groups: {sat_level:5.1f}%')
-    Sat. fraction for   2 groups:   1.6%
-    Sat. fraction for  97 groups:  79.4%
-    Sat. fraction for 122 groups:  99.9%
+    Sat. fraction for   2 groups:   1.5%
+    Sat. fraction for  97 groups:  73.9%
+    Sat. fraction for 122 groups:  93.0%
     """
     if not isinstance(reports, list):
         reports = [reports]
@@ -395,7 +395,7 @@ def load_sed_list(source):
 
     Examples
     --------
-    >>> import gen_tso.pandeia as jwst
+    >>> import gen_tso.pandeia_io as jwst
     >>> # PHOENIX models
     >>> keys, names, teff, log_g = jwst.load_sed_list('phoenix')
     >>> # Kurucz models
@@ -423,26 +423,42 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
 
     Parameters
     ----------
-    models_teff: list of floats
-        SED model effective-temperature grid.
-    models_logg: list of floats
-        SED model log(g) grid.
     teff: float
         Target effective temperature.
     logg: float
         Target log(g).
+    models_teff: list of floats
+        SED model effective-temperature grid.
+    models_logg: list of floats
+        SED model log(g) grid.
+    sed_type: String
+        Select from 'phoenix' or 'k93models'
 
     Returns
     -------
-    idx: integer
+    If models_teff or models_logg are None
+        sed: String
+        The SED key that best matches the teff,logg pair.
+    Else
+        idx: integer
         index of model with the closest Teff and logg.
 
     Examples
     --------
-    >>> import gen_tso.pandeia as jwst
-    >>> # PHOENIX models
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # Kurucz models
+    >>> sed = jwst.find_closest_sed(
+    >>>     teff=4143.0, logg=4.66, sed_type='k93models',
+    >>> )
+    >>> print(f'SED: {repr(sed)}')
+    SED: 'k7v'
+    >>>
+    >>> # PHOENIX models when I already have the list of models:
     >>> keys, names, p_teff, p_logg = jwst.load_sed_list('phoenix')
-    >>> idx = jwst.find_closest_sed(teff=4143.0, logg=4.66, p_teff, p_logg)
+    >>> teff = 4143.0
+    >>> logg = 4.66
+    >>> idx = jwst.find_closest_sed(teff, logg, p_teff, p_logg)
     >>> print(f'{keys[idx]}: {repr(names[idx])}')
     k5v: 'K5V 4250K log(g)=4.5'
     """
@@ -648,7 +664,7 @@ def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
 
     Examples
     --------
-    >>> import gen_tso.pandeia as jwst
+    >>> import gen_tso.pandeia_io as jwst
 
     >>> # A pandeia stellar point-source scene:
     >>> scene = jwst.make_scene(
@@ -657,8 +673,7 @@ def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
     >>> )
     >>>
     >>> # A transit-depth spectrum:
-    >>> depth_model = np.loadtxt(
-    >>>     '../planet_spectra/WASP80b_transit.dat', unpack=True)
+    >>> depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
     >>>
     >>> obs_type = 'transit'
     >>> star_scene, in_transit_scene = jwst.set_depth_scene(
@@ -941,8 +956,8 @@ def _print_pandeia_exposure(
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
-    >>> import numy as np
-
+    >>> import numpy as np
+    >>>
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]
     >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
@@ -951,11 +966,12 @@ def _print_pandeia_exposure(
     >>>     'transit', transit_dur=2.1, obs_dur=6.0, depth_model=depth,
     >>>     ngroup=190, readout='rapid', filter='f444w',
     >>> )
-
+    >>>
     >>> # Print from config dictionary:
     >>> config = tso['report_out']['input']['configuration']
-    >>> text = jwst._print_pandeia_exposure(config=config)
-
+    >>> print(jwst._print_pandeia_exposure(config=config))
+    Exposure time: 13988.25 s (3.89 h)
+    >>>
     >>> # Print from direct input values:
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
@@ -965,6 +981,8 @@ def _print_pandeia_exposure(
     >>> text = jwst._print_pandeia_exposure(
     >>>     inst, subarray, readout, ngroup, nint,
     >>> )
+    >>> print(text)
+    Exposure time: 4650.09 s (1.29 h)
     """
     if config is not None:
         inst = config['instrument']['instrument']
@@ -985,7 +1003,7 @@ def _print_pandeia_saturation(
     ):
     """
     >>> import gen_tso.pandeia_io as jwst
-    >>> import numy as np
+    >>> import numpy as np
 
     >>> wl = np.logspace(0, 2, 1000)
     >>> depth = [wl, np.tile(0.03, len(wl))]

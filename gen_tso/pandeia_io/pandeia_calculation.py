@@ -266,7 +266,7 @@ class PandeiaCalculation():
 
         Examples
         --------
-        >>> import pandeia_interface as jwst
+        >>> import gen_tso.pandeia_io as jwst
 
         >>> instrument = 'nircam'
         >>> mode = 'lw_tsgrism'
