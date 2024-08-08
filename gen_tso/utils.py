@@ -90,11 +90,32 @@ def read_spectrum_file(file, on_fail=None):
 
 def collect_spectra(folder, on_fail=None):
     """
+    Collect transit, eclipse, and SED spectra files from folder.
+    - Transit spectra are identified by having 'transmission' or 'transit'
+    in their names.  Or all files contained in a 'transit/' subfolder.
+    - Eclipse spectra are identified by having 'emission' or 'eclipse'
+    in their names.  Or all files contained in a 'eclipse/' subfolder.
+    - SED spectra are identified by having 'sed' or 'star' in their names.
+
     Parameters
     ----------
+    folder: String
+        The folder where to search.
     on_fail: String
         if 'warning' raise a warning.
         if 'error' raise an error.
+
+    Returns
+    -------
+    transit_spectra: Dictionary
+        Spectrum name: 1D spectrum pairs for each transit file.
+            The 1D spectra is itself a dictionary with keys: wl and depth.
+    eclipse_spectra: Dictionary
+        Spectrum name: 1D spectrum pairs for each eclipse file.
+            The 1D spectra is itself a dictionary with keys: wl and depth.
+    sed_spectra: Dictionary
+        Spectrum name: 1D spectrum pairs for each SED file.
+            The 1D spectra is itself a dictionary with keys: wl and flux.
 
     Examples
     --------
@@ -107,14 +128,31 @@ def collect_spectra(folder, on_fail=None):
     transit_files = [
         file for file in sorted(files)
         if 'transit' in file or 'transmission' in file
+        if not os.path.isdir(file)
     ]
+    if 'transit' in files and os.path.isdir('transit'):
+        sub_folder = f'{folder}/transit'
+        transit_files += [
+            f'transit/{file}' for file in sorted(os.listdir(sub_folder))
+            if not os.path.isdir(f'transit/{file}')
+        ]
+
     eclipse_files = [
         file for file in sorted(files)
         if 'eclipse' in file or 'emission' in file
+        if not os.path.isdir(file)
     ]
+    if 'eclipse' in files and os.path.isdir('eclipse'):
+        sub_folder = f'{folder}/eclipse'
+        transit_files += [
+            f'eclipse/{file}' for file in sorted(os.listdir(sub_folder))
+            if not os.path.isdir(f'eclipse/{file}')
+        ]
+
     sed_files = [
         file for file in sorted(files)
         if 'sed' in file or 'star' in file
+        if not os.path.isdir(file)
     ]
 
     transit_spectra = {}
