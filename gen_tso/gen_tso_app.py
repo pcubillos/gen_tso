@@ -1647,6 +1647,8 @@ def server(input, output, session):
             tso['target'], tso['inst'], tso['mode'],
             tso['aperture'], tso['disperser'], tso['filter'],
         )
+        if key != 'Acquisition':
+            filename = filename.replace('tso_', f'tso_{key.lower()}_')
         overwrite_warning = ''
         if os.path.exists(f'{current_dir}/{filename}'):
             overwrite_warning = (
@@ -1698,13 +1700,13 @@ def server(input, output, session):
             folder = '.'
         filename = input.tso_save_file.get()
         if filename.strip() == '':
-            filename = 'tso_run.pickle'
+            filename = f'tso_{key.lower()}_run.pickle'
         savefile = Path(f'{folder}/{filename}')
         if savefile.suffix == '':
             savefile = savefile.parent / f'{savefile.name}.pickle'
 
         with open(savefile, 'wb') as handle:
-            pickle.dump(tso_run, handle, protocol=4)
+            pickle.dump(tso_run['tso'], handle, protocol=4)
         ui.modal_remove()
         ui.notification_show(
             f"TSO model saved to file: '{savefile}'",
