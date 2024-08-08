@@ -16,9 +16,9 @@ import pickle
 
 import numpy as np
 from scipy.interpolate import CubicSpline
-
 from pandeia.engine.calc_utils import get_instrument_config
-from gen_tso.utils import ROOT
+
+from ..utils import ROOT
 
 
 inst_names = {
@@ -906,7 +906,7 @@ def load_flux_rate_splines():
             for disperser, filter_rates in disp_rates.items():
                 for filter, sub_rates in filter_rates.items():
                     for subarray, sed_rates in sub_rates.items():
-                        if mode in ['sw_tsgrism', 'miri']:
+                        if mode in ['sw_tsgrism', 'mrs_ts']:
                             aperture = disperser
                         else:
                             aperture = ''
