@@ -851,7 +851,7 @@ def make_saturation_label(
         sat_label = f'{sat_label}_{disperser}_{subarray}'
     elif mode == 'soss':
         order = f'_O{order[0]}' if len(order)==1 else ''
-        sat_label = f'{sat_label}_{sed_label}{order}'
+        sat_label = f'{sat_label}{order}'
     elif mode == 'sw_tsgrism':
         sat_label = f'{sat_label}_{aperture}_{subarray}'
     elif mode == 'mrs_ts':
@@ -900,34 +900,35 @@ def load_flux_rate_splines():
 
     flux_rates = {}
     full_wells = {}
-    order = 1
     for inst, mode_rates in flux_rate_data.items():
         for mode, disp_rates in mode_rates.items():
+            orders = ['1', '1 2'] if mode=='soss' else ['1']
             for disperser, filter_rates in disp_rates.items():
                 for filter, sub_rates in filter_rates.items():
                     for subarray, sed_rates in sub_rates.items():
-                        if mode in ['sw_tsgrism', 'mrs_ts']:
-                            aperture = disperser
-                        else:
-                            aperture = ''
-                        filter = filter.replace('None', '')
-                        inst_label = make_saturation_label(
-                            inst, mode, aperture, disperser, filter,
-                            subarray, order, ''
-                        )
-                        for i,rate in enumerate(sed_rates['phoenix']):
-                            log_rate = np.log10(rate)
-                            sed = sed_rates['p_names'][i]
-                            label = f'{inst_label}phoenix_{sed}'
-                            flux_rates[label] = CubicSpline(mag, log_rate)
-                            full_wells[label] = sed_rates['full_well']
+                        for order in orders:
+                            if mode in ['sw_tsgrism', 'mrs_ts']:
+                                aperture = disperser
+                            else:
+                                aperture = ''
+                            filter = filter.replace('None', '')
+                            inst_label = make_saturation_label(
+                                inst, mode, aperture, disperser, filter,
+                                subarray, order, ''
+                            )
+                            for i,rate in enumerate(sed_rates['phoenix']):
+                                log_rate = np.log10(rate)
+                                sed = sed_rates['p_names'][i]
+                                label = f'{inst_label}phoenix_{sed}'
+                                flux_rates[label] = CubicSpline(mag, log_rate)
+                                full_wells[label] = sed_rates['full_well']
 
-                        for i,rate in enumerate(sed_rates['k93models']):
-                            log_rate = np.log10(rate)
-                            sed = sed_rates['k_names'][i]
-                            label = f'{inst_label}kurucz_{sed}'
-                            flux_rates[label] = CubicSpline(mag, log_rate)
-                            full_wells[label] = sed_rates['full_well']
+                            for i,rate in enumerate(sed_rates['k93models']):
+                                log_rate = np.log10(rate)
+                                sed = sed_rates['k_names'][i]
+                                label = f'{inst_label}kurucz_{sed}'
+                                flux_rates[label] = CubicSpline(mag, log_rate)
+                                full_wells[label] = sed_rates['full_well']
     return flux_rates, full_wells
 
 
