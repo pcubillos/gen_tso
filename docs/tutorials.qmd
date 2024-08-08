@@ -3,7 +3,7 @@ title: Tutorial notebooks
 page-navigation: true
 ---
 
-## A few tutorials to play at home
+## A few tutorials to try at home
 
 **Time series observation simulations:**
 
