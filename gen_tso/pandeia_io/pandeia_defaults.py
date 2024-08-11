@@ -625,7 +625,7 @@ def generate_all_instruments():
             disperser_label = 'PSF Type'
             dispersers = apertures
             filter_label = 'Filter'
-            default_indices = 0, 4, 0, 0
+            default_indices = 3, 4, 0, 0
         if mode == 'bots':
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
