@@ -95,6 +95,65 @@ def test_get_scene_unset():
         assert scene[key] == val
 
 
+def test_show_config(capsys):
+    pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    pando.show_config()
+
+    captured = capsys.readouterr()
+    expected_captured = """Instrument configuration:
+    instrument = 'nirspec'
+    mode = 'bots'
+    aperture = 's1600a1'
+    disperser = 'g395h'
+    filter = 'f290lp'
+    readout pattern = 'nrsrapid'
+    subarray = 'sub2048'
+
+Scene configuration:
+    sed_type = 'phoenix'
+    key = 'k5v'
+    normalization = 'photsys'
+    bandpass = '2mass,ks'
+    norm_flux = 8.351
+    norm_fluxunit = 'vegamag'
+"""
+    assert captured.out == expected_captured
+
+
+def test_show_config_soss(capsys):
+    pando = jwst.PandeiaCalculation('niriss', 'soss')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    pando.show_config()
+
+    captured = capsys.readouterr()
+    expected_captured = """Instrument configuration:
+    instrument = 'niriss'
+    mode = 'soss'
+    aperture = 'soss'
+    disperser = 'gr700xd'
+    filter = 'clear'
+    readout pattern = 'nisrapid'
+    subarray = 'substrip256'
+    order = 1
+
+Scene configuration:
+    sed_type = 'phoenix'
+    key = 'k5v'
+    normalization = 'photsys'
+    bandpass = '2mass,ks'
+    norm_flux = 8.351
+    norm_fluxunit = 'vegamag'
+"""
+    assert captured.out == expected_captured
+
+
 def test_tso_calculation_single():
     pando = jwst.PandeiaCalculation('nirspec', 'bots')
     # Set the stellar scene:

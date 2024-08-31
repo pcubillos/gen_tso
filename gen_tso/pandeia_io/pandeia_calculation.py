@@ -360,6 +360,41 @@ class PandeiaCalculation():
         return brightest_pixel_rate, full_well
 
 
+    def show_config(self):
+        """
+        Display a summary of the instrumental and scene configuration
+        """
+        config = self.calc['configuration']
+        inst = config['instrument']['instrument']
+        mode = config['instrument']['mode']
+        aperture = config['instrument']['aperture']
+        disperser = config['instrument']['disperser']
+        filter = config['instrument']['filter']
+        readout = config['detector']['readout_pattern']
+        subarray = config['detector']['subarray']
+        order_str = ''
+        if mode == 'soss':
+            order = self.calc['strategy']['order']
+            order_str = f'    order = {order}\n'
+
+        print(
+            'Instrument configuration:\n'
+            f'    instrument = {repr(inst)}\n'
+            f'    mode = {repr(mode)}\n'
+            f'    aperture = {repr(aperture)}\n'
+            f'    disperser = {repr(disperser)}\n'
+            f'    filter = {repr(filter)}\n'
+            f'    readout pattern = {repr(readout)}\n'
+            f'    subarray = {repr(subarray)}\n'
+            f'{order_str}'
+        )
+
+        scene = self.get_scene()
+        print('Scene configuration:')
+        for key, val in scene.items():
+            print(f'    {key} = {repr(val)}')
+
+
     def perform_calculation(
             self, ngroup, nint,
             disperser=None, filter=None, subarray=None, readout=None,
