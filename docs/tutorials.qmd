@@ -8,6 +8,7 @@ page-navigation: true
 **Time series observation simulations:**
 
 - [Set up and run a Pandeia TSO calculation](tutorials_tso_run.qmd)
+- [Optimize number of groups](tutorials_tso_optimize.qmd)
 - [Compute simulated spectra from a saved TSO file](tutorials_tso_post_processing.qmd)
 
 **Databases:**
