@@ -12,6 +12,7 @@ __all__ = [
 ]
 
 import os
+from packaging.version import parse
 
 import numpy as np
 import requests
@@ -28,18 +29,27 @@ def check_latest_version(package):
 
 
 def get_version_advice(package):
-    my_version = package.__version__
     name = package.__name__
-    latest_version = check_latest_version(name)
-    if my_version != latest_version:
-        color = 'red'
+    my_version = parse(package.__version__)
+    latest_version = parse(check_latest_version(name))
+    my_major_minor = parse(f'{my_version.major}.{my_version.minor}')
+    latest_major_minor = parse(f'{latest_version.major}.{latest_version.minor}')
+    if my_version == latest_version:
+        color = '#0B980D'
+        advice = ''
+    elif my_major_minor == latest_major_minor:
+        color = '#ffa500'
         advice = (
             f'.<br>You may want to upgrade {name} with:<br>'
             f'<span style="font-weight:bold;">pip install --upgrade {name}</span>'
         )
     else:
-        color = '#0B980D'
-        advice = ''
+        color = 'red'
+        advice = (
+            f'.<br>You should upgrade {name} with:<br>'
+            f'<span style="font-weight:bold;">pip install --upgrade {name}</span>'
+        )
+
     status_advice = ui.HTML(
         f'<br><p><span style="color:{color}">You have {name} '
         f'version {my_version}, the latest version is '

@@ -112,20 +112,26 @@ pando.set_scene(
 )
 
 # Now lets take a look at the default cofiguration:
-pando.calc['configuration']
+pando.show_config()
 ```
 Which outputs:
 ```bash
-{'detector': {'nexp': 1,
-  'ngroup': 10,
-  'nint': 1,
-  'readout_pattern': 'rapid',
-  'subarray': 'subgrism64'},
- 'instrument': {'aperture': 'lw',
-  'disperser': 'grismr',
-  'filter': 'f444w',
-  'instrument': 'nircam',
-  'mode': 'lw_tsgrism'}}
+Instrument configuration:
+    instrument = 'nircam'
+    mode = 'lw_tsgrism'
+    aperture = 'lw'
+    disperser = 'grismr'
+    filter = 'f444w'
+    readout pattern = 'rapid'
+    subarray = 'subgrism64'
+
+Scene configuration:
+    sed_type = 'phoenix'
+    key = 'k5v'
+    normalization = 'photsys'
+    bandpass = '2mass,ks'
+    norm_flux = 8.351
+    norm_fluxunit = 'vegamag'
 ```
 
 We can take a look at the available options for disperser, filter, readout, subarray, or aperture with this command:
@@ -144,16 +150,20 @@ readout patterns: ['rapid', 'bright1', 'bright2', 'shallow2', 'shallow4', 'mediu
 
 I'm OK with the defaults above, so, lets run a TSO simulation:
 ```python
+# ngroup to remain below 70% of saturation at the brightest pixel:
+ngroup = pando.saturation_fraction(fraction=70.0)
+
 # Run a transit TSO simulation:
 obs_type = 'transit'
 tso = pando.tso_calculation(
     obs_type, transit_dur, obs_dur, depth_model,
-    ngroup=90,
+    ngroup=ngroup,
 )
 ```
 
 ::: {.callout-note}
-At the moment is best to use [the `Gen TSO` application](get_started.qmd) to check for the optimal number of groups.
+See the [saturation optimization tutorial](tutorials_tso_optimize.qmd)
+for a more in-depth example to optimize ngroup or estimate saturation levels.
 :::
 
 

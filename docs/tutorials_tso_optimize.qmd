@@ -1,0 +1,113 @@
+---
+title: Runing Pandeia TSO from the terminal
+page-navigation: true
+---
+
+This Python script shows how to
+
+- (1) optimize the number of groups given a target saturation fraction, and
+- (2) estimate the saturation fraction for a given number of groups.
+
+## 0. Setup
+
+Lets set up a target and instrument observation first:
+
+```python
+import gen_tso.pandeia_io as jwst
+import gen_tso.catalogs as cat
+
+
+# Find a suitable stellar SED model for a WASP-80b transit:
+catalog = cat.Catalog()
+target = catalog.get_target('WASP-80 b')
+sed = jwst.find_closest_sed(target.teff, target.logg_star, sed_type='phoenix')
+
+
+# Initialize the instrument and set the scene:
+pando = jwst.PandeiaCalculation('nirspec', 'bots')
+pando.set_scene(
+    sed_type='phoenix', sed_model=sed,
+    norm_band='2mass,ks', norm_magnitude=target.ks_mag,
+)
+```
+
+Now lets take a look at the current cofiguration:
+```python
+print(
+    "The SED:\n"
+    f"    Teff = {target.teff}\n"
+    f"    log_g = {target.logg_star}\n"
+    f"    SED = {sed}\n"
+)
+pando.show_config()
+```
+
+Which returns:
+```bash
+The SED:
+    Teff = 4143.0
+    log_g = 4.66
+    SED = k5v
+
+Instrument configuration:
+    instrument = 'nirspec'
+    mode = 'bots'
+    aperture = 's1600a1'
+    disperser = 'g395h'
+    filter = 'f290lp'
+    readout pattern = 'nrsrapid'
+    subarray = 'sub2048'
+
+Scene configuration:
+    sed_type = 'phoenix'
+    key = 'k5v'
+    normalization = 'photsys'
+    bandpass = '2mass,ks'
+    norm_flux = 8.351
+    norm_fluxunit = 'vegamag'
+```
+
+## 1. Optimize `ngroup`
+
+Once setup an instrument configuration and an SED, the optimal number
+of groups below a saturation level can be computed with the following method:
+
+```python
+ngroup_max = pando.saturation_fraction(fraction=70.0)
+print(f'ngroup below 70% saturation: {ngroup_max}')
+```
+
+```bash
+ngroup below 70% saturation: 12
+```
+
+::: {.callout-note}
+Saturation levels can be instantly computed for any PHOENIX or Kurucz
+(k93models) SED models *and* the Ks band for normalization *and* for most spectroscopic instrument modes.
+For other combinations, users will need to calculate the flux rate first:
+
+```python
+result = pando.perform_calculation(ngroup=2, nint=1)
+flux_rate, full_well = jwst.saturation_level(result)
+ngroup = pando.saturation_fraction(
+    fraction=70.0,
+    flux_rate=flux_rate, full_well=full_well,
+)
+```
+:::
+
+
+## 2. Estimate saturation level
+
+Use the same method to estimate the saturation level, this time providing
+the number of groups:
+
+```python
+saturation = pando.saturation_fraction(ngroup=14)
+print(f'saturation level for 14 groups: {saturation:.2f}')
+```
+
+```bash
+saturation level for 14 groups: 77.24
+```
+
