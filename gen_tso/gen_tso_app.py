@@ -987,6 +987,8 @@ def server(input, output, session):
             ui.markdown(
                 'If you see anything in <span style="color:red">red</span>, '
                 'click the button to update or follow the instructions.<br>'
+                'If you see <span style="color:#ffa500">orange</span>, '
+                "you are encouraged to upgrade, but no stress.<br>"
                 'If you see <span style="color:#0B980D">green</span>, you '
                 'are good to go modeling JWST observations.'
             ),
