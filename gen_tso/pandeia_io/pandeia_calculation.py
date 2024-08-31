@@ -21,6 +21,7 @@ from .pandeia_interface import (
     read_noise_variance,
     bin_search_exposure_time,
     saturation_level,
+    integration_time,
     make_scene,
     set_depth_scene,
     simulate_tso,
@@ -31,7 +32,10 @@ from .pandeia_defaults import (
     generate_all_instruments,
     filter_throughputs,
     get_detector,
+    load_flux_rate_splines,
+    make_saturation_label,
 )
+
 try:
     detectors = generate_all_instruments()
     bots_throughputs = filter_throughputs()['spectroscopy']['nirspec']['bots']
@@ -56,6 +60,7 @@ class PandeiaCalculation():
     mode: string
         Observing mode. If not set, default to the first item for
         each instrument from this list below:
+
           instrument   mode          comments
           ----------   ----          --------
           nircam:      lw_tsgrism    spectroscopy
@@ -281,6 +286,28 @@ class PandeiaCalculation():
         bkg, bkg_level = background.strip().split('_')
         self.calc['background'] = bkg
         self.calc['background_level'] = bkg_level
+
+
+    def get_scene(self):
+        """
+        Get a flattened copy of the scene containing the SED and
+        normalization properties.
+
+        Returns
+        -------
+        scene_args: Dictionary
+            Scene arguments.
+        """
+        scene = self.calc['scene'][0]['spectrum']
+        scene_args = scene['sed'].copy()
+        normalization = scene['normalization'].copy()
+        scene_args['normalization'] = normalization.pop('type')
+        scene_args.update(normalization)
+
+        if 'spectrum' in scene_args:
+            scene_args.pop('spectrum')
+
+        return scene_args
 
 
     def get_saturation_values(
