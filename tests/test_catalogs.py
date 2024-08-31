@@ -1,4 +1,4 @@
-import pytests
+import pytest
 import gen_tso.catalogs as cat
 import numpy as np
 from gen_tso.utils import ROOT

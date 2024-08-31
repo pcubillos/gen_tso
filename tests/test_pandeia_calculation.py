@@ -1,8 +1,10 @@
 # Copyright (c) 2024 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
-import gen_tso.pandeia_io as jwst
+import pytest
+import re
 import numpy as np
+import gen_tso.pandeia_io as jwst
 
 
 def test_perform_calculation():
@@ -152,6 +154,105 @@ Scene configuration:
     norm_fluxunit = 'vegamag'
 """
     assert captured.out == expected_captured
+
+
+def test_saturation_fraction_get_ngroup():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    ngroup = pando.saturation_fraction(fraction=80.0)
+    assert ngroup == 104
+
+
+def test_saturation_fraction_get_saturation():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    saturation = pando.saturation_fraction(ngroup=91)
+
+    expected_saturation = 69.3642895274301
+    np.testing.assert_almost_equal(saturation, expected_saturation)
+
+
+def test_saturation_fraction_with_flux_rate():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    flux_rate = 1400.2094016444962
+    full_well = 58100.001867429375
+    ngroup = pando.saturation_fraction(
+        fraction=80.0, flux_rate=flux_rate, full_well=full_well,
+    )
+    assert ngroup == 97
+
+
+def test_saturation_fraction_error_both_inputs():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+
+    error = re.escape('Only one of fraction and ngroup must be defined')
+    with pytest.raises(ValueError, match=error):
+        saturation = pando.saturation_fraction(ngroup=91, fraction=80.0)
+
+
+def test_saturation_fraction_error_no_inputs():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+
+    error = re.escape('At least one of fraction and ngroup must be defined')
+    with pytest.raises(ValueError, match=error):
+        saturation = pando.saturation_fraction()
+
+
+def test_saturation_fraction_no_guess_band(capsys):
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,h', norm_magnitude=8.351,
+    )
+
+    ngroup = pando.saturation_fraction(fraction=80.0)
+    assert ngroup is None
+    captured = capsys.readouterr()
+    expected_captured = 'Error, can only guess for Ks band ("2mass,ks")\n'
+    assert captured.out == expected_captured
+
+
+def test_saturation_fraction_no_guess_sed_type(capsys):
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    ngroup = pando.saturation_fraction(fraction=80.0)
+    assert ngroup is None
+    captured = capsys.readouterr()
+    expected_captured = 'Error, can only guess for phoenix or kurucz SEDs\n'
+    assert captured.out == expected_captured
+
+
+def test_saturation_fraction_no_guess_label(capsys):
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    pando.calc['configuration']['instrument']['filter'] = 'bad_filter'
+
+    ngroup = pando.saturation_fraction(fraction=80.0)
+    assert ngroup is None
+    captured = capsys.readouterr()
+    expected_captured = "Error, no flux_rate spline for configuration label: 'lw_tsgrism_bad_filter_phoenix_k5v'\n"
+    assert captured.out == expected_captured
+
 
 
 def test_tso_calculation_single():

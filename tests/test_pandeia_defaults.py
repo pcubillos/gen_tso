@@ -101,5 +101,3 @@ def test_load_flux_rate_splines_not_found():
     assert flux_rate_spline is None
     assert full_well is None
 
-
-

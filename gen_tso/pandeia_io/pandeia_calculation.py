@@ -360,6 +360,125 @@ class PandeiaCalculation():
         return brightest_pixel_rate, full_well
 
 
+    def saturation_fraction(
+            self, fraction=None, ngroup=None,
+            flux_rate=None, full_well=None,
+        ):
+        """
+        Estimate the number of groups below a given saturation fraction or
+        the saturation level for a given number of groups.
+
+        Parameters
+        ----------
+        fraction: Float
+            If not None, estimate the maximum number of groups below
+            the given saturation fraction (percentage units).
+        ngroup: Interger
+            If not None, estimate the saturation fraction (%) for ngroup.
+        flux_rate: Float
+            e- per second rate at the brightest pixel.
+        full_well: Float
+            Number of e- counts to saturate the detector.
+
+        Returns
+        -------
+        (if fraction argument is not None)
+        ngroup: Integer
+             Maximum number of groups to remain below the saturation fraction
+
+        (if ngroup argument is not None)
+        sat_fraction: Float
+             Saturation level reached for given ngroup.
+
+        Examples
+        --------
+        >>> import gen_tso.pandeia_io as jwst
+
+        >>> instrument = 'nircam'
+        >>> mode = 'lw_tsgrism'
+        >>> pando = jwst.PandeiaCalculation(instrument, mode)
+        >>> pando = jwst.PandeiaCalculation('niriss', 'soss')
+        >>> pando.set_scene(
+        >>>     sed_type='phoenix', sed_model='k5v',
+        >>>     norm_band='2mass,ks', norm_magnitude=8.351,
+        >>> )
+        >>>
+        >>> # Get number of groups below 80% saturation:
+        >>> ngroup = pando.saturation_fraction(fraction=80.0)
+        >>> print(ngroup)
+        104
+        >>>
+        >>> # Get saturation fraction (%) for 96 groups:
+        >>> fraction = pando.saturation_fraction(ngroup=91)
+        >>> print(fraction)
+        69.3642895274301
+        """
+        if fraction is not None and ngroup is not None:
+            raise ValueError('Only one of fraction and ngroup must be defined')
+        if fraction is None and ngroup is None:
+            raise ValueError('At least one of fraction and ngroup must be defined')
+
+        config = self.calc['configuration']
+        inst = config['instrument']['instrument']
+        readout = config['detector']['readout_pattern']
+        subarray = config['detector']['subarray']
+        # If flux rate values are not known, try to guess them:
+        if flux_rate is None or full_well is None:
+            scene = self.calc['scene'][0]['spectrum']
+            sed_type = scene['sed']['sed_type']
+            if sed_type == 'k93models':
+                sed_type = 'kurucz'
+
+            if sed_type not in ['phoenix', 'kurucz']:
+                print('Error, can only guess for phoenix or kurucz SEDs')
+                return
+            norm_band = scene['normalization']['bandpass']
+            if norm_band != '2mass,ks':
+                print('Error, can only guess for Ks band ("2mass,ks")')
+                return
+
+            norm_magnitude = scene['normalization']['norm_flux']
+            sed_model = scene['sed']['key']
+            sed_label = f'{sed_type}_{sed_model}'
+
+            mode = config['instrument']['mode']
+            aperture = config['instrument']['aperture']
+            disperser = config['instrument']['disperser']
+            filter = config['instrument']['filter']
+            order = None
+            if mode == 'soss':
+                order = self.calc['strategy']['order']
+                if not isinstance(order, list):
+                    order = [order]
+            sat_guess_label = make_saturation_label(
+                inst, mode, aperture, disperser,
+                filter, subarray, order,
+                sed_label,
+            )
+
+            flux_rate_func, full_well = load_flux_rate_splines(sat_guess_label)
+            if flux_rate_func is None:
+                print(
+                    'Error, no flux_rate spline for configuration '
+                    f'label: {repr(sat_guess_label)}'
+                )
+                return
+            flux_rate = 10**flux_rate_func(norm_magnitude)
+
+        # The calculation
+        if fraction is not None:
+            # search for ngroup below fraction
+            sat_time = integration_time(inst, subarray, readout, ngroup=1)
+            sat_frac_1g = 100 * flux_rate * sat_time / full_well
+            ngroup = int(fraction/sat_frac_1g)
+            return ngroup
+
+        if ngroup is not None:
+            sat_time = integration_time(inst, subarray, readout, ngroup)
+            sat_fraction = 100 * flux_rate * sat_time / full_well
+            return sat_fraction
+
+
     def show_config(self):
         """
         Display a summary of the instrumental and scene configuration
