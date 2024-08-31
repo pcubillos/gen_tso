@@ -10,7 +10,6 @@ __all__ = [
     'Detector',
 ]
 
-import os
 from itertools import product
 import pickle
 
@@ -881,18 +880,52 @@ def make_obs_label(
     return label
 
 
-def load_flux_rate_splines():
+def load_flux_rate_splines(obs_label=None):
     """
-    Construct a ridiculously nested dictionary of cubic splines
-    from a similar set of dictionaries containing pre-calculated
-    brightest pixel flux rate for a instrumental config and SED.
+    Get dictionary of cubic spline functions for pre-calculated
+    brightest pixel flux rates at given instrumental and SED config
+    combinations.
+
+    Parameters
+    ----------
+    obs_label: String
+         If not None, only return the flux_rate and full_well for the
+         instrument and SED configuration matching the input label.
+         Return (None,None) if no config matched the obs_label.
+
+    Returns
+    -------
+    flux_rates: Dictionary of CubicSpline objects
+        Spline function that returns the flux rate at a given Ks magnitude.
+    full_wells: Dictionary of floats
+        e- counts to saturate the detector.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # Extract all splines:
+    >>> flux_rate_splines, full_wells = jwst.load_flux_rate_splines()
+    >>> # Evaluate for one config:
+    >>> obs_label = 'lw_tsgrism_f444w_phoenix_k5v'
+    >>> spline = flux_rate_splines[obs_label]
+    >>> print(spline(8.351), full_wells[obs_label])
+    3.1140133020415353 58100.001867429375
+    >>>
+    >>> # Extract a single config:
+    >>> obs_label = 'lw_tsgrism_f444w_phoenix_k5v'
+    >>> flux_rate_spline, full_well = jwst.load_flux_rate_splines(obs_label)
+    >>> print(flux_rate_spline(8.351), full_well)
+    3.1140133020415353 58100.001867429375
     """
+    if obs_label is not None:
+        tokens = obs_label.split('_')
+        i_label = '_'.join(tokens[:-2]) + '_'
+
     flux_rate_data = {}
     for instrument in ['miri', 'nircam', 'niriss', 'nirspec']:
         inst = instrument.lower()
         rate_file = f'{ROOT}data/flux_rates_{inst}.pickle'
-        if not os.path.exists(rate_file):
-            continue
         with open(rate_file, 'rb') as handle:
             rates = pickle.load(handle)
         mag = rates.pop('magnitude')
@@ -916,19 +949,31 @@ def load_flux_rate_splines():
                                 inst, mode, aperture, disperser, filter,
                                 subarray, order, ''
                             )
+                            if obs_label is not None and inst_label != i_label:
+                                continue
                             for i,rate in enumerate(sed_rates['phoenix']):
                                 log_rate = np.log10(rate)
                                 sed = sed_rates['p_names'][i]
                                 label = f'{inst_label}phoenix_{sed}'
-                                flux_rates[label] = CubicSpline(mag, log_rate)
-                                full_wells[label] = sed_rates['full_well']
+                                if obs_label is None:
+                                    flux_rates[label] = CubicSpline(mag, log_rate)
+                                    full_wells[label] = sed_rates['full_well']
+                                elif label == obs_label:
+                                    return CubicSpline(mag, log_rate), sed_rates['full_well']
+
 
                             for i,rate in enumerate(sed_rates['k93models']):
                                 log_rate = np.log10(rate)
                                 sed = sed_rates['k_names'][i]
                                 label = f'{inst_label}kurucz_{sed}'
-                                flux_rates[label] = CubicSpline(mag, log_rate)
-                                full_wells[label] = sed_rates['full_well']
+                                if obs_label is None:
+                                    flux_rates[label] = CubicSpline(mag, log_rate)
+                                    full_wells[label] = sed_rates['full_well']
+                                elif label == obs_label:
+                                    return CubicSpline(mag, log_rate), sed_rates['full_well']
+    # Model not found
+    if obs_label is not None:
+        return None, None
     return flux_rates, full_wells
 
 
