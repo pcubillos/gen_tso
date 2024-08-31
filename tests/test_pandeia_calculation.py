@@ -22,7 +22,7 @@ def test_perform_calculation():
     report = pando.perform_calculation(
         ngroup, nint, disperser, filter, subarray, readout, aperture,
     )
-    # assert
+    # TBD: asserts
 
 
 #def test_read_noise_variance():
@@ -58,6 +58,41 @@ def test_perform_calculation():
 #        if isinstance(read_noise, dict):
 #            read_noise = read_noise['default']
 #        print(inst, mode, read_noise)
+
+def test_get_scene_phoenix():
+    pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    pando.set_scene(
+        sed_type='phoenix', sed_model='k5v',
+        norm_band='2mass,ks', norm_magnitude=8.351,
+    )
+    scene = pando.get_scene()
+    expected_scene = {
+        'sed_type': 'phoenix',
+        'key': 'k5v',
+        'normalization': 'photsys',
+        'bandpass': '2mass,ks',
+        'norm_flux': 8.351,
+        'norm_fluxunit': 'vegamag',
+    }
+    for key, val in expected_scene.items():
+        assert scene[key] == val
+
+
+def test_get_scene_unset():
+    pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    scene = pando.get_scene()
+    expected_scene = {
+        'sed_type': 'flat',
+        'unit': 'fnu',
+        'z': 0.0,
+        'normalization': 'at_lambda',
+        'norm_wave': 2.0,
+        'norm_flux': 0.001,
+        'norm_fluxunit': 'mjy',
+        'norm_waveunit': 'microns',
+    }
+    for key, val in expected_scene.items():
+        assert scene[key] == val
 
 
 def test_tso_calculation_single():
