@@ -5,6 +5,10 @@ page-navigation: true
 
 ## A few tutorials to try at home
 
+
+
+A collection of scripts to run `Gen TSO` from a jupyter notebook or a python interactive session:
+
 **Time series observation simulations:**
 
 - [Set up and run a Pandeia TSO calculation](tutorials_tso_run.qmd)
@@ -14,3 +18,14 @@ page-navigation: true
 **Databases:**
 
 - [Display and parse existing JWST programs](tutorials_jwst_programs.qmd)
+
+<br>
+---
+
+**GUI walkthrough:**<br>
+Some advice for using the `Gen TSO` graphical interface (see also the [main article](get_started.qmd))
+
+- [Select target and SED](select_target.qmd)
+- [Select target's transit/eclipse spectrum](select_planet_model.qmd)
+- [Set up and run a Pandeia TSO calculation](run_pandeia.qmd)
+
