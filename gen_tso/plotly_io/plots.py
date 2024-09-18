@@ -152,17 +152,18 @@ def plotly_filters(
         modes = list(passbands[inst])
         all_filters[inst] = {}
 
-        for mode in modes:
-            if mode == mode_name:
-                filters = list(passbands[inst][mode][subarray_name].keys())
+        for mode in reversed(modes):
+            if mode == mode_name and subarray_name in passbands[inst][mode]:
+                subarray = subarray_name
+                filters = list(passbands[inst][mode][subarray].keys())
             elif show_all and mode in show_all_subarrays:
-                subarray_name = show_all_subarrays[mode]
+                subarray = show_all_subarrays[mode]
                 filters = show_all_filters[mode]
             else:
                 filters = []
 
             for filter in filters:
-                band = passbands[inst][mode][subarray_name][filter]
+                band = passbands[inst][mode][subarray][filter]
                 all_filters[inst][filter] = band
                 if 'order2' in band:
                     all_filters[inst]['order2'] = band['order2']
@@ -170,12 +171,12 @@ def plotly_filters(
 
 
     visible = [None for _ in range(nfilters)]
-    if mode == 'bots':
+    if mode_name == 'bots':
         for i,filter in enumerate(all_filters[inst_name].keys()):
             hide = ('h' in filter_name) is not ('h' in filter)
             if hide and 'prism' not in filter:
                 visible[i] = 'legendonly'
-    elif mode in ['lw_tsgrism', 'sw_tsgrism']:
+    elif mode_name in ['lw_tsgrism', 'sw_tsgrism']:
         nircam_visibles = ['f070w', 'f090w', 'f150w2', 'f322w2', 'f444w']
         for i,filter in enumerate(all_filters[inst_name].keys()):
             if filter != filter_name and filter not in nircam_visibles:

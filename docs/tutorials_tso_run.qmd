@@ -23,9 +23,12 @@ catalog = cat.Catalog()
 target = catalog.get_target('WASP-80 b')
 # For something cool, do: print(target)
 
+# in-transit and total duration times:
 transit_dur = target.transit_dur
-mag = target.ks_mag
-obs_dur = 2*transit_dur + 1 + 0.75
+t_start = 1.0
+t_settling = 0.75
+t_base = np.max([0.5*transit_dur, 1.0])
+obs_dur = t_start + t_settling + transit_dur + 2*t_base
 
 # Lets find a suitable stellar SED model:
 sed = jwst.find_closest_sed(target.teff, target.logg_star, sed_type='phoenix')
@@ -108,8 +111,9 @@ pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
 # The star:
 pando.set_scene(
     sed_type='phoenix', sed_model=sed,
-    norm_band='2mass,ks', norm_magnitude=mag,
+    norm_band='2mass,ks', norm_magnitude=target.ks_mag,
 )
+
 
 # Now lets take a look at the default cofiguration:
 pando.show_config()

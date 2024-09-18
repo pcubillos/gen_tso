@@ -104,7 +104,8 @@ def get_children(host_aliases, planet_aliases):
 
 def save_catalog(targets, catalog_file):
     """
-    save_catalog(targets, catalog_file)
+    Write data from a catalog of targets to a plain-text file.
+    Targets will be sorted by host name and then by planet name.
     """
     # Save as plain text:
     with open(catalog_file, 'w') as f:
@@ -114,8 +115,12 @@ def save_catalog(targets, catalog_file):
             '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
             'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
         )
+        hosts = [target.host for target in targets]
+        planets = [target.planet for target in targets]
+        isort = np.lexsort((planets, hosts))
         host = ''
-        for target in targets:
+        for idx in isort:
+            target = targets[idx]
             planet = target.planet
             ra = f'{target.ra:.7f}'
             dec = f'{target.dec:.7f}'
@@ -243,8 +248,10 @@ def curate_aliases():
     for name in to_remove:
         aka.pop(name)
 
+    sorted_names = sorted(list(aka))
     with open(f'{ROOT}data/target_aliases.txt', 'w') as f:
-        for name,aliases in aka.items():
+        for name in sorted_names:
+            aliases = sorted(aka[name])
             str_aliases = ','.join(aliases)
             f.write(f'{name}:{str_aliases}\n')
 

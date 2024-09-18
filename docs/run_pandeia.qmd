@@ -11,7 +11,7 @@ page-navigation: true
 You may want to adjust the observation time in the *Observation* sub-panel
 in the lower left.
 The observation duration is automatically derived from the target's transit
-duration according to the [JWST recommendation for TSOs](https://jwst-docs.stsci.edu/jwst-near-infrared-imager-and-slitless-spectrograph/niriss-example-science-programs/niriss-soss-time-series-observations-of-wasp-39/step-by-step-etc-guide-for-niriss-soss-time-series-observations-of-wasp-39):
+duration according to the [JWST recommendation for TSOs](https://jwst-docs.stsci.edu/jwst-near-infrared-imager-and-slitless-spectrograph/niriss-example-science-programs/niriss-soss-time-series-observations-of-a-transiting-exoplanet/step-by-step-etc-guide-for-niriss-soss-time-series-observations-of-a-transiting-exoplanet):
 
 $$T_{\rm dur} = T_{\rm start} + T_{\rm settling} + T_{\rm baseline} + T_{\rm transit} + T_{\rm baseline}$$
 
@@ -24,7 +24,7 @@ Where each term is:
 
 The baseline time is calculated as
 
-$$ T_{\rm baseline}  = \min(0.5 T_{\rm tran}, 1{\rm h})$$
+$$ T_{\rm baseline}  = \max(0.5 T_{\rm tran}, 1{\rm h})$$
 
 Surely, users can directly set the observing time or adjust the
 variables for this calculation by clicking the gear icon:
