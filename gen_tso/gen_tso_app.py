@@ -978,7 +978,7 @@ def server(input, output, session):
         button_width = '95%'
 
         my_pandeia = pandeia.engine.__version__
-        pandeia_status = get_version_advice(pandeia.engine)
+        pandeia_status = get_version_advice(pandeia.engine, latest_version='4.0.0')
         gen_tso_status = get_version_advice(gen_tso)
         pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
         pysynphot_data = check_pysynphot()
@@ -1792,7 +1792,7 @@ def server(input, output, session):
 
         keys = ui.HTML(
             'Keys:<br>'
-            '<span style="color:#0B980D">Observed, no proprietary period.</span>'
+            '<span style="color:#0B980D">Observed, publicly available.</span>'
             '<br><span>Observed, in proprietary period.</span><br>'
             '<span style="color:#FFa500">To be observed, planned window.</span>'
             '<br><span style="color:red">Failed, withdrawn, or skipped.</span>'
@@ -1843,7 +1843,7 @@ def server(input, output, session):
                         f' ({propriety[i]} m)'
                     )
                 else:
-                    dates.append('---')
+                    dates.append(f'--- ({propriety[i]} m)')
                 if i not in warnings:
                     tbd_dates.append(i)
 
@@ -1879,7 +1879,7 @@ def server(input, output, session):
         data_df = {
             'Program ID': programs,
             'PI': pi,
-            'Target name': data['trexo_name'],
+            'Target': data['trexo_name'],
             # TBD: fetch which planet(s)
             #'planet': ['b' for _ in pi],
             'Event': data['event'],
@@ -2964,7 +2964,6 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.get_acquisition_target)
     def _():
-        return
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:

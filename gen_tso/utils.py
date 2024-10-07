@@ -28,10 +28,13 @@ def check_latest_version(package):
     return latest_version
 
 
-def get_version_advice(package):
+def get_version_advice(package, latest_version=None):
     name = package.__name__
     my_version = parse(package.__version__)
-    latest_version = parse(check_latest_version(name))
+    if latest_version is None:
+        latest_version = parse(check_latest_version(name))
+    else:
+        latest_version = parse(latest_version)
     my_major_minor = parse(f'{my_version.major}.{my_version.minor}')
     latest_major_minor = parse(f'{latest_version.major}.{latest_version.minor}')
     if my_version == latest_version:

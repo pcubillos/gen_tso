@@ -218,10 +218,12 @@ def curate_aliases():
     keep_aliases = {}
     for host,system in aliases.items():
         for alias,planet in system['planet_aliases'].items():
+            alias_host = u.get_host(alias)
             for prefix in prefixes:
                 if alias.startswith(prefix) and alias != planet:
                     keep_aliases[alias] = planet
-
+            if alias not in keep_aliases and alias_host == host and alias != planet:
+                keep_aliases[alias] = planet
 
     aka = u.invert_aliases(keep_aliases)
     to_remove = []
