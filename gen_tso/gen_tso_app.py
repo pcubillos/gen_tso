@@ -978,7 +978,7 @@ def server(input, output, session):
         button_width = '95%'
 
         my_pandeia = pandeia.engine.__version__
-        pandeia_status = get_version_advice(pandeia.engine)
+        pandeia_status = get_version_advice(pandeia.engine, latest_version='4.0.0')
         gen_tso_status = get_version_advice(gen_tso)
         pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
         pysynphot_data = check_pysynphot()
