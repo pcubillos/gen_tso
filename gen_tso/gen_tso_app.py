@@ -2964,7 +2964,6 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.get_acquisition_target)
     def _():
-        return
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
