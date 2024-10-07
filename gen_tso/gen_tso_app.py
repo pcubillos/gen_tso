@@ -1792,7 +1792,7 @@ def server(input, output, session):
 
         keys = ui.HTML(
             'Keys:<br>'
-            '<span style="color:#0B980D">Observed, no proprietary period.</span>'
+            '<span style="color:#0B980D">Observed, publicly available.</span>'
             '<br><span>Observed, in proprietary period.</span><br>'
             '<span style="color:#FFa500">To be observed, planned window.</span>'
             '<br><span style="color:red">Failed, withdrawn, or skipped.</span>'
@@ -1843,7 +1843,7 @@ def server(input, output, session):
                         f' ({propriety[i]} m)'
                     )
                 else:
-                    dates.append('---')
+                    dates.append(f'--- ({propriety[i]} m)')
                 if i not in warnings:
                     tbd_dates.append(i)
 
@@ -1879,7 +1879,7 @@ def server(input, output, session):
         data_df = {
             'Program ID': programs,
             'PI': pi,
-            'Target name': data['trexo_name'],
+            'Target': data['trexo_name'],
             # TBD: fetch which planet(s)
             #'planet': ['b' for _ in pi],
             'Event': data['event'],
