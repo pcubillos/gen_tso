@@ -223,7 +223,6 @@ def curate_aliases():
                 if alias.startswith(prefix) and alias != planet:
                     keep_aliases[alias] = planet
             if alias not in keep_aliases and alias_host == host and alias != planet:
-                print(repr(alias), repr(planet))
                 keep_aliases[alias] = planet
 
     aka = u.invert_aliases(keep_aliases)
