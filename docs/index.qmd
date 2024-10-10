@@ -29,7 +29,7 @@ for known exoplanets.
 - Interactive visualization of target's field of view with [ESASky](https://sky.esa.int/esasky/)
 - Perform transit and eclipse S/N simulations for all JWST spectroscopic modes
 - Perform target-acquisition simulations on science or nearby targets
-- Insteractive visualization of transit, eclipse, and stellar SEDs spectra, observing modes, and simulated TSO spectra
+- Interactive visualization of transit, eclipse, and stellar SEDs spectra, observing modes, and simulated TSO spectra
 
 ---
 
@@ -44,7 +44,36 @@ Then, you can launch the `Gen TSO` application with this prompt command:
 tso
 ```
 
-More information in the links below.
+### Citing
+
+Please cite this paper if you found ``Gen TSO`` useful for your research (submitted to PASP, under revision): <br>
+  [Cubillos (2024): Gen TSO: A General JWST Simulator for Exoplanet Times-series Observations](https://ui.adsabs.harvard.edu/abs/2024arXiv241004856C)
+
+
+BibTeX reference:
+
+```bibtex
+@ARTICLE{Cubillos2024paspGenTSO,
+       author = {{Cubillos}, Patricio E.},
+        title = "{Gen TSO: A General JWST Simulator for Exoplanet Times-series Observations}",
+      journal = {arXiv e-prints},
+     keywords = {Astrophysics - Earth and Planetary Astrophysics, Astrophysics - Instrumentation and Methods for Astrophysics},
+         year = 2024,
+        month = oct,
+          eid = {arXiv:2410.04856},
+        pages = {arXiv:2410.04856},
+archivePrefix = {arXiv},
+       eprint = {2410.04856},
+ primaryClass = {astro-ph.EP},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024arXiv241004856C},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
+
+We welcome your feedback or inquiries, please raise issues on the [Github repository](https://github.com/pcubillos/gen_tso/issues) or refer them to: <br>
+Patricio Cubillos (`patricio.cubillos[at]oeaw.ac.at`)
+
+Find more information in the links below:
 
 - [Installation](install.qmd)
 - [Getting Started](get_started.qmd)

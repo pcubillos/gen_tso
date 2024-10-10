@@ -24,19 +24,33 @@ To launch the application use this prompt command:
 tso
 ```
 
-### Docs:
-
-**Take the tour:**
+### Take the tour (docs):
 
 [https://pcubillos.github.io/gen_tso/get_started.html](https://pcubillos.github.io/gen_tso/get_started.html)
+
+### Cite as:
+
+```bibtex
+@ARTICLE{Cubillos2024paspGenTSO,
+       author = {{Cubillos}, Patricio E.},
+        title = "{Gen TSO: A General JWST Simulator for Exoplanet Times-series
+Observations}",
+      journal = {arXiv e-prints},
+     keywords = {Astrophysics - Earth and Planetary Astrophysics, Astrophysics
+- Instrumentation and Methods for Astrophysics},
+         year = 2024,
+        month = oct,
+          eid = {arXiv:2410.04856},
+        pages = {arXiv:2410.04856},
+archivePrefix = {arXiv},
+       eprint = {2410.04856},
+ primaryClass = {astro-ph.EP},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024arXiv241004856C},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
 
 **And take a look:**
 
 <img alt="Gen_TSO" src="https://github.com/pcubillos/gen_tso/blob/master/docs/gen_tso_screenshot.png">
-
-### Cite as:
-
-Comming soon ...
-
-
 
