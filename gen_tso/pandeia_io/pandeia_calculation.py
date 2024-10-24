@@ -630,18 +630,42 @@ class PandeiaCalculation():
         Parameters
         ----------
         obs_dur: Float
-            Duration of the observation.
+            Duration of the observation (hours).
         ngroup: Integer
-            Number of groups per integrations
+            Number of groups per integrations.
         disperser: String
+            Disperser/grating for the given instrument.
+            If None, keep value in self.calc.
         filter: String
+            Filter for the given instrument.
+            If None, keep value in self.calc.
         subarray: String
+            Subarray mode for the given instrument.
+            If None, keep value in self.calc.
         readout: String
+            Readout pattern mode for the given instrument.
+            If None, keep value in self.calc.
         aperture: String
+            Aperture configuration for the given instrument.
+            If None, keep value in self.calc.
+        nint: Integer
+            Number of integrations (as alternative to obs_dur).
 
         Returns
         -------
-        TBD
+        report: Dictionary
+            Pandeia perform_calculation() report.
+        wl: 1D float array
+            Wavelength of extracted flux (microns).
+        flux: 1D float array
+            Extracted flux spectrum (e-/second)
+        variances: List of arrays
+            - lmf_var: 1D last-minus-first variance spectrum
+            - shot_var: 1D Pandeia multiaccum variance spectrum
+            - background_var: 1D variance spectrum from background
+            - read_noise_var: Read noise variance (scalar)
+        measurement_time: Float
+            Time spent integrating (seconds).
 
         Examples
         --------
@@ -654,7 +678,9 @@ class PandeiaCalculation():
         >>>     sed_type='phoenix', sed_model='k5v',
         >>>     norm_band='2mass,ks', norm_magnitude=8.637,
         >>> )
-        >>> # Example TBD
+        >>> report, wl, flux, variances, meas_time = pando.calc_noise(
+        >>>     obs_dur=2.65, ngroup=135,
+        >>> )
         """
         if aperture is None:
             aperture = self.calc['configuration']['instrument']['aperture']
