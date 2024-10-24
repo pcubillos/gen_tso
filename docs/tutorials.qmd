@@ -17,7 +17,8 @@ A collection of scripts to run `Gen TSO` from a jupyter notebook or a python int
 
 **Databases:**
 
-- [Display and parse existing JWST programs](tutorials_jwst_programs.qmd)
+- [Display all successful JWST transit programs](tutorials_jwst_successful_programs.qmd)
+- [Display all existing JWST MIRI/LRS programs](tutorials_jwst_miri_programs.qmd)
 
 <br>
 ---

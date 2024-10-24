@@ -7,10 +7,11 @@ format:
 jupyter: python3
 ---
 
-Lets use `Gen TSO` to show the list existing JWST programs:
+Lets use `Gen TSO` to show all successful existing JWST transit programs:
 
-1. parsed by target
-2. excluding failed runs
+1. parsed by host
+2. filter by transit event
+3. excluding failed runs
 
 ```{python}
 

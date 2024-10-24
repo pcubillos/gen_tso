@@ -1,0 +1,54 @@
+---
+title: Display JWST programs
+page-navigation: true
+format: 
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+Lets use `Gen TSO` to show all JWST MIRI LRS programs:
+
+1. parsed by host
+2. highlight unsuccessful programs
+
+```{python}
+
+import gen_tso.catalogs as cat
+import numpy as np
+
+
+# Get all hosts. Remember trexolists only knows hosts, not planets
+catalog = cat.Catalog()
+hosts = [target.host for target in catalog.targets]
+unique_hosts, u_indices = np.unique(hosts, return_index=True)
+
+mode = 'MIRI LRS'
+for j in u_indices:
+    target = catalog.targets[j]
+    has_jwst_data = (
+        target.is_jwst and
+        target.is_transiting and
+        mode in target.trexo_data['mode']
+    )
+
+    if has_jwst_data:
+        obs = target.trexo_data
+        programs = obs['program']
+        events = obs['event']
+        status = obs['status']
+        nobs = len(events)
+        # Loop over programs, highlight the unsuccessful ones
+        for i in range(nobs):
+            state = status[i]
+            name = f'{repr(target.host)}'
+            if state in ['Skipped', 'Failed', 'Withdrawn']:
+                state = f'*** {status[i]} ***'
+                name = f'{name} *** '
+            if obs['mode'][i] == mode:
+                print(f"{name:18s}  {programs[i]:24} {events[i]:10s}  {state}")
+        print('')
+
+```
+
+
