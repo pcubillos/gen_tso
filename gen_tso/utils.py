@@ -4,6 +4,7 @@
 __all__ = [
     'ROOT',
     'check_latest_version',
+    'get_latest_pandeia_versions',
     'get_version_advice',
     'read_spectrum_file',
     'collect_spectra',
@@ -26,6 +27,35 @@ def check_latest_version(package):
     response = requests.get(f'https://pypi.org/pypi/{package}/json')
     latest_version = response.json()['info']['version']
     return latest_version
+
+
+def get_latest_pandeia_versions(package_name='pandeia.engine'):
+    """
+    Get latest pandeia.engine version for JWST and Roman branches.
+    To be checked how new JWST pandeia.engine versions are named.
+    """
+    url = f"https://pypi.org/pypi/{package_name}/json"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        versions = sorted([
+            parse(version) for version in data['releases'].keys()
+        ])
+        # split JWST and Roman versions (>2024.X)
+        jwst_versions = [
+            version for version in versions
+            if version.major<2024
+        ]
+        roman_versions = [
+            version for version in versions
+            if version.major>=2024
+        ]
+        return str(jwst_versions[-1]), str(roman_versions[-1])
+    except requests.exceptions.RequestException:
+        # Hardcoded value, need to be manually updated
+        return '4.0', '2024.9.1'
+
 
 
 def get_version_advice(package, latest_version=None):
