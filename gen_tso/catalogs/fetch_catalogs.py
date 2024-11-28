@@ -6,6 +6,7 @@ __all__ = [
     'update_exoplanet_archive',
     'fetch_nasa_confirmed_targets',
     'fetch_gaia_targets',
+    'fetch_nea_aliases',
 ]
 
 

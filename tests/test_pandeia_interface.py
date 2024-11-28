@@ -11,7 +11,7 @@ import gen_tso.pandeia_io as jwst
 from gen_tso.utils import ROOT
 
 os.chdir(ROOT+'../tests')
-# See tests/make_mocks.py for mocked data setup.
+# See tests/mocks/make_mocks.py for mocked data setup.
 
 
 def test_saturation_level_perform_calculation_single():

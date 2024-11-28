@@ -8,6 +8,6 @@ astropy>=5.3.0
 pandas
 plotly
 shinywidgets>=0.3.0
-pyratbay>=2.0.0.b2
+pyratbay>=2.0.0.b3
 faicons
 prompt_toolkit>=3.0.0
