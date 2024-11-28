@@ -310,7 +310,7 @@ def plotly_sed_spectra(
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
             bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
-            bin_flux = bin_spectrum(bin_wl, wl, flux, ignore_gaps=True)
+            bin_flux = bin_spectrum(bin_wl, wl, flux, gaps='interpolate')
             mask = np.isfinite(bin_flux)
             wl = bin_wl[mask]
             flux = bin_flux[mask]
@@ -415,7 +415,7 @@ def plotly_depth_spectra(
             wl_min = np.amin(wl)
             wl_max = np.amax(wl)
             bin_wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
-            depth = bin_spectrum(bin_wl, wl, depth, ignore_gaps=True)/u(units)
+            depth = bin_spectrum(bin_wl, wl, depth, gaps='interpolate')/u(units)
             mask = np.isfinite(depth)
             wl = bin_wl[mask]
             depth = depth[mask]

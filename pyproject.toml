@@ -30,7 +30,7 @@ dependencies = [
     'shinywidgets',
     'faicons',
     'prompt_toolkit>=3.0.0',
-    'pyratbay>=2.0.0.b2',
+    'pyratbay>=2.0.0.b3',
 ]
 
 [project.urls]
