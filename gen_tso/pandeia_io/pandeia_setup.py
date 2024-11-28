@@ -32,7 +32,7 @@ def check_latest_pandeia_version():
     return last_pandeia
 
 
-def check_pandeia_ref_data(engine_version=None):
+def check_pandeia_ref_data(latest_version):
     """
     Check that the Pandeia reference data environment variable exists.
     Check that the path exists.
@@ -53,15 +53,15 @@ def check_pandeia_ref_data(engine_version=None):
         try:
             with open(f"{refdata_path}/VERSION_PSF") as fp:
                 data_version = fp.readline().strip()
-            if engine_version is None or engine_version==data_version:
+            if data_version == latest_version:
                 output = (
-                    f"Pandeia reference data version: {data_version} is up to "
+                    f"Pandeia reference data version {data_version} is up to "
                     f"date<br>$pandeia_refdata={refdata_path}"
                 )
             else:
                 output = (
                     f"Pandeia reference data version: {data_version} < "
-                    f"pandeia.engine version {engine_version}"
+                    f"pandeia.engine version {latest_version}"
                 )
         except OSError:
             output = f"Invalid 'pandeia_refdata' path: {repr(refdata_path)}"
