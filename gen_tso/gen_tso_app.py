@@ -28,6 +28,7 @@ from gen_tso import plotly_io as plots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
     ROOT,
+    get_latest_pandeia_versions,
     get_version_advice,
     collect_spectra,
     read_spectrum_file,
@@ -977,10 +978,14 @@ def server(input, output, session):
             last_nasa = f.readline().replace('_','-')
         button_width = '95%'
 
-        my_pandeia = pandeia.engine.__version__
-        pandeia_status = get_version_advice(pandeia.engine, latest_version='4.0')
+        latest_pandeia = get_latest_pandeia_versions()
+        latest_pandeia_jwst = latest_pandeia[0]
+
         gen_tso_status = get_version_advice(gen_tso)
-        pandeia_ref_status = check_pandeia_ref_data(engine_version=my_pandeia)
+        pandeia_status = get_version_advice(
+            pandeia.engine, latest_pandeia_jwst,
+        )
+        pandeia_ref_status = check_pandeia_ref_data(latest_pandeia_jwst)
         pysynphot_data = check_pysynphot()
 
         m = ui.modal(
