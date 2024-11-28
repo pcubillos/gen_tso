@@ -8,6 +8,35 @@ def test_fetch_nea_aliases_single():
     targets = 'KELT-7'
     host_aliases, planet_aliases = cat.fetch_nea_aliases(targets)
     # TBD: assert
+    assert planet_aliases == [{
+        'HD 33643 b': 'KELT-7 b',
+        'KELT-7 b': 'KELT-7 b',
+        'BD+33 977 b': 'KELT-7 b',
+        'HIP 24323 b': 'KELT-7 b',
+        'SAO 57753 b': 'KELT-7 b',
+        'GSC 2393-00852 b': 'KELT-7 b',
+        'TYC 2393-00852-1 b': 'KELT-7 b',
+        '2MASS J05131092+3319054 b': 'KELT-7 b',
+        'WISE J051310.93+331904.8 b': 'KELT-7 b',
+        'TIC 367366318 b': 'KELT-7 b',
+        'Gaia DR2 181908842994567936 b': 'KELT-7 b',
+        'TOI-1682.01': 'KELT-7 b',
+        'TOI-1682 b': 'KELT-7 b',
+    }]
+    assert host_aliases == [{
+        'TIC 367366318': 'KELT-7',
+        'Gaia DR2 181908842994567936': 'KELT-7',
+        'TOI-1682': 'KELT-7',
+        'HD 33643': 'KELT-7',
+        'KELT-7': 'KELT-7',
+        'BD+33 977': 'KELT-7',
+        'HIP 24323': 'KELT-7',
+        'SAO 57753': 'KELT-7',
+        'GSC 2393-00852': 'KELT-7',
+        'TYC 2393-00852-1': 'KELT-7',
+        '2MASS J05131092+3319054': 'KELT-7',
+        'WISE J051310.93+331904.8': 'KELT-7',
+    }]
 
 
 def test_fetch_nea_aliases_list():
@@ -19,7 +48,9 @@ def test_fetch_nea_aliases_list():
 def test_fetch_nea_aliases_fail():
     targets = 'WASP-999'
     host_aliases, planet_aliases = cat.fetch_nea_aliases(targets)
-    # TBD: assert
+    assert host_aliases == [{}]
+    assert planet_aliases == [{}]
+
 
 def test_fetch_aliases_oddballs():
     # import grequests
