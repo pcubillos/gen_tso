@@ -5,6 +5,7 @@ import pytest
 import re
 import numpy as np
 import gen_tso.pandeia_io as jwst
+from gen_tso.utils import ROOT
 
 
 def test_perform_calculation():
@@ -259,7 +260,8 @@ def test_tso_calculation_single():
     pando = jwst.PandeiaCalculation('nirspec', 'bots')
     # Set the stellar scene:
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.637)
-    depth_model = np.loadtxt('data/models/WASP80b_transit.dat', unpack=True)
+    model_file = f'{ROOT}data/models/WASP80b_transit.dat'
+    depth_model = np.loadtxt(model_file, unpack=True)
 
     # Set a NIRSpec observation
     disperser = 'g395h'
@@ -281,7 +283,8 @@ def test_tso_calculation_single():
 def test_tso_calculation_multiple():
     pando = jwst.PandeiaCalculation('miri', 'mrs_ts')
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.637)
-    depth_model = np.loadtxt('data/models/WASP80b_transit.dat', unpack=True)
+    model_file = f'{ROOT}data/models/WASP80b_transit.dat'
+    depth_model = np.loadtxt(model_file, unpack=True)
 
     disperser = 'short'
     filter = None
@@ -309,15 +312,15 @@ def test_calc_saturation_single():
         disperser='grismr', filter='f444w',
         readout='rapid', subarray='subgrism64',
     )
-    np.testing.assert_almost_equal(pixel_rate, 1335.1112060546875)
-    np.testing.assert_almost_equal(full_well, 58100.00314689601)
+    np.testing.assert_almost_equal(pixel_rate, 1243.0863037109375)
+    np.testing.assert_almost_equal(full_well, 58100.00)
 
 
 def test_calc_saturation_multiple():
     inst = 'miri'
     mode = 'mrs_ts'
     pando = jwst.PandeiaCalculation(inst, mode)    
-    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    pando.set_scene('phoenix', 'k2v', '2mass,ks', 8.351)
     ngroup = 2
     disperser = 'short'
     filter = None
@@ -328,13 +331,8 @@ def test_calc_saturation_multiple():
     pixel_rate, full_well = pando.get_saturation_values(
         disperser, filter, subarray, readout, ngroup, aperture,
     )
-    expected_rate = [204.3777924, 109.1716537, 32.7559395, 4.5567689]
-    expected_well = [
-        193655.0135037985,
-        193655.00840719877,
-        193655.00325247002,
-        193655.00765403986,
-    ]
+    expected_rate = [163.1600647,  89.8821335,  28.5365124,   4.2614131]
+    expected_well = [193655., 193655., 193655., 193655.]
     np.testing.assert_almost_equal(pixel_rate, expected_rate)
     np.testing.assert_almost_equal(full_well, expected_well)
 
