@@ -332,7 +332,7 @@ def test_calc_saturation_multiple():
         disperser, filter, subarray, readout, ngroup, aperture,
     )
     expected_rate = [163.1600647,  89.8821335,  28.5365124,   4.2614131]
-    expected_well = [193655., 193655., 193655., 193655.]
+    expected_well = [193655.0, 193655.0, 193655.0, 193655.0]
     np.testing.assert_almost_equal(pixel_rate, expected_rate)
     np.testing.assert_almost_equal(full_well, expected_well)
 
