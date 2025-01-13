@@ -92,7 +92,7 @@ def get_children(host_aliases, planet_aliases):
     # cross_check with host aliases
     children = []
     for planet, aliases in planet_aka.items():
-        if np.any(np.in1d(aliases, host_aliases)):
+        if np.any(np.isin(aliases, host_aliases)):
             children.append(planet)
 
     aliases = {
@@ -210,7 +210,7 @@ def curate_aliases():
     jwst_names = list(load_trexolists()['target'])
     # Ensure to match against NEA host names for jwst targets
     for host,system in aliases.items():
-        is_in = np.in1d(system['host_aliases'], jwst_names)
+        is_in = np.isin(system['host_aliases'], jwst_names)
         if np.any(is_in) and system['host'] not in jwst_names:
             jwst_names.append(system['host'])
 
@@ -791,7 +791,7 @@ def fetch_aliases(hosts, output_file=None, known_aliases=None):
         }
         children_names = np.unique(list(p_aliases.values()))
 
-        in_jwst = np.in1d(h_aliases, jwst_names)
+        in_jwst = np.isin(h_aliases, jwst_names)
         if np.any(in_jwst):
             j_alias = np.array(h_aliases)[in_jwst]
 
@@ -812,7 +812,7 @@ def fetch_aliases(hosts, output_file=None, known_aliases=None):
                 h_aliases.append(alias)
 
         # Add JWST host aliases:
-        in_jwst = np.in1d(h_aliases, jwst_names)
+        in_jwst = np.isin(h_aliases, jwst_names)
         if np.any(in_jwst):
             j_alias = np.array(h_aliases)[in_jwst][0]
             for j_aliases in jwst_aliases:

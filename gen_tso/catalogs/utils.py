@@ -205,6 +205,8 @@ def normalize_name(target):
         name = '55 Cnc'
     name = name.replace('-offset', '')
     name = name.replace('-updated', '')
+    name = name.replace('-copy', '')
+    name = name.replace('-revised', '')
     if name.endswith('-'):
         name = name[:-1]
     if name == 'WD 1856':
