@@ -19,7 +19,7 @@ authors = [
 ]
 dependencies = [
     'shiny>=1.0.0',
-    'pandeia.engine>=4.0.0',
+    'pandeia.engine>=4.0.0,<2024',
     'scipy',
     'numpy>=1.17',
     'requests>=2.19.1',

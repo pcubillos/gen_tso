@@ -25,7 +25,7 @@ website:
   back-to-top-navigation: true
 
   page-footer:
-    left: "&copy; CC-By Patricio Cubillos, 2024"
+    left: "&copy; CC-By Patricio Cubillos, 2025"
     right: "This page is built with [Quarto](https://quarto.org/)."
 
   sidebar:
