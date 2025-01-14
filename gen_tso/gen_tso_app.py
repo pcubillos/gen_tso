@@ -603,17 +603,51 @@ app_ui = ui.page_fluid(
                 ui.output_ui('groups_input'),
                 ui.panel_conditional(
                     "input.mode != 'target_acq'",
+                    ui.layout_columns(
+                        ui.input_numeric(
+                            id="integrations",
+                            label="Integrations",
+                            value=1,
+                            min=1, max=100000,
+                        ),
+                        ui.input_switch(
+                            "integs_switch",
+                            "Match obs. duration",
+                            False,
+                        ),
+                        col_widths=[12,12],
+                        gap='4px',
+                        class_="px-0 pb-2 m-0",
+                    ),
+                ),
+                # Saturation goal
+                ui.p("Saturation fraction (%):", class_='py-0 my-0'),
+                ui.layout_column_wrap(
                     ui.input_numeric(
-                        id="integrations",
-                        label="Integrations",
-                        value=1,
-                        min=1, max=100000,
+                        id="saturation_goal",
+                        label="",
+                        value=80.0,
+                        min=1.0, max=100.0,
                     ),
-                    ui.input_switch(
-                        "integs_switch",
-                        "Match obs. duration",
-                        False,
+
+                    ui.tooltip(
+                        ui.input_action_button(
+                            id="saturation_button",
+                            label="Set group",
+                            class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
+                        ),
+                        'Update groups up to the saturation fraction',
+                        id="sat_tooltip",
+                        placement="top",
                     ),
+
+                    width=1/2,
+                    fixed_width=False,
+                    heights_equal='all',
+                    gap='7px',
+                    fill=False,
+                    fillable=True,
+                    class_="px-0 pt-0 pb-2 m-0",
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
