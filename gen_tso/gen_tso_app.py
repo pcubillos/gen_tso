@@ -624,12 +624,11 @@ app_ui = ui.page_fluid(
                 ui.p("Saturation fraction (%):", class_='py-0 my-0'),
                 ui.layout_column_wrap(
                     ui.input_numeric(
-                        id="saturation_goal",
+                        id="saturation_input_text",
                         label="",
                         value=80.0,
                         min=1.0, max=100.0,
                     ),
-
                     ui.tooltip(
                         ui.input_action_button(
                             id="saturation_button",
@@ -637,7 +636,7 @@ app_ui = ui.page_fluid(
                             class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
                         ),
                         'Update groups up to the saturation fraction',
-                        id="sat_tooltip",
+                        id="saturation_tooltip",
                         placement="top",
                     ),
 
@@ -987,6 +986,7 @@ def server(input, output, session):
     group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
+    saturation_fraction = reactive.Value(80)
     saturation_label = reactive.Value(None)
     update_catalog_flag = reactive.Value(False)
     update_sed_flag = reactive.Value(None)
@@ -2571,6 +2571,20 @@ def server(input, output, session):
         ui.update_numeric('integrations', value=integs)
 
 
+    @reactive.Effect
+    def _():
+        """
+        Update the desired saturation limit only when there is a valid
+        input value.
+        """
+        try:
+            value = float(input.saturation_input_text())
+            if 1.0 <= value <= 100.0:
+                saturation_fraction.set(value)
+        except:
+            pass
+
+
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Viewers
     @render_plotly
@@ -2735,6 +2749,7 @@ def server(input, output, session):
     # Results
     @render.ui
     def results():
+        saturation_limit = saturation_fraction.get()
         warnings = {}
         # Only read for reactivity reasons:
         saturation_label.get()
@@ -2827,7 +2842,7 @@ def server(input, output, session):
             full_well = cache_saturation[sat_label]['full_well']
             saturation_text = jwst._print_pandeia_saturation(
                 inst, subarray, readout, ngroup, pixel_rate, full_well,
-                format='html',
+                format='html', req_saturation=saturation_limit,
             )
             report_text += f'<br>{saturation_text}'
         elif can_guess:
@@ -2836,7 +2851,7 @@ def server(input, output, session):
             full_well = full_wells[sat_guess_label]
             saturation_text = jwst._print_pandeia_saturation(
                 inst, subarray, readout, ngroup, estimated_rate, full_well,
-                format='html',
+                format='html', req_saturation=saturation_limit,
             )
             report_text += f'<br>{saturation_text}'
 
@@ -3035,7 +3050,6 @@ def server(input, output, session):
             f"dec = {dec[idx]}"
         )
         print(text)
-
 
 app = App(app_ui, server)
 
