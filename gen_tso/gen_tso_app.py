@@ -172,6 +172,7 @@ for location in loading_folders:
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
+stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
 
 depth_units = [
     "none",
@@ -2634,9 +2635,7 @@ def server(input, output, session):
         else:
             return
 
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-            input, target_acq_mag=target_acq_mag,
-        )
+        norm_mag, sed_label = parse_sed(input, target_acq_mag)[3:5]
         if inst is None or sed_label is None:
             return
 
