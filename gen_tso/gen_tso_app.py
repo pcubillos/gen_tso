@@ -632,14 +632,13 @@ app_ui = ui.page_fluid(
                     ui.tooltip(
                         ui.input_action_button(
                             id="saturation_button",
-                            label="Set group",
+                            label="Set groups",
                             class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
                         ),
                         'Update groups up to the saturation fraction',
                         id="saturation_tooltip",
                         placement="top",
                     ),
-
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
@@ -2654,10 +2653,14 @@ def server(input, output, session):
         ngroup_req = int(req_saturation*ngroup/sat_fraction)
 
         if mode == 'target_acq':
-            # TBD
-            pass
+            detector = get_detector(inst, mode, detectors)
+            choices = detector.get_constrained_val('groups', subarray=subarray)
+            masked_choices = np.array(choices) <= ngroup_req
+            masked_choices[0] = True
+            selected = np.array(choices)[masked_choices][-1]
+            ui.update_select(id='ngroup', selected=str(selected))
         else:
-            ui.update_numeric('ngroup', value=ngroup_req)
+            ui.update_numeric(id='ngroup', value=ngroup_req)
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
