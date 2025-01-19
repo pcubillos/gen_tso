@@ -1053,7 +1053,7 @@ def _print_pandeia_saturation(
 
     saturation = format_text(
         f"{sat_fraction:.1f}%",
-        sat_fraction>=req_saturation,
+        np.round(sat_fraction, decimals=1)>np.round(req_saturation, decimals=1),
         sat_fraction>=100,
         format,
     )
