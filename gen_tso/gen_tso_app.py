@@ -1879,8 +1879,8 @@ def server(input, output, session):
         keys = ui.HTML(
             'Keys:<br>'
             '<span style="color:#0B980D">Observed, publicly available.</span>'
-            '<br><span>Observed, in proprietary period.</span><br>'
-            '<span style="color:#FFa500">To be observed, planned window.</span>'
+            '<br><span style="color:#FFa500">Observed, in proprietary period.</span><br>'
+            '<span>To be observed, planned window.</span>'
             '<br><span style="color:red">Failed, withdrawn, or skipped.</span>'
         )
 
@@ -1911,6 +1911,7 @@ def server(input, output, session):
             if status[i] in ['Skipped', 'Failed', 'Withdrawn']
         ]
         available = []
+        private = []
         dates = []
         tbd_dates = []
         for i in range(nobs):
@@ -1918,6 +1919,8 @@ def server(input, output, session):
                 release = date_obs[i] + timedelta(days=365.0*propriety[i]/12)
                 if release < today:
                     available.append(i)
+                else:
+                    private.append(i)
                 dates.append(
                     date_obs[i].strftime('%Y-%m-%d') +
                     f' ({propriety[i]} m)'
@@ -1932,7 +1935,6 @@ def server(input, output, session):
                     dates.append(f'--- ({propriety[i]} m)')
                 if i not in warnings:
                     tbd_dates.append(i)
-
         styles = [
             {
                 'rows': available,
@@ -1943,8 +1945,7 @@ def server(input, output, session):
                 'style': {"color": "red"},
             },
             {
-                'rows': tbd_dates,
-                'cols': [10],
+                'rows': private,
                 'style': {"color": "#FFa500"},
             },
         ]
@@ -2721,6 +2722,7 @@ def server(input, output, session):
         return fig
 
 
+    @output
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
