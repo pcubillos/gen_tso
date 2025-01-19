@@ -1253,7 +1253,8 @@ def server(input, output, session):
             run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
                 spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
-                bookmarked_spectra[obs_geometry].append(depth_label)
+                if depth_label not in bookmarked_spectra[obs_geometry]:
+                    bookmarked_spectra[obs_geometry].append(depth_label)
             depth_model = [wl, depth]
 
             observation_dur = exp_time / 3600.0
@@ -2460,7 +2461,8 @@ def server(input, output, session):
             u = pt.u(units)
             spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
             user_spectra[obs_geometry].append(label)
-            bookmarked_spectra[obs_geometry].append(label)
+            if label not in bookmarked_spectra[obs_geometry]:
+                bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
                 return
             # Trigger update choose_depth
