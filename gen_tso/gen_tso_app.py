@@ -601,9 +601,22 @@ app_ui = ui.page_fluid(
                     button_ids='calc_saturation',
                     class_='pb-1',
                 ),
-                ui.output_ui('groups_input'),
+                ui.panel_conditional(
+                    "input.mode == 'target_acq'",
+                    ui.input_select(
+                        id="ngroup_acq",
+                        label="",
+                        choices=[''],
+                    ),
+                ),
                 ui.panel_conditional(
                     "input.mode != 'target_acq'",
+                    ui.input_numeric(
+                        id="ngroup",
+                        label="",
+                        value=2,
+                        min=2, max=10000,
+                    ),
                     ui.layout_columns(
                         ui.input_numeric(
                             id="integrations",
@@ -969,16 +982,20 @@ def parse_instrument(input):
     filter = input.filter.get()
     subarray = input.subarray.get()
     readout = input.readout.get()
-    order = input.order.get()
-    ngroup = input.ngroup.get()
-    nint = input.integrations.get()
-    aperture = None
 
     consistent = is_consistent(
         inst, mode, disperser, filter, subarray, readout,
     )
     if not consistent:
         return [None for _ in range(10)]
+
+    order = input.order.get()
+    if mode == 'target_acq':
+        ngroup = input.ngroup_acq.get()
+    else:
+        ngroup = input.ngroup.get()
+    nint = input.integrations.get()
+    aperture = None
 
     # Front-end to back-end exceptions:
     if mode == 'mrs_ts':
@@ -1059,7 +1076,6 @@ def draw(tso_list, resolution, n_obs):
 
 
 def server(input, output, session):
-    group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
     saturation_fraction = reactive.Value(80)
@@ -1422,11 +1438,12 @@ def server(input, output, session):
             choices = detector.get_constrained_val('orders', subarray=subarray)
             order = ' '.join([str(val) for val in order])
             ui.update_select('order', choices=choices, selected=order)
-        if ngroup != input.ngroup.get():
-            if mode == 'target_acq':
-                ui.update_select('ngroup', selected=ngroup)
-            else:
-                ui.update_numeric('ngroup', value=ngroup)
+        if mode == 'target_acq':
+            if ngroup != input.ngroup_acq.get():
+                ui.update_select(id='ngroup_acq', selected=ngroup)
+        else:
+            if ngroup != input.ngroup.get():
+                ui.update_numeric(id='ngroup', value=ngroup)
 
         # The target:
         current_target = input.target.get()
@@ -2500,17 +2517,19 @@ def server(input, output, session):
         ui.update_select('order', choices=choices, selected=order)
 
 
-    @render.ui
+    @reactive.Effect
     @reactive.event(input.mode, input.subarray)
-    def groups_input():
+    def update_groups_input():
         inst = input.instrument.get()
         mode = input.mode.get()
         subarray = input.subarray.get()
-        if group_starter.get():
-            current_value = input.ngroup.get()
+        if not is_consistent(inst, mode, subarray=subarray):
+            return
+        if mode == 'target_acq':
+            current_value = input.ngroup_acq.get()
         else:
-            current_value = 2
-            group_starter.set(True)
+            current_value = input.ngroup.get()
+
         preset = preset_ngroup.get()
         has_preset = (
             preset is not None and
@@ -2522,26 +2541,19 @@ def server(input, output, session):
             preset_ngroup.set(None)
         else:
             value = current_value
+
         if mode == 'target_acq':
             detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
-
-            value = str(value)
             if value not in choices:
-                value = None
-            return ui.input_select(
-                id="ngroup",
-                label="",
+                value = choices[0]
+            ui.update_select(
+                id="ngroup_acq",
                 choices=choices,
-                selected=value,
+                selected=str(value),
             )
         else:
-            return ui.input_numeric(
-                id="ngroup",
-                label='',
-                value=int(value),
-                min=2, max=10000,
-            )
+            ui.update_numeric(id="ngroup", value=value)
 
     @reactive.Effect
     @reactive.event(input.calc_saturation)
@@ -2594,7 +2606,7 @@ def server(input, output, session):
         if ngroup is None:
             return
         integs, exp_time = jwst.bin_search_exposure_time(
-            inst, subarray, readout, int(ngroup), obs_dur,
+            inst, subarray, readout, ngroup, obs_dur,
         )
         if exp_time == 0.0:
             return
@@ -2660,7 +2672,7 @@ def server(input, output, session):
             masked_choices = np.array(choices) <= ngroup_req
             masked_choices[0] = True
             selected = np.array(choices)[masked_choices][-1]
-            ui.update_select(id='ngroup', selected=str(selected))
+            ui.update_select(id='ngroup_acq', selected=str(selected))
         else:
             ui.update_numeric(id='ngroup', value=ngroup_req)
 
