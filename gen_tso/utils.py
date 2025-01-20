@@ -187,7 +187,7 @@ def collect_spectra(folder, on_fail=None):
     ]
     if 'eclipse' in files and os.path.isdir('eclipse'):
         sub_folder = f'{folder}/eclipse'
-        transit_files += [
+        eclipse_files += [
             f'eclipse/{file}' for file in sorted(os.listdir(sub_folder))
             if not os.path.isdir(f'eclipse/{file}')
         ]
@@ -197,6 +197,12 @@ def collect_spectra(folder, on_fail=None):
         if 'sed' in file or 'star' in file
         if not os.path.isdir(file)
     ]
+    if 'sed' in files and os.path.isdir('sed'):
+        sub_folder = f'{folder}/sed'
+        sed_files += [
+            f'sed/{file}' for file in sorted(os.listdir(sub_folder))
+            if not os.path.isdir(f'sed/{file}')
+        ]
 
     transit_spectra = {}
     for file in transit_files:

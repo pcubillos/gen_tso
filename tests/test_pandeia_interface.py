@@ -19,7 +19,7 @@ def test_saturation_level_perform_calculation_single():
         result = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(result)
-    expected_rate = 1396.5528564453125
+    expected_rate = 1300.2144775390625
     expected_well = 58100.00422843957
     np.testing.assert_allclose(pixel_rate, expected_rate)
     np.testing.assert_allclose(full_well, expected_well)
@@ -45,7 +45,7 @@ def test_saturation_level_tso_calculation_single():
         tso = pickle.load(f)
 
     pixel_rate, full_well = jwst.saturation_level(tso)
-    expected_rate = [1354.6842041 , 1396.55285645]
+    expected_rate = [1261.23925781, 1300.21447754]
     expected_well = [58100.00016363, 58100.00129109]
     np.testing.assert_allclose(pixel_rate, expected_rate)
     np.testing.assert_allclose(full_well, expected_well)
@@ -195,9 +195,9 @@ def test__print_pandeia_saturation_perform_calc():
         result = pickle.load(f)
 
     text = jwst._print_pandeia_saturation(reports=[result], format=None)
-    expected_text = """Max fraction of saturation: 1.6%
-ngroup below 80% saturation: 97
-ngroup below 100% saturation: 122"""
+    expected_text = """Max fraction of saturation: 1.5%
+ngroup below 80% saturation: 104
+ngroup below 100% saturation: 131"""
     assert text == expected_text
 
 
@@ -228,6 +228,23 @@ ngroup below 100% saturation: 122"""
     assert text == expected_text
 
 
+def test__print_pandeia_saturation_req_saturation():
+    pixel_rate, full_well = 1396.5528564453125, 58100.002280515175
+    inst = 'nircam'
+    subarray = 'subgrism64'
+    readout = 'rapid'
+    ngroup = 90
+    text = jwst._print_pandeia_saturation(
+        inst, subarray, readout, ngroup, pixel_rate, full_well,
+        format=None,
+        req_saturation=70.0,
+    )
+    expected_text = """Max fraction of saturation: 73.7%
+ngroup below 70% saturation: 85
+ngroup below 100% saturation: 122"""
+    assert text == expected_text
+
+
 @pytest.mark.skip(reason='TBD')
 def test__print_pandeia_stats():
     pass
@@ -239,28 +256,28 @@ def test__print_pandeia_report_perform_calculation_single():
 
     report = jwst._print_pandeia_report([result], format=None)
     expected_report = """Exposure time: 701.41 s (0.19 h)
-Max fraction of saturation: 1.6%
-ngroup below 80% saturation: 97
-ngroup below 100% saturation: 122
+Max fraction of saturation: 1.5%
+ngroup below 80% saturation: 104
+ngroup below 100% saturation: 131
 
-Signal-to-noise ratio        410.9
-Extracted flux              2106.2  e-/s
-Flux standard deviation        5.1  e-/s
-Brightest pixel rate        1396.6  e-/s
+Signal-to-noise ratio        363.4
+Extracted flux              1815.8  e-/s
+Flux standard deviation        5.0  e-/s
+Brightest pixel rate        1300.2  e-/s
 
 Integrations:                         683
-Duty cycle:                          0.33
+Duty cycle:                          0.66
 Total exposure time:                701.4  s
 First--last dt per exposure:        701.4  s
 Reset--last dt per integration:     232.6  s
 
-Reference wavelength:                    4.36  microns
+Reference wavelength:                    4.46  microns
 Area of extraction aperture:             4.76  pixels
 Area of background measurement:           6.3  pixels
 Background surface brightness:            0.3  MJy/sr
-Total sky flux in background aperture:   4.45  e-/s
-Total flux in background aperture:      65.97  e-/s
-Background flux fraction from scene:     0.93
+Total sky flux in background aperture:   4.94  e-/s
+Total flux in background aperture:      59.59  e-/s
+Background flux fraction from scene:     0.92
 Number of cosmic rays:      0.0002  events/pixel/read"""
     assert report == expected_report
 
@@ -303,30 +320,30 @@ def test__print_pandeia_report_tso_calculation_single():
         result = pickle.load(f)
 
     report = jwst._print_pandeia_report(result, format=None)
-    expected_report = """Exposure time: 21545.44 s (5.98 h)
-Max fraction of saturation: 73.7%
-ngroup below 80% saturation: 97
-ngroup below 100% saturation: 122
+    expected_report = """Exposure time: 21607.44 s (6.00 h)
+Max fraction of saturation: 68.6%
+ngroup below 80% saturation: 104
+ngroup below 100% saturation: 131
 
-Signal-to-noise ratio       3484.8
-Extracted flux              2043.0  e-/s
-Flux standard deviation        0.6  e-/s
-Brightest pixel rate        1354.7  e-/s
+Signal-to-noise ratio       3241.5
+Extracted flux              1761.3  e-/s
+Flux standard deviation        0.5  e-/s
+Brightest pixel rate        1261.2  e-/s
 
                                in-transit  out-transit
-Integrations:                         243      452
-Duty cycle:                          0.98     0.98
-Total exposure time:               7533.2  14012.3  s
-First--last dt per exposure:       7533.2  14012.3  s
-Reset--last dt per integration:    7366.4  13702.1  s
+Integrations:                         244      453
+Duty cycle:                          0.99     0.99
+Total exposure time:               7564.2  14043.3  s
+First--last dt per exposure:       7564.2  14043.3  s
+Reset--last dt per integration:    7396.7  13732.4  s
 
-Reference wavelength:                    4.36  microns
+Reference wavelength:                    4.46  microns
 Area of extraction aperture:             4.76  pixels
 Area of background measurement:           6.3  pixels
 Background surface brightness:            0.3  MJy/sr
-Total sky flux in background aperture:   4.45  e-/s
-Total flux in background aperture:      64.12  e-/s
-Background flux fraction from scene:     0.93
+Total sky flux in background aperture:   4.94  e-/s
+Total flux in background aperture:      57.95  e-/s
+Background flux fraction from scene:     0.91
 Number of cosmic rays:      0.0072  events/pixel/read"""
     assert report == expected_report
 
@@ -376,30 +393,30 @@ def test_tso_print_plain(capsys):
     jwst.tso_print(result, format=None)
     captured = capsys.readouterr()
     expected_report = (
-        "Exposure time: 31014.40 s (8.62 h)\r\n"
-        "Max fraction of saturation: 106.4%\r\n"
-        "ngroup below 80% saturation: 97\r\n"
-        "ngroup below 100% saturation: 122\r\n"
+        "Exposure time: 31103.65 s (8.64 h)\r\n"
+        "Max fraction of saturation: 99.1%\r\n"
+        "ngroup below 80% saturation: 104\r\n"
+        "ngroup below 100% saturation: 131\r\n"
         "\r\n"
-        "Signal-to-noise ratio       3484.8\r\n"
-        "Extracted flux              2043.0  e-/s\r\n"
-        "Flux standard deviation        0.6  e-/s\r\n"
-        "Brightest pixel rate        1354.7  e-/s\r\n"
+        "Signal-to-noise ratio       3241.5\r\n"
+        "Extracted flux              1761.3  e-/s\r\n"
+        "Flux standard deviation        0.5  e-/s\r\n"
+        "Brightest pixel rate        1261.2  e-/s\r\n"
         "\r\n"
         "                               in-transit  out-transit\r\n"
-        "Integrations:                         243      452\r\n"
+        "Integrations:                         244      453\r\n"
         "Duty cycle:                          0.25     0.25\r\n"
-        "Total exposure time:               7533.2  14012.3  s\r\n"
-        "First--last dt per exposure:       7533.2  14012.3  s\r\n"
-        "Reset--last dt per integration:    7366.4  13702.1  s\r\n"
+        "Total exposure time:               7564.2  14043.3  s\r\n"
+        "First--last dt per exposure:       7564.2  14043.3  s\r\n"
+        "Reset--last dt per integration:    7396.7  13732.4  s\r\n"
         "\r\n"
-        "Reference wavelength:                    4.36  microns\r\n"
+        "Reference wavelength:                    4.46  microns\r\n"
         "Area of extraction aperture:             4.76  pixels\r\n"
         "Area of background measurement:           6.3  pixels\r\n"
         "Background surface brightness:            0.3  MJy/sr\r\n"
-        "Total sky flux in background aperture:   4.45  e-/s\r\n"
-        "Total flux in background aperture:      64.12  e-/s\r\n"
-        "Background flux fraction from scene:     0.93\r\n"
+        "Total sky flux in background aperture:   4.94  e-/s\r\n"
+        "Total flux in background aperture:      57.95  e-/s\r\n"
+        "Background flux fraction from scene:     0.91\r\n"
         "Number of cosmic rays:      0.0072  events/pixel/read\r\n"
     )
     assert captured.out == expected_report

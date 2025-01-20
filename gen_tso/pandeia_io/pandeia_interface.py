@@ -1000,6 +1000,7 @@ def _print_pandeia_exposure(
 def _print_pandeia_saturation(
         inst=None, subarray=None, readout=None, ngroup=None,
         pixel_rate=None, full_well=None, reports=None, format=None,
+        req_saturation=80.0,
     ):
     """
     >>> import gen_tso.pandeia_io as jwst
@@ -1047,26 +1048,25 @@ def _print_pandeia_saturation(
 
     sat_time = integration_time(inst, subarray, readout, ngroup)
     sat_fraction = 100 * pixel_rate * sat_time / full_well
-    ngroup_80 = int(80*ngroup/sat_fraction)
+    ngroup_req = int(req_saturation*ngroup/sat_fraction)
     ngroup_max = int(100*ngroup/sat_fraction)
 
     saturation = format_text(
-        f"{sat_fraction:.1f}%", sat_fraction>=81, sat_fraction>=100, format,
+        f"{sat_fraction:.1f}%",
+        np.round(sat_fraction, decimals=1)>np.round(req_saturation, decimals=1),
+        sat_fraction>=100,
+        format,
     )
-    ngroup_80 = format_text(
-        f"{ngroup_80:d}", ngroup_80==2, ngroup_80<2, format,
+    ngroup_req = format_text(
+        f"{ngroup_req:d}", ngroup_req==2, ngroup_req<2, format,
     )
     ngroup_max = format_text(
         f"{ngroup_max:d}", ngroup_max==2, ngroup_max<2, format,
     )
-    saturation = f'Max fraction of saturation: {saturation}'
-    ngroup_80_sat = f'ngroup below 80% saturation: {ngroup_80}'
-    ngroup_max_sat = f'ngroup below 100% saturation: {ngroup_max}'
-
     sat_text = (
-        f'{saturation}\n'
-        f'{ngroup_80_sat}\n'
-        f'{ngroup_max_sat}'
+        f'Max fraction of saturation: {saturation}\n'
+        f'ngroup below {req_saturation:.0f}% saturation: {ngroup_req}\n'
+        f'ngroup below 100% saturation: {ngroup_max}'
     )
     if format == 'html':
         sat_text = sat_text.replace('\n', '<br>')

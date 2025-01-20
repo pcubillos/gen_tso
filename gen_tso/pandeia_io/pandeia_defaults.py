@@ -511,8 +511,8 @@ class Detector:
         --------
         >>> import gen_tso.pandeia_io as jwst
         >>> detectors = jwst.generate_all_instruments()
-        >>> bots = detectors[4]
-        >>> print(bots.instrument_label(None, 'g395h/f290lp'))
+        >>> bots = detectors[5]
+        >>> print(bots.instrument_label('g395h', 'f290lp'))
         """
         inst = self.instrument
         mode = self.mode
@@ -530,8 +530,8 @@ class Detector:
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
         elif mode == 'bots':
-            disperser_label = self.filters[filter]
-            disperser_label = disperser_label[:disperser_label.index('/')]
+            label = self.filters[f'{disperser}/{filter}']
+            disperser_label = label[:label.index('/')]
             label = f'{inst} / {disperser_label}'
         elif mode == 'target_acq':
             label = f'{inst} / acquisition'

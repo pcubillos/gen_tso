@@ -172,6 +172,7 @@ for location in loading_folders:
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
+stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
 
 depth_units = [
     "none",
@@ -600,20 +601,65 @@ app_ui = ui.page_fluid(
                     button_ids='calc_saturation',
                     class_='pb-1',
                 ),
-                ui.output_ui('groups_input'),
+                ui.panel_conditional(
+                    "input.mode == 'target_acq'",
+                    ui.input_select(
+                        id="ngroup_acq",
+                        label="",
+                        choices=[''],
+                    ),
+                ),
                 ui.panel_conditional(
                     "input.mode != 'target_acq'",
                     ui.input_numeric(
-                        id="integrations",
-                        label="Integrations",
-                        value=1,
-                        min=1, max=100000,
+                        id="ngroup",
+                        label="",
+                        value=2,
+                        min=2, max=10000,
                     ),
-                    ui.input_switch(
-                        "integs_switch",
-                        "Match obs. duration",
-                        False,
+                    ui.layout_columns(
+                        ui.input_numeric(
+                            id="integrations",
+                            label="Integrations",
+                            value=1,
+                            min=1, max=100000,
+                        ),
+                        ui.input_switch(
+                            "integs_switch",
+                            "Match obs. duration",
+                            False,
+                        ),
+                        col_widths=[12,12],
+                        gap='4px',
+                        class_="px-0 pb-2 m-0",
                     ),
+                ),
+                # Saturation goal
+                ui.p("Saturation fraction (%):", class_='py-0 my-0'),
+                ui.layout_column_wrap(
+                    ui.input_numeric(
+                        id="saturation_input_text",
+                        label="",
+                        value=80.0,
+                        min=1.0, max=100.0,
+                    ),
+                    ui.tooltip(
+                        ui.input_action_button(
+                            id="saturation_button",
+                            label="Set groups",
+                            class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
+                        ),
+                        'Update groups up to the saturation fraction',
+                        id="saturation_tooltip",
+                        placement="top",
+                    ),
+                    width=1/2,
+                    fixed_width=False,
+                    heights_equal='all',
+                    gap='7px',
+                    fill=False,
+                    fillable=True,
+                    class_="px-0 pt-0 pb-2 m-0",
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
@@ -929,6 +975,86 @@ def is_consistent(
     return True
 
 
+def parse_instrument(input):
+    inst = input.instrument.get().lower()
+    mode = input.mode.get()
+    disperser = input.disperser.get()
+    filter = input.filter.get()
+    subarray = input.subarray.get()
+    readout = input.readout.get()
+
+    consistent = is_consistent(
+        inst, mode, disperser, filter, subarray, readout,
+    )
+    if not consistent:
+        return [None for _ in range(10)]
+
+    order = input.order.get()
+    if mode == 'target_acq':
+        ngroup = input.ngroup_acq.get()
+    else:
+        ngroup = input.ngroup.get()
+    nint = input.integrations.get()
+    aperture = None
+
+    # Front-end to back-end exceptions:
+    if mode == 'mrs_ts':
+        aperture = ['ch1', 'ch2', 'ch3', 'ch4']
+    if mode == 'sw_tsgrism':
+        aperture = input.disperser.get()
+        disperser = 'dhs0'
+    if mode == 'bots':
+        disperser, filter = filter.split('/')
+    if mode == 'soss':
+        if filter == 'f277w':
+            order = [1]
+        else:
+            order = [int(val) for val in order.split()]
+    else:
+        order = None
+
+    if mode == 'target_acq':
+        aperture = input.disperser.get()
+        disperser = None
+        nint = 1
+
+    if ngroup is not None:
+        ngroup = int(ngroup)
+
+    return (
+        inst, mode, disperser, filter, subarray, readout, order,
+        ngroup, nint, aperture,
+    )
+
+
+def get_saturation_values(
+        inst, mode, aperture, disperser, filter, subarray, order,
+        sed_label, norm_mag,
+    ):
+    """
+    Get pixel_rate and full_well from instrumental settings.
+    """
+    sat_label = make_saturation_label(
+        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+    )
+
+    sed_items = sat_label.split('_')
+    band_label = sed_items[-1]
+    sat_guess_label = '_'.join(sed_items[0:-2])
+    can_guess = band_label == 'Ks' and sat_guess_label in flux_rate_splines
+
+    pixel_rate = None
+    full_well = None
+    if sat_label in cache_saturation:
+        pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
+        full_well = cache_saturation[sat_label]['full_well']
+    elif can_guess:
+        cs = flux_rate_splines[sat_guess_label]
+        pixel_rate = 10**cs(norm_mag)
+        full_well = full_wells[sat_guess_label]
+    return pixel_rate, full_well
+
+
 def draw(tso_list, resolution, n_obs):
     """
     Draw a random noised-up transit/eclipse depth realization from a TSO
@@ -950,9 +1076,9 @@ def draw(tso_list, resolution, n_obs):
 
 
 def server(input, output, session):
-    group_starter = reactive.Value(False)
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
+    saturation_fraction = reactive.Value(80)
     saturation_label = reactive.Value(None)
     update_catalog_flag = reactive.Value(False)
     update_sed_flag = reactive.Value(None)
@@ -1067,41 +1193,14 @@ def server(input, output, session):
         This might be a transit/eclipse TSO or a Pandeia perform_calculation
         call.
         """
-        # Instrumental setup:
-        inst = input.instrument.get().lower()
-        mode = input.mode.get()
-        disperser = input.disperser.get()
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        readout = input.readout.get()
-        order = input.order.get()
-        ngroup = int(input.ngroup.get())
-        nint = input.integrations.get()
-        aperture = None
+        (inst, mode, disperser, filter, subarray, readout, order,
+            ngroup, nint, aperture) = parse_instrument(input)
 
         detector = get_detector(inst, mode, detectors)
         inst_label = detector.instrument_label(disperser, filter)
 
         run_is_tso = True
-        # Front-end to back-end exceptions:
-        if mode == 'bots':
-            disperser, filter = filter.split('/')
-        if mode == 'soss':
-            if filter == 'f277w':
-                order = [1]
-            else:
-                order = [int(val) for val in order.split()]
-        else:
-            order = None
-        if mode == 'mrs_ts':
-            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-        if mode == 'sw_tsgrism':
-            aperture = input.disperser.get()
-            disperser = 'dhs0'
         if mode == 'target_acq':
-            aperture = input.disperser.get()
-            disperser = None
-            nint = 1
             run_is_tso = False
             run_type = 'Acquisition'
 
@@ -1170,7 +1269,8 @@ def server(input, output, session):
             run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
                 spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
-                bookmarked_spectra[obs_geometry].append(depth_label)
+                if depth_label not in bookmarked_spectra[obs_geometry]:
+                    bookmarked_spectra[obs_geometry].append(depth_label)
             depth_model = [wl, depth]
 
             observation_dur = exp_time / 3600.0
@@ -1338,11 +1438,12 @@ def server(input, output, session):
             choices = detector.get_constrained_val('orders', subarray=subarray)
             order = ' '.join([str(val) for val in order])
             ui.update_select('order', choices=choices, selected=order)
-        if ngroup != input.ngroup.get():
-            if mode == 'target_acq':
-                ui.update_select('ngroup', selected=ngroup)
-            else:
-                ui.update_numeric('ngroup', value=ngroup)
+        if mode == 'target_acq':
+            if ngroup != input.ngroup_acq.get():
+                ui.update_select(id='ngroup_acq', selected=ngroup)
+        else:
+            if ngroup != input.ngroup.get():
+                ui.update_numeric(id='ngroup', value=ngroup)
 
         # The target:
         current_target = input.target.get()
@@ -1457,7 +1558,6 @@ def server(input, output, session):
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
-        #print(f"You selected me: {inst}")
         mode_choices = modes[inst]
         choices = []
         for m in mode_choices.values():
@@ -1608,8 +1708,8 @@ def server(input, output, session):
         if target_focus=='acquisition':
             if target is None:
                 error_msg = ui.markdown(
-                    "Need to select a valid **Science target** before searching "
-                    "for nearby acquisition targets"
+                    "Need to select a valid **Science target** before "
+                    "searching for nearby acquisition targets"
                 )
             elif target.host not in cache_acquisition:
                 error_msg = ui.markdown(
@@ -1648,7 +1748,6 @@ def server(input, output, session):
             return
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
-        inst = tso['inst']
 
         filename = make_save_label(
             tso['target'], tso['inst'], tso['mode'],
@@ -1798,8 +1897,8 @@ def server(input, output, session):
         keys = ui.HTML(
             'Keys:<br>'
             '<span style="color:#0B980D">Observed, publicly available.</span>'
-            '<br><span>Observed, in proprietary period.</span><br>'
-            '<span style="color:#FFa500">To be observed, planned window.</span>'
+            '<br><span style="color:#FFa500">Observed, in proprietary period.</span><br>'
+            '<span>To be observed, planned window.</span>'
             '<br><span style="color:red">Failed, withdrawn, or skipped.</span>'
         )
 
@@ -1830,6 +1929,7 @@ def server(input, output, session):
             if status[i] in ['Skipped', 'Failed', 'Withdrawn']
         ]
         available = []
+        private = []
         dates = []
         tbd_dates = []
         for i in range(nobs):
@@ -1837,6 +1937,8 @@ def server(input, output, session):
                 release = date_obs[i] + timedelta(days=365.0*propriety[i]/12)
                 if release < today:
                     available.append(i)
+                else:
+                    private.append(i)
                 dates.append(
                     date_obs[i].strftime('%Y-%m-%d') +
                     f' ({propriety[i]} m)'
@@ -1851,7 +1953,6 @@ def server(input, output, session):
                     dates.append(f'--- ({propriety[i]} m)')
                 if i not in warnings:
                     tbd_dates.append(i)
-
         styles = [
             {
                 'rows': available,
@@ -1862,8 +1963,7 @@ def server(input, output, session):
                 'style': {"color": "red"},
             },
             {
-                'rows': tbd_dates,
-                'cols': [10],
+                'rows': private,
                 'style': {"color": "#FFa500"},
             },
         ]
@@ -2378,7 +2478,8 @@ def server(input, output, session):
             u = pt.u(units)
             spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
             user_spectra[obs_geometry].append(label)
-            bookmarked_spectra[obs_geometry].append(label)
+            if label not in bookmarked_spectra[obs_geometry]:
+                bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
                 return
             # Trigger update choose_depth
@@ -2416,17 +2517,19 @@ def server(input, output, session):
         ui.update_select('order', choices=choices, selected=order)
 
 
-    @render.ui
+    @reactive.Effect
     @reactive.event(input.mode, input.subarray)
-    def groups_input():
+    def update_groups_input():
         inst = input.instrument.get()
         mode = input.mode.get()
         subarray = input.subarray.get()
-        if group_starter.get():
-            current_value = input.ngroup.get()
+        if not is_consistent(inst, mode, subarray=subarray):
+            return
+        if mode == 'target_acq':
+            current_value = input.ngroup_acq.get()
         else:
-            current_value = 2
-            group_starter.set(True)
+            current_value = input.ngroup.get()
+
         preset = preset_ngroup.get()
         has_preset = (
             preset is not None and
@@ -2438,57 +2541,30 @@ def server(input, output, session):
             preset_ngroup.set(None)
         else:
             value = current_value
+
         if mode == 'target_acq':
             detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
-
-            value = str(value)
             if value not in choices:
-                value = None
-            return ui.input_select(
-                id="ngroup",
-                label="",
+                value = choices[0]
+            ui.update_select(
+                id="ngroup_acq",
                 choices=choices,
-                selected=value,
+                selected=str(value),
             )
         else:
-            return ui.input_numeric(
-                id="ngroup",
-                label='',
-                value=int(value),
-                min=2, max=10000,
-            )
+            ui.update_numeric(id="ngroup", value=value)
 
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
-        inst = input.instrument.get().lower()
-        mode = input.mode.get()
-        disperser = input.disperser.get()
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        readout = input.readout.get()
-        order = input.order.get()
-        aperture = None
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        (inst, mode, disperser, filter, subarray, readout, order,
+            ngroup, nint, aperture) = parse_instrument(input)
 
-        # Front-end to back-end exceptions:
-        if mode == 'sw_tsgrism':
-            aperture = input.disperser.get()
-            disperser = 'dhs0'
-        if mode == 'bots':
-            disperser, filter = filter.split('/')
-        if mode == 'soss':
-            order = [int(val) for val in order.split()]
-        if mode == 'mrs_ts':
-            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-        if mode == 'target_acq':
-            ngroup = int(input.ngroup.get())
-            aperture = input.disperser.get()
-            disperser = None
-        else:
+        if mode != 'target_acq':
             ngroup = 2
 
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
         sat_label = make_saturation_label(
             inst, mode, aperture, disperser, filter, subarray, order, sed_label,
         )
@@ -2530,11 +2606,75 @@ def server(input, output, session):
         if ngroup is None:
             return
         integs, exp_time = jwst.bin_search_exposure_time(
-            inst, subarray, readout, int(ngroup), obs_dur,
+            inst, subarray, readout, ngroup, obs_dur,
         )
         if exp_time == 0.0:
             return
         ui.update_numeric('integrations', value=integs)
+
+
+    @reactive.Effect
+    def _():
+        """
+        Update the desired saturation limit only when there is a valid
+        input value.
+        """
+        try:
+            value = float(input.saturation_input_text())
+            if 1.0 <= value <= 100.0:
+                saturation_fraction.set(value)
+        except:
+            pass
+
+    @reactive.effect
+    @reactive.event(input.saturation_button)
+    def ngroup_from_saturation_fraction():
+        (inst, mode, disperser, filter, subarray, readout, order,
+            ngroup, nint, aperture) = parse_instrument(input)
+
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        cached_target = (
+            target is not None and
+            target.host in cache_acquisition and
+            cache_acquisition[target.host]['selected'] is not None
+        )
+
+        target_focus = input.target_focus.get().capitalize()
+        if target_focus == 'Science':
+            target_acq_mag = None
+        elif cached_target:
+            target_list = cache_acquisition[target.host]['targets']
+            selected = cache_acquisition[target.host]['selected']
+            target_acq_mag = np.round(target_list[1][selected], 3)
+        else:
+            return
+
+        norm_mag, sed_label = parse_sed(input, target_acq_mag)[3:5]
+        if inst is None or sed_label is None:
+            return
+
+        pixel_rate, full_well = get_saturation_values(
+            inst, mode, aperture, disperser, filter, subarray, order,
+            sed_label, norm_mag,
+        )
+        if pixel_rate is None:
+            return
+
+        req_saturation = saturation_fraction.get()
+        sat_time = jwst.integration_time(inst, subarray, readout, ngroup)
+        sat_fraction = 100 * pixel_rate * sat_time / full_well
+        ngroup_req = int(req_saturation*ngroup/sat_fraction)
+
+        if mode == 'target_acq':
+            detector = get_detector(inst, mode, detectors)
+            choices = detector.get_constrained_val('groups', subarray=subarray)
+            masked_choices = np.array(choices) <= ngroup_req
+            masked_choices[0] = True
+            selected = np.array(choices)[masked_choices][-1]
+            ui.update_select(id='ngroup_acq', selected=str(selected))
+        else:
+            ui.update_numeric(id='ngroup', value=ngroup_req)
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -2552,7 +2692,7 @@ def server(input, output, session):
 
         if mode == 'lrsslitless':
             filter = 'None'
-        if mode == 'mrs_ts':
+        elif mode == 'mrs_ts':
             filter = input.disperser.get()
 
         if mode == 'target_acq':
@@ -2570,22 +2710,23 @@ def server(input, output, session):
     def plotly_sed():
         # Gather bookmarked SEDs
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
+        throughput = get_throughput(input)
+        if throughput is None:
+            return
         model_names = bookmarked_spectra['sed']
         if len(model_names) == 0:
             fig = go.Figure()
-            fig.update_layout(title='Bookmark some SEDs to show them here')
+            fig.update_layout(title='Bookmark SEDs models to show them here')
             return fig
-        sed_models = [spectra['sed'][model] for model in model_names]
 
-        # Get current SED:
-        sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
+        sed_models = [spectra['sed'][model] for model in model_names]
+        _, _, _, _, current_model = parse_sed(input)
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
-
-        throughput = get_throughput(input)
         units = input.plot_sed_units.get()
         resolution = input.plot_sed_resolution.get()
+
         fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
             units=units,
@@ -2596,16 +2737,22 @@ def server(input, output, session):
         return fig
 
 
+    @output
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
+        throughput = get_throughput(input)
+        if throughput is None:
+            return
         update_depth_flag.get()
         obs_geometry = input.obs_geometry.get()
         model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
         if nmodels == 0:
-            return go.Figure()
-        throughput = get_throughput(input)
+            fig = go.Figure()
+            title = f'Bookmark {obs_geometry.lower()} models to show them here'
+            fig.update_layout(title=title)
+            return fig
 
         current_model = planet_model_name(input)
         units = input.plot_depth_units.get()
@@ -2701,53 +2848,37 @@ def server(input, output, session):
     # Results
     @render.ui
     def results():
+        saturation_limit = saturation_fraction.get()
         warnings = {}
         # Only read for reactivity reasons:
         saturation_label.get()
         input.ta_sed.get()
 
-        inst = input.instrument.get().lower()
-        mode = input.mode.get()
-        disperser = input.disperser.get()
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        readout = input.readout.get()
-        order = input.order.get()
-        ngroup = input.ngroup.get()
-        nint = input.integrations.get()
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        (inst, mode, disperser, filter, subarray, readout, order,
+            ngroup, nint, aperture) = parse_instrument(input)
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        cached_target = (
+            target is not None and
+            target.host in cache_acquisition and
+            cache_acquisition[target.host]['selected'] is not None
+        )
+
         depth_label = parse_obs(input)[1]
         transit_dur = float(input.t_dur.get())
 
-        consistent = is_consistent(
-            inst, mode, disperser, filter, subarray, readout,
-        )
-        if ngroup is None or not consistent or sed_label is None:
+        if inst is None or ngroup is None or parse_sed(input)[-1] is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
 
         obs_geometry = input.obs_geometry.get()
-        run_type = obs_geometry.capitalize()
-        # Front-end to back-end exceptions:
-        aperture = None
-        if mode == 'bots' and '/' in filter:
-            disperser, filter = filter.split('/')
-        if mode == 'mrs_ts':
-            aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-        if mode == 'sw_tsgrism':
-            aperture = input.disperser.get()
-            disperser = 'dhs0'
         if mode == 'target_acq':
-            aperture = input.disperser.get()
-            disperser = None
-            nint = 1
             run_type = 'Acquisition'
             depth_label = ''
+        else:
+            run_type = obs_geometry.capitalize()
 
-        ngroup = int(ngroup)
         report_text = jwst._print_pandeia_exposure(
             inst, subarray, readout, ngroup, nint,
         )
@@ -2756,56 +2887,35 @@ def server(input, output, session):
         if target_focus == 'Science':
             target_acq_mag = None
             target_name = f': {target.planet}' if target is not None else ''
-        else:
-            no_target = (
-                target is None or
-                target.host not in cache_acquisition or
-                cache_acquisition[target.host]['selected'] is None
-            )
-            if no_target:
-                report_text = f'<b>{target_focus} target</b><br>{report_text}'
-                warning_text.set(warnings)
-                return ui.HTML(f'<pre>{report_text}</pre>')
+        elif cached_target:
             target_list = cache_acquisition[target.host]['targets']
             selected = cache_acquisition[target.host]['selected']
             target_acq_mag = np.round(target_list[1][selected], 3)
             target_name = f': {target_list[0][selected]}'
+        else:
+            report_text = f'<b>{target_focus} target</b><br>{report_text}'
+            warning_text.set(warnings)
+            return ui.HTML(f'<pre>{report_text}</pre>')
         report_text = f'<b>{target_focus} target{target_name}</b><br>{report_text}'
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
             input, target_acq_mag=target_acq_mag,
         )
-        sat_label = make_saturation_label(
-            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        pixel_rate, full_well = get_saturation_values(
+            inst, mode, aperture, disperser, filter, subarray, order,
+            sed_label, norm_mag,
         )
+        if pixel_rate is not None:
+            saturation_text = jwst._print_pandeia_saturation(
+                inst, subarray, readout, ngroup, pixel_rate, full_well,
+                format='html', req_saturation=saturation_limit,
+            )
+            report_text += f'<br>{saturation_text}'
+
         tso_label = make_obs_label(
             inst, mode, aperture, disperser, filter, subarray, readout, order,
             ngroup, nint, run_type, sed_label, depth_label,
         )
-
-        sed_items = sat_label.split('_')
-        band_label = sed_items[-1]
-        sat_guess_label = '_'.join(sed_items[0:-2])
-        can_guess = band_label == 'Ks' and sat_guess_label in flux_rate_splines
-
-        if sat_label in cache_saturation:
-            pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
-            full_well = cache_saturation[sat_label]['full_well']
-            saturation_text = jwst._print_pandeia_saturation(
-                inst, subarray, readout, ngroup, pixel_rate, full_well,
-                format='html',
-            )
-            report_text += f'<br>{saturation_text}'
-        elif can_guess:
-            cs = flux_rate_splines[sat_guess_label]
-            estimated_rate = 10**cs(norm_mag)
-            full_well = full_wells[sat_guess_label]
-            saturation_text = jwst._print_pandeia_saturation(
-                inst, subarray, readout, ngroup, estimated_rate, full_well,
-                format='html',
-            )
-            report_text += f'<br>{saturation_text}'
-
         if tso_label in tso_runs[run_type]:
             tso_run = tso_runs[run_type][tso_label]
             warnings = tso_run['warnings']
