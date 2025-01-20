@@ -2692,7 +2692,7 @@ def server(input, output, session):
 
         if mode == 'lrsslitless':
             filter = 'None'
-        if mode == 'mrs_ts':
+        elif mode == 'mrs_ts':
             filter = input.disperser.get()
 
         if mode == 'target_acq':
@@ -2710,22 +2710,23 @@ def server(input, output, session):
     def plotly_sed():
         # Gather bookmarked SEDs
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
+        throughput = get_throughput(input)
+        if throughput is None:
+            return
         model_names = bookmarked_spectra['sed']
         if len(model_names) == 0:
             fig = go.Figure()
-            fig.update_layout(title='Bookmark some SEDs to show them here')
+            fig.update_layout(title='Bookmark SEDs models to show them here')
             return fig
-        sed_models = [spectra['sed'][model] for model in model_names]
 
-        # Get current SED:
-        sed_type, sed_model, norm_band, norm_mag, current_model = parse_sed(input)
+        sed_models = [spectra['sed'][model] for model in model_names]
+        _, _, _, _, current_model = parse_sed(input)
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
-
-        throughput = get_throughput(input)
         units = input.plot_sed_units.get()
         resolution = input.plot_sed_resolution.get()
+
         fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
             units=units,
@@ -2740,13 +2741,18 @@ def server(input, output, session):
     @render_plotly
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
+        throughput = get_throughput(input)
+        if throughput is None:
+            return
         update_depth_flag.get()
         obs_geometry = input.obs_geometry.get()
         model_names = bookmarked_spectra[obs_geometry]
         nmodels = len(model_names)
         if nmodels == 0:
-            return go.Figure()
-        throughput = get_throughput(input)
+            fig = go.Figure()
+            title = f'Bookmark {obs_geometry.lower()} models to show them here'
+            fig.update_layout(title=title)
+            return fig
 
         current_model = planet_model_name(input)
         units = input.plot_depth_units.get()
