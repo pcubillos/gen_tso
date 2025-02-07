@@ -262,19 +262,42 @@ app_ui = ui.page_fluid(
 
     # Instrument and detector modes:
     ui.layout_columns(
-        cs.navset_card_tab_jwst(
-            instruments,
-            id="instrument",
-            selected='NIRCam',
-            header="Select an instrument and detector",
-            footer=ui.input_select(
-                "mode",
-                "",
-                choices=modes['NIRCam'],
-                width='425px',
+        #ui.card(
+        cs.custom_card(
+            ui.card_header("Select instrument and mode"),
+            ui.layout_columns(
+                ui.layout_columns(
+                    cs.navset_card_tab_jwst(
+                        instruments,
+                        id='instrument',
+                        selected='NIRCam',
+                    ),
+                    ui.input_select(
+                        id="mode",
+                        label="",
+                        choices=modes['NIRCam'],
+                        width='100%',
+                    ),
+                    col_widths=(12,12),
+                    fill=True,
+                    fillable=True,
+                    gap='1px',
+                    class_="p-0 m-0",
+                ),
+                ui.input_action_button(
+                    id="export_button",
+                    label="Export to notebook",
+                    class_="btn btn-outline-success btn-sm",
+                ),
+                col_widths=(9,3),
+                fill=True,
+                fillable=True,
+                gap='10px',
+                class_="p-0 m-0",
             ),
+            body_args=dict(class_="p-2 m-0"),
         ),
-        ui.card(
+        cs.custom_card(
             # current setup and TSO runs
             ui.layout_columns(
                 # Left
@@ -336,6 +359,7 @@ app_ui = ui.page_fluid(
                 gap='10px',
                 class_="px-0 py-0 mx-0 my-0",
             ),
+            body_args=dict(class_="p-2 m-1"),
         ),
         col_widths=[6,6],
     ),
