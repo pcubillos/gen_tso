@@ -614,9 +614,12 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['ngroup'] = ngroup
         self._ensure_wl_reference_in_range()
 
-        report = perform_calculation(self.calc)
-        self.report = report
-        return report
+        self.report = perform_calculation(self.calc)
+        # In pandeia ver 2024.9, NIRISS/SOSS returns float32 for wl arrays
+        # need to convert to double for safety
+        wl = np.array(self.report['1d']['extracted_flux'][0], dtype=float)
+        self.report['1d']['extracted_flux'][0] = wl
+        return self.report
 
     def calc_noise(
             self, obs_dur=None, ngroup=None,
