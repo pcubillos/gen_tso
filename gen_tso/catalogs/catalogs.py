@@ -301,6 +301,8 @@ def load_trexolists(grouped=False, trexo_file=None):
         for categ,prog,name in zip(category, programs, pi)
     ])
 
+    trexo_data['observation'] = trexolist_data['Observation']
+    trexo_data['visit'] = trexolist_data['Visit']
     trexo_data['ra'] = np.array(trexolist_data['R.A. 2000'])
     trexo_data['dec'] = np.array(trexolist_data['Dec. 2000'])
 

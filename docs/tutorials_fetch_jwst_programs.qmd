@@ -1,0 +1,385 @@
+---
+title: Fetch JWST TSO programs from STScI
+page-navigation: true
+---
+
+This Python script shows how to fetch and parse the entire catalog of JWST TSO
+prgrams from the STScI website.
+
+This tutorial is split into three sections:
+
+- [Fetch TSO files](#fetch-tso-files)
+- [Parse to database](#parse-files-to-database)
+- [Playground](#playground)
+
+<br>
+
+## Fetch TSO files
+
+STScI [provides](https://www.stsci.edu/jwst-program-info/search) the
+information for each JWST program in two files:
+
+- the Astronomers Proposal Tool (APT) file (in .aptx format)
+- the status file (in .xml format)
+
+The APT files have to be then converted .xml format to be further parsed.
+This can be done using the STScI's [APT
+software](https://www.stsci.edu/scientific-community/software/astronomers-proposal-tool-apt).
+This will be done under the hood by ``Gen TSO``, all we need to set is the
+path to the APT executable:
+
+::: {.panel-tabset}
+
+## APT on OSX
+
+After you installed APT, search in your Application folders.
+The executable will be located inside the `bin` subfolder. We will need to
+get the absolute path to it, It should be something like:
+
+```bash
+/Applications/APT\\ 2024.7.1/bin/apt
+```
+
+The following script shows how to fetch the APT and status for the programs:
+
+```python
+import gen_tso.catalogs as cat
+
+# Path to APT executable:
+apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
+
+# Fetch all TSO programs:
+cat.fetch_jwst_programs(apt_command)
+```
+
+## APT on Linux
+
+After you installed APT on Linux, search for the folder where it was
+installed.  The path to the executable should be something like this:
+
+```bash
+/home/user/ast/apt/APT_2024.5.2/APT
+```
+
+The following script shows how to fetch the APT and status for the programs:
+
+```python
+import gen_tso.catalogs as cat
+
+# Path to APT executable:
+apt_command = '/home/user/ast/apt/APT_2024.5.2/APT'
+
+# Fetch all TSO programs:
+cat.fetch_jwst_programs(apt_command)
+```
+
+## Environmental variable
+
+Either on a Linux or OSX machine, if you create an environmental variable
+in your bash, e.g.:
+
+```bash
+export APT='/home/user/ast/apt/APT_2024.5.2/APT'
+```
+then you can directly use that environmental variable.
+The following script shows how to fetch the APT and status for the programs:
+
+```python
+import gen_tso.catalogs as cat
+
+# APT's environmental variable:
+apt_command = 'APT'
+
+# Fetch all TSO programs:
+cat.fetch_jwst_programs(apt_command)
+```
+
+:::
+
+To process one program takes a few seconds. Thus, to process the entire
+catalog will take some ~10 min.
+
+If you want to only fetch specific programs, you can use the `programs`
+argument with the desired PID(s):
+
+```python
+import gen_tso.catalogs as cat
+
+# Fetch a single program
+apt_command = 'APT'
+programs = 3712
+cat.fetch_jwst_programs(apt_command, programs)
+
+
+# Fetch a set of programs
+programs = [2759, 3557, 3730, 4098]
+cat.fetch_jwst_programs(apt_command, programs)
+```
+
+::: {.callout-note}
+By default, the `cat.fetch_jwst_programs()` function will store the
+files into a default folder inside the `Gen TSO` package, you can find
+that folder with this script:
+
+```python
+from gen_tso import ROOT
+print(f'{ROOT}data/programs/')
+```
+
+To place them to a custom folder, use the `output_folder` argument.
+:::
+
+
+## Parse files to database
+
+# Now lets take a look at the default cofiguration:
+pando.show_config()
+
+We can take a look at the available options for disperser, filter, readout, subarray, or aperture with this command:
+
+```python
+from gen_tso.catalogs import fetch_programs as p
+from gen_tso.catalogs import load_trexolists, Catalog
+
+programs = np.unique([
+    program.split()[1]
+    for program in load_trexolists()['program']
+])
+
+obs = []
+for program in programs:
+    #print(f'\npid = {program}')
+    obs += p.parse_program(program)
+nobs = len(obs)
+
+
+# Find the planet
+catalog = Catalog()
+targets = [
+    target for target in catalog.targets
+    if target.is_jwst
+]
+
+for o in obs:
+    planets = p.get_planet_letters(o, targets, verbose=False)
+    o['planets'] = planets
+    pid = o['pid']
+    oid = o['observation']
+    target = o['target']
+    event = o['event']
+    print(f"{pid} {oid:3} {target:20s} {event:11}  {planets}")
+```
+
+```python
+# Compare to trexolists
+trexo = load_trexolists()
+t_programs = trexo['program']
+t_obs = trexo['observation']
+t_visit = trexo['visit']
+t_event = trexo['event']
+n_trexo = len(t_programs)
+for i in range(n_trexo):
+    p = t_programs[i].split()[1]
+    o = str(t_obs[i])
+    v = str(t_visit[i])
+    e = str(t_event[i])
+    e = 'phase curve' if e == 'phase' else e
+    missing = True
+    for ob in obs:
+        if ob['pid']==p and ob['observation']==o and ob['visit']==v:
+            missing = False
+            if ob['event'] != e:
+                print(f"diff {p} {o:3} {repr(ob['event'])} -- {repr(e)}")
+            break
+    if missing:
+        print(f'Missing: {p} {o} {v}')
+for ob in obs:
+    missing = True
+    for i in range(n_trexo):
+        p = t_programs[i].split()[1]
+        o = str(t_obs[i])
+        v = str(t_visit[i])
+        if ob['pid']==p and ob['observation']==o and ob['visit']==v:
+            missing = False
+            break
+    if missing:
+        p = ob['pid']
+        o = ob['observation']
+        v= ob['visit']
+        print(f'New: {p} {o} {v}')
+```
+
+```python
+# Plot orbital phase coverage
+periods = [
+    o['period'] if 'phase_duration' in o else 0
+    for o in obs
+]
+log_period = np.log10(periods)
+max_period = np.amax(log_period)
+max_period = 1.5
+
+fig = plt.figure(0)
+plt.clf()
+plt.subplots_adjust(0.1, 0.1, 0.98, 0.98)
+fig.set_size_inches(6,6)
+plt.axvline(1, color='r', zorder=-1)
+plt.axvline(2, color='r', zorder=-1)
+plt.axvline(0.5, color='k', zorder=-1)
+plt.axvline(1.5, color='k', zorder=-1)
+plt.axvline(2.5, color='k', zorder=-1)
+for i in range(nobs):
+    if 'phase_duration' not in obs[i]:
+        continue
+    phase = obs[i]['phase0']
+    duration = obs[i]['phase_duration']
+    plt.broken_barh(
+        [(phase, duration)], (i, 1),
+        color=plt.cm.viridis_r(log_period[i]/max_period),
+    )
+    color = 'k' if obs[i]['event']=='transit' else 'r'
+    if obs[i]['event']=='phase curve':
+        color = 'xkcd:blue'
+    plt.text(phase, i, obs[i]['target'] + ' ' +obs[i]['pid'], color=color)
+plt.ylim(0, nobs+1)
+```
+
+## Run Pandeia and check results
+
+I'm OK with the defaults above, so, lets run a TSO simulation:
+```python
+# ngroup to remain below 70% of saturation at the brightest pixel:
+ngroup = pando.saturation_fraction(fraction=70.0)
+
+# Run a transit TSO simulation:
+obs_type = 'transit'
+tso = pando.tso_calculation(
+    obs_type, transit_dur, obs_dur, depth_model,
+    ngroup=ngroup,
+)
+```
+
+::: {.callout-note}
+See the [saturation optimization tutorial](tutorials_tso_optimize.qmd)
+for a more in-depth example to optimize ngroup or estimate saturation levels.
+:::
+
+
+Thats it, now we can generate some transit-depth simulated spectra:
+
+```python
+# Draw a simulated transit spectrum at selected resolution
+obs_wl, obs_depth, obs_error, band_widths = jwst.simulate_tso(
+    tso, resolution=250.0, n_obs=1,
+)
+
+# Plot the results:
+plt.figure(4)
+plt.clf()
+plt.plot(
+tso['wl'], tso['depth_spectrum']/pc.percent,
+    c='salmon', label='depth at instrumental resolution',
+)
+plt.errorbar(
+    obs_wl, obs_depth/pc.percent, yerr=obs_error/pc.percent,
+    fmt='o', ms=5, color='xkcd:blue', mfc=(1,1,1,0.85),
+    label='simulated (noised up) transit spectrum',
+)
+plt.legend(loc='best')
+plt.xlim(3.6, 5.05)
+plt.ylim(2.88, 3.00)
+plt.xlabel('Wavelength (um)')
+plt.ylabel('Transit depth (%)')
+plt.title('WASP-80 b / NIRCam F444W')
+```
+
+![](images/WASP80b_nircam_transit_tutorial.png){width=600px}
+
+Or plot the flux rates:
+```python
+# Fluxes and Flux rates
+col1, col2 = plt.cm.viridis(0.8), plt.cm.viridis(0.25)
+plt.figure(0, (8.5, 4))
+plt.clf()
+plt.subplot(121)
+plt.plot(tso['wl'], tso['flux_out'], c=col2, label='out of transit')
+plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
+plt.legend(loc='best')
+plt.xlabel('Wavelength (um)')
+plt.ylabel('Total collected flux (e-)')
+plt.subplot(122)
+plt.plot(tso['wl'], tso['flux_out']/tso['time_out'], c=col2, label='out of transit')
+plt.plot(tso['wl'], tso['flux_in']/tso['time_in'], c=col1, label='in transit')
+plt.legend(loc='best')
+plt.xlabel('Wavelength (um)')
+plt.ylabel('Flux rate (e-/s)')
+plt.tight_layout()
+```
+
+![](images/WASP80b_nircam_flux_rates_tutorial.png){width=600px}
+
+
+---
+
+## Playground
+
+The latest TSO run for a given Pandeia object can be saved with this method: 
+```python
+pando.save_tso(filename='tso_transit_WASP-80b_nircam_lw_f444w.picke')
+```
+
+See [this tutorial](tutorials_tso_post_processing.qmd) to load that pickle file and simulate some spectra.
+
+Now lets set up a NIRCam/F444W observation and run the TSO calculation.
+First, we need to know what are the available options.  These are the
+instruments and their respective modes:
+
+```{=html}
+<table>
+
+  <thead>
+    <tr>
+      <th><span data-qmd="Instrument"></span></th>
+      <th><span data-qmd="Spectroscopy modes"></span></th>
+      <th><span data-qmd="Acquisition modes"></span></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+        <td rowspan="2"><span data-qmd="__miri__"></span></td> <td>lrsslitless</td> <td>target_acq</td>
+    </tr>
+    <tr>
+        <td>miri_ts</td> <td></td>
+    </tr>
+
+    <tr>
+        <td rowspan="2"><span data-qmd="__nircam__"></span></td> <td>lw_tsgrism</td><td>target_acq</td>
+    </tr>
+    <tr>
+        <td>sw_tsgrism</td> <td></td>
+    </tr>
+    <tr>
+        <td><span data-qmd="__niriss__"></span></td> <td>soss</td> <td>target_acq</td>
+    </tr>
+
+    <tr>
+        <td><span data-qmd="__nirspec__"></span></td> <td>bots</td> <td>target_acq</td>
+    </tr>
+  </tbody>
+</table>
+
+```
+
+Lets move on then:
+
+```python
+# Initialize the instrument config object:
+pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+
+# The star:
+pando.set_scene(
+    sed_type='phoenix', sed_model=sed,
+    norm_band='2mass,ks', norm_magnitude=target.ks_mag,
+)
+
+
