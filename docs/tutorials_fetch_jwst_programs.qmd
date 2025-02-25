@@ -130,30 +130,73 @@ To place them to a custom folder, use the `output_folder` argument.
 :::
 
 
+
 ## Parse files to database
 
-# Now lets take a look at the default cofiguration:
-pando.show_config()
-
-We can take a look at the available options for disperser, filter, readout, subarray, or aperture with this command:
+Once we have downloaded the .xml files for the JWST TSO programs,
+we can parse them to a human readable format.  Here's how:
 
 ```python
-from gen_tso.catalogs import fetch_programs as p
-from gen_tso.catalogs import load_trexolists, Catalog
+import pickle
+from gen_tso import catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
 
-programs = np.unique([
-    program.split()[1]
-    for program in load_trexolists()['program']
-])
+# Parse and collect the observations from all known programs
+observations = []
+for program in KNOWN_PROGRAMS:
+    observations += cat.parse_program(program)
+```
 
-obs = []
-for program in programs:
-    #print(f'\npid = {program}')
-    obs += p.parse_program(program)
-nobs = len(obs)
+That's all.  Now we can take a look or save the outputs, e.g.:
 
+```python
+# Save to pickle file
+with open('JWST_TSO_programs.pickle', 'wb') as handle:
+    pickle.dump(observations, handle, protocol=4)
+
+# Print the content of one observation:
+for key, val in observations[98].items():
+    print(f'{key} = {repr(val)}')
+```
+::: {.cell-output-stdout}
+```
+category = 'ERS'
+pi = 'Batalha'
+pid = '1366'
+proprietary = '0'
+special_reqs = ['OrientRange', 'PeriodZeroPhase', 'TimeSeriesObservation']
+observation = '3'
+visit = '1'
+status = 'Executed'
+hours = 10.56
+start = datetime.datetime(2022, 7, 30, 20, 46, 32)
+end = datetime.datetime(2022, 7, 31, 6, 21, 30)
+label = 'Transmission - WASP-39b : nirspec g395h'
+target = 'WASP-39'
+RA = '14:29:18.3955'
+dec = '-03:26:40.20'
+instrument = 'NIRSPEC'
+mode = 'BOTS'
+disperser = 'G395H'
+filter = 'F290LP'
+subarray = 'SUB2048'
+readout = 'NRSRAPID'
+groups = '70'
+integrations = '465'
+reqs_phase = {'ZeroPhase': '2457792.356338', 'Period': '4.05527999 Days', 'PhaseStart': '0.95248', 'PhaseEnd': '0.96275'}
+period = 4.05527999
+phase_start = 0.957615
+phase_duration = 0.10850052304279982
+event = 'transit'
+```
+:::
+
+
+```python
+nobs = len(observations)
 
 # Find the planet
+from gen_tso.catalogs import load_trexolists, Catalog
 catalog = Catalog()
 targets = [
     target for target in catalog.targets
@@ -244,83 +287,6 @@ for i in range(nobs):
 plt.ylim(0, nobs+1)
 ```
 
-## Run Pandeia and check results
-
-I'm OK with the defaults above, so, lets run a TSO simulation:
-```python
-# ngroup to remain below 70% of saturation at the brightest pixel:
-ngroup = pando.saturation_fraction(fraction=70.0)
-
-# Run a transit TSO simulation:
-obs_type = 'transit'
-tso = pando.tso_calculation(
-    obs_type, transit_dur, obs_dur, depth_model,
-    ngroup=ngroup,
-)
-```
-
-::: {.callout-note}
-See the [saturation optimization tutorial](tutorials_tso_optimize.qmd)
-for a more in-depth example to optimize ngroup or estimate saturation levels.
-:::
-
-
-Thats it, now we can generate some transit-depth simulated spectra:
-
-```python
-# Draw a simulated transit spectrum at selected resolution
-obs_wl, obs_depth, obs_error, band_widths = jwst.simulate_tso(
-    tso, resolution=250.0, n_obs=1,
-)
-
-# Plot the results:
-plt.figure(4)
-plt.clf()
-plt.plot(
-tso['wl'], tso['depth_spectrum']/pc.percent,
-    c='salmon', label='depth at instrumental resolution',
-)
-plt.errorbar(
-    obs_wl, obs_depth/pc.percent, yerr=obs_error/pc.percent,
-    fmt='o', ms=5, color='xkcd:blue', mfc=(1,1,1,0.85),
-    label='simulated (noised up) transit spectrum',
-)
-plt.legend(loc='best')
-plt.xlim(3.6, 5.05)
-plt.ylim(2.88, 3.00)
-plt.xlabel('Wavelength (um)')
-plt.ylabel('Transit depth (%)')
-plt.title('WASP-80 b / NIRCam F444W')
-```
-
-![](images/WASP80b_nircam_transit_tutorial.png){width=600px}
-
-Or plot the flux rates:
-```python
-# Fluxes and Flux rates
-col1, col2 = plt.cm.viridis(0.8), plt.cm.viridis(0.25)
-plt.figure(0, (8.5, 4))
-plt.clf()
-plt.subplot(121)
-plt.plot(tso['wl'], tso['flux_out'], c=col2, label='out of transit')
-plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
-plt.legend(loc='best')
-plt.xlabel('Wavelength (um)')
-plt.ylabel('Total collected flux (e-)')
-plt.subplot(122)
-plt.plot(tso['wl'], tso['flux_out']/tso['time_out'], c=col2, label='out of transit')
-plt.plot(tso['wl'], tso['flux_in']/tso['time_in'], c=col1, label='in transit')
-plt.legend(loc='best')
-plt.xlabel('Wavelength (um)')
-plt.ylabel('Flux rate (e-/s)')
-plt.tight_layout()
-```
-
-![](images/WASP80b_nircam_flux_rates_tutorial.png){width=600px}
-
-
----
-
 ## Playground
 
 The latest TSO run for a given Pandeia object can be saved with this method: 
@@ -333,53 +299,5 @@ See [this tutorial](tutorials_tso_post_processing.qmd) to load that pickle file 
 Now lets set up a NIRCam/F444W observation and run the TSO calculation.
 First, we need to know what are the available options.  These are the
 instruments and their respective modes:
-
-```{=html}
-<table>
-
-  <thead>
-    <tr>
-      <th><span data-qmd="Instrument"></span></th>
-      <th><span data-qmd="Spectroscopy modes"></span></th>
-      <th><span data-qmd="Acquisition modes"></span></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-        <td rowspan="2"><span data-qmd="__miri__"></span></td> <td>lrsslitless</td> <td>target_acq</td>
-    </tr>
-    <tr>
-        <td>miri_ts</td> <td></td>
-    </tr>
-
-    <tr>
-        <td rowspan="2"><span data-qmd="__nircam__"></span></td> <td>lw_tsgrism</td><td>target_acq</td>
-    </tr>
-    <tr>
-        <td>sw_tsgrism</td> <td></td>
-    </tr>
-    <tr>
-        <td><span data-qmd="__niriss__"></span></td> <td>soss</td> <td>target_acq</td>
-    </tr>
-
-    <tr>
-        <td><span data-qmd="__nirspec__"></span></td> <td>bots</td> <td>target_acq</td>
-    </tr>
-  </tbody>
-</table>
-
-```
-
-Lets move on then:
-
-```python
-# Initialize the instrument config object:
-pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
-
-# The star:
-pando.set_scene(
-    sed_type='phoenix', sed_model=sed,
-    norm_band='2mass,ks', norm_magnitude=target.ks_mag,
-)
 
 

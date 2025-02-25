@@ -5,7 +5,7 @@ __all__ = [
     # To fetch the JWST programs info from the internets
     '_extract_html_text',
     '_fetch_programs',
-    '_extract_template',
+    '_extract_instrument_template',
     'fetch_jwst_programs',
     # To format XML info into human language
     '_parse_date',
@@ -188,33 +188,55 @@ def fetch_jwst_programs(apt_command=None, programs=None, output_path=None):
         os.system(f"{apt_command} -nogui -export xml {apt_files}")
 
 
-def _extract_template(element):
+def _extract_instrument_template(element):
     """
+    Extract the instrumental settings from an observation's XML template.
     """
+    modes = {
+        'MiriImaging': 'Imaging TS',
+        'MiriLRS': 'LRS',
+        'MiriMRS': 'MRS',
+        'NircamGrismTimeSeries': 'GRISMR TS',
+        'NirissSoss': 'SOSS',
+        'NirspecBrightObjectTimeSeries': 'BOTS',
+    }
+
     tag = element.tag
     len_ns = tag.rindex('}') + 1
     xmlns = tag[0:len_ns]
+    mode = tag[len_ns:]
     template = {
-        child.tag[len_ns:]: child.text
-        for child in element
-        if 'Acq' not in child.tag
-        if 'Verification' not in child.tag
-        if 'EtcId' not in child.tag
-        if 'NumExps' not in child.tag
-        if 'Exposures' not in child.tag
-        if 'DitherType' not in child.tag
-        if 'TaMethod' not in child.tag
-        if 'IncludeF277W' not in child.tag
-        if 'F277WExposure' not in child.tag
-        if 'Exposure' not in child.tag
+        'mode': modes[mode],
     }
+    if template['mode'] == 'BOTS':
+        template['disperser'] = element.find(f".//{xmlns}Grating").text
+    elif template['mode'] == 'MRS':
+        template['disperser'] = element.find(f".//{xmlns}Wavelength").text
+    else:
+        template['disperser'] = 'None'
 
-    exposure = element.find(f".//{xmlns}Exposure")
-    if exposure is not None:
-        for child in exposure:
-            if child.tag == f'{xmlns}EtcId':
-                continue
-            template[child.tag[len_ns:]] = child.text
+    if template['mode'] == 'GRISMR TS':
+        filter = element.find(f".//{xmlns}LongPupilFilter").text
+        template['disperser'] = filter[:filter.index('+')]
+        template['filter'] = filter[filter.index('+')+1:]
+    elif template['mode'] in ['Imaging TS', 'BOTS']:
+        template['filter'] = element.find(f".//{xmlns}Filter").text
+    else:
+        template['filter'] = 'None'
+
+    template['subarray'] = element.find(f".//{xmlns}Subarray").text
+    if template['mode'] == 'MRS':
+        readout = element.find(f".//{xmlns}ReadoutPatternLong").text
+        groups = element.find(f".//{xmlns}GroupsLong").text
+        integs = element.find(f".//{xmlns}IntegrationsLong").text
+    else:
+        readout = element.find(f".//{xmlns}ReadoutPattern").text
+        groups = element.find(f".//{xmlns}Groups").text
+        integs = element.find(f".//{xmlns}Integrations").text
+    template['readout'] = readout
+    template['groups'] = groups
+    template['integrations'] = integs
+
     return template
 
 
@@ -284,7 +306,7 @@ def get_phase_info(obs):
     per_unit = unit.lower().rstrip('s')
     period = float(value) * getattr(pc, per_unit) / pc.day
 
-    duration = float(obs['hours'])
+    duration = obs['hours']
     phase_duration = (duration*pc.hour) / (period*pc.day)
 
     # The mid-point of the starting phase range:
@@ -378,7 +400,7 @@ def parse_status(pid, path=None):
     for visit in status.findall('.//visit'):
         state = visit.attrib
         state['status'] = visit.find('status').text
-        state['hours'] = visit.find('hours').text
+        state['hours'] = float(visit.find('hours').text)
         target = visit.find('target')
         if target is None:
             target = 'None'
@@ -464,13 +486,13 @@ def parse_program(pid, path=None):
             observation = {
                 'category': pi_category,
                 'pi': pi_lastname,
-                'pid': pid,
+                'pid': str(pid),
                 'proprietary': proprietary_period,
             }
             reqs = np.unique([
                 child.tag[child.tag.rindex('}')+1:]
                 for child in obs.find(".//apt:SpecialRequirements", ns)
-            ])
+            ]).tolist()
             observation['special_reqs'] = reqs
             phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
             between_reqs = obs.find(".//apt:Between", ns)
@@ -484,7 +506,7 @@ def parse_program(pid, path=None):
                 if state['observation'] == observ and state['visit'] == visit:
                     observation.update(state)
             # Short observations are background:
-            if float(observation['hours']) < 1.5:
+            if observation['hours'] < 1.5:
                 continue
 
             label = obs.find('apt:Label', ns)
@@ -500,7 +522,7 @@ def parse_program(pid, path=None):
             observation['instrument'] = obs.find('apt:Instrument', ns).text
 
             template = obs.find('apt:Template', ns)[0]
-            observation.update(_extract_template(template))
+            observation.update(_extract_instrument_template(template))
             if phase_reqs is not None:
                 observation['reqs_phase'] = phase_reqs.attrib
             if between_reqs is not None:
