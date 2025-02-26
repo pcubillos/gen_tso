@@ -44,12 +44,15 @@ The following script shows how to fetch the APT and status for the programs:
 
 ```python
 import gen_tso.catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
 
 # Path to APT executable:
 apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
 
 # Fetch all TSO programs:
-cat.fetch_jwst_programs(apt_command)
+programs = KNOWN_PROGRAMS
+cat.fetch_jwst_programs(programs, apt_command)
 ```
 
 ## APT on Linux
@@ -65,12 +68,15 @@ The following script shows how to fetch the APT and status for the programs:
 
 ```python
 import gen_tso.catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
 
 # Path to APT executable:
 apt_command = '/home/user/ast/apt/APT_2024.5.2/APT'
 
 # Fetch all TSO programs:
-cat.fetch_jwst_programs(apt_command)
+programs = KNOWN_PROGRAMS
+cat.fetch_jwst_programs(programs, apt_command)
 ```
 
 ## Environmental variable
@@ -86,12 +92,15 @@ The following script shows how to fetch the APT and status for the programs:
 
 ```python
 import gen_tso.catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
 
 # APT's environmental variable:
 apt_command = 'APT'
 
 # Fetch all TSO programs:
-cat.fetch_jwst_programs(apt_command)
+programs = KNOWN_PROGRAMS
+cat.fetch_jwst_programs(programs, apt_command)
 ```
 
 :::
@@ -105,15 +114,15 @@ argument with the desired PID(s):
 ```python
 import gen_tso.catalogs as cat
 
+
 # Fetch a single program
 apt_command = 'APT'
 programs = 3712
-cat.fetch_jwst_programs(apt_command, programs)
-
+cat.fetch_jwst_programs(programs, apt_command)
 
 # Fetch a set of programs
 programs = [2759, 3557, 3730, 4098]
-cat.fetch_jwst_programs(apt_command, programs)
+cat.fetch_jwst_programs(programs, apt_command)
 ```
 
 ::: {.callout-note}
@@ -140,6 +149,7 @@ we can parse them to a human readable format.  Here's how:
 import pickle
 from gen_tso import catalogs as cat
 from gen_tso.utils import KNOWN_PROGRAMS
+
 
 # Parse and collect the observations from all known programs
 observations = []
@@ -191,21 +201,27 @@ event = 'transit'
 ```
 :::
 
+## Playground
+
+### Get target planets
+
+Now that we have the JWST programs information, we can cross-check
+with the catalog of exoplanet to find out which planet(s) are targeted
+by each observation:
 
 ```python
-nobs = len(observations)
+# Find the planet (by host name, labels, or phase constraints)
+from gen_tso.catalogs import Catalog
 
-# Find the planet
-from gen_tso.catalogs import load_trexolists, Catalog
 catalog = Catalog()
 targets = [
     target for target in catalog.targets
-    if target.is_jwst
+    if target.is_transiting
 ]
 
-for o in obs:
-    planets = p.get_planet_letters(o, targets, verbose=False)
-    o['planets'] = planets
+for obs in observations:
+    obs['planets'] = cat.get_planet_letters(obs, targets)
+
     pid = o['pid']
     oid = o['observation']
     target = o['target']
@@ -213,8 +229,25 @@ for o in obs:
     print(f"{pid} {oid:3} {target:20s} {event:11}  {planets}")
 ```
 
+### Plot phase coverage
+
 ```python
+from astropy.coordinates import Angle
+import astropy.units as u
+
+
+ra = [
+    Angle(obs['RA'], unit=u.hourangle).radian
+    for obs in observations
+]
+dec = [
+    Angle(obs['dec'], unit=u.deg).radian
+    for obs in observations
+]
+
+
 # Compare to trexolists
+from gen_tso.catalogs import load_trexolists
 trexo = load_trexolists()
 t_programs = trexo['program']
 t_obs = trexo['observation']
@@ -228,7 +261,7 @@ for i in range(n_trexo):
     e = str(t_event[i])
     e = 'phase curve' if e == 'phase' else e
     missing = True
-    for ob in obs:
+    for ob in observations:
         if ob['pid']==p and ob['observation']==o and ob['visit']==v:
             missing = False
             if ob['event'] != e:
@@ -236,7 +269,7 @@ for i in range(n_trexo):
             break
     if missing:
         print(f'Missing: {p} {o} {v}')
-for ob in obs:
+for ob in observations:
     missing = True
     for i in range(n_trexo):
         p = t_programs[i].split()[1]
@@ -261,6 +294,7 @@ periods = [
 log_period = np.log10(periods)
 max_period = np.amax(log_period)
 max_period = 1.5
+nobs = len(observations)
 
 fig = plt.figure(0)
 plt.clf()
@@ -271,6 +305,7 @@ plt.axvline(2, color='r', zorder=-1)
 plt.axvline(0.5, color='k', zorder=-1)
 plt.axvline(1.5, color='k', zorder=-1)
 plt.axvline(2.5, color='k', zorder=-1)
+
 for i in range(nobs):
     if 'phase_duration' not in obs[i]:
         continue
@@ -287,9 +322,8 @@ for i in range(nobs):
 plt.ylim(0, nobs+1)
 ```
 
-## Playground
 
-The latest TSO run for a given Pandeia object can be saved with this method: 
+The latest TSO run for a given Pandeia object can be saved with this method:
 ```python
 pando.save_tso(filename='tso_transit_WASP-80b_nircam_lw_f444w.picke')
 ```

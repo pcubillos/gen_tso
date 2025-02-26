@@ -138,36 +138,35 @@ def _fetch_programs(programs, output_path, file_type='APT'):
     return np.array(programs)[fetch_status==0]
 
 
-def fetch_jwst_programs(apt_command=None, programs=None, output_path=None):
+def fetch_jwst_programs(programs, apt_command=None, output_path=None):
     r"""
     Fetch APT and status for requested programs.
     APT files will be converted to XML using apt_command.
 
     Parameters
     ----------
+    programs: integer or 1D iterable of intergers
+        The program PID numbers to fetch.
     apt_command: String
         APT's command executable.
         If None, do not convert .aptx files to .xml
-    programs: integer or 1D iterable of intergers
-        The program PID numbers to fetch.
-        If None, fetch all known TSO programs.
     output_path: String
         Output folder location.
 
     Examples
     --------
     >>> import gen_tso.catalogs as cat
+    >>> from gen_tso.utils import KNOWN_PROGRAMS
 
     >>> # Fetch all known TSO programs
     >>> apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
-    >>> cat.fetch_jwst_programs(apt_command)
+    >>> programs = KNOWN_PROGRAMS
+    >>> cat.fetch_jwst_programs(programs, apt_command)
 
-    >>> # Fetch specific TSO programs
-    >>> programs = [1366, 1729, 1981, 2055]
-    >>> cat.fetch_jwst_programs(apt_command, programs)
+    >>> # Fetch a specific TSO program
+    >>> programs = 1366
+    >>> cat.fetch_jwst_programs(programs, apt_command)
     """
-    if programs is None:
-        programs = KNOWN_PROGRAMS
     if isinstance(programs, str) or isinstance(programs, int):
         programs = [programs]
 
