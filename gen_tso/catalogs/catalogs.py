@@ -14,6 +14,9 @@ from astropy.io import ascii
 import numpy as np
 import prompt_toolkit as ptk
 
+from astropy.coordinates import Angle, SkyCoord
+from astropy.units import hourangle, deg
+
 from ..utils import ROOT
 from . import utils as u
 from .target import Target
@@ -250,7 +253,7 @@ def load_trexolists(grouped=False, trexo_file=None):
     ['L 168-9' 'HAT-P-14' 'WASP-80' 'WASP-80' 'WASP-69' 'GJ 436' ...]
     >>>
     >>> print(list(trexo))
-    ['target', 'trexo_name', 'program', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
+    ['target', 'trexo_name', 'program', 'observation', 'visit', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
 
     >>> # Get data as lists of (host) targets:
     >>> trexo = cat.load_trexolists(grouped=True)
@@ -258,6 +261,8 @@ def load_trexolists(grouped=False, trexo_file=None):
     {'target': array(['WASP-43', 'WASP-43'], dtype='<U23'),
     'trexo_name': array(['WASP-43', 'WASP-43'], dtype='<U23'),
     'program': array(['GTO 1224 Birkmann', 'ERS 1366 Batalha'], dtype='<U22'),
+    'observation': array([ 2, 11]),
+    'visit': array([1, 1]),
     'ra': array(['10:19:37.9634', '10:19:37.9649'], dtype='<U13'),
     'dec': array(['-09:48:23.21', '-09:48:23.19'], dtype='<U12'),
     'event': array(['phase', 'phase'], dtype='<U9'),
@@ -301,8 +306,8 @@ def load_trexolists(grouped=False, trexo_file=None):
         for categ,prog,name in zip(category, programs, pi)
     ])
 
-    trexo_data['observation'] = trexolist_data['Observation']
-    trexo_data['visit'] = trexolist_data['Visit']
+    trexo_data['observation'] = np.array(trexolist_data['Observation'])
+    trexo_data['visit'] = np.array(trexolist_data['Visit'])
     trexo_data['ra'] = np.array(trexolist_data['R.A. 2000'])
     trexo_data['dec'] = np.array(trexolist_data['Dec. 2000'])
 
@@ -368,37 +373,28 @@ def load_trexolists(grouped=False, trexo_file=None):
     if not grouped:
         return trexo_data
 
+
     # Use RA and dec to detect aliases for a same object
-    truncated_ra = np.array([ra[0:5] for ra in trexo_data['ra']])
-    truncated_dec = np.array([dec[0:6] for dec in trexo_data['dec']])
+    ra = [Angle(ra, unit=hourangle).deg for ra in trexo_data['ra']]
+    dec = [Angle(dec, unit=deg).deg for dec in trexo_data['dec']]
+    coords = SkyCoord(ra, dec, unit='deg', frame='icrs')
 
     ntargets = len(trexo_data['target'])
     taken = np.zeros(ntargets, bool)
-    target_sets = []
-    trexo_ra = []
-    trexo_dec = []
+    group_indices = []
     for i in range(ntargets):
         if taken[i]:
             continue
-        group_indices = [i]
-        ra = truncated_ra[i]
-        dec = truncated_dec[i]
-        trexo_ra.append(ra)
-        trexo_dec.append(dec)
-        taken[i] = True
-        for j in range(i,ntargets):
-            if truncated_ra[j]==ra and truncated_dec[j]==dec and not taken[j]:
-                group_indices.append(j)
-                taken[j] = True
-        target_sets.append(group_indices)
+        seps = coords[i].separation(coords).to('arcsec').value
+        indices = np.where(seps < 50)[0]
+        taken[indices] = True
+        group_indices.append(indices)
 
     grouped_data = []
-    for i,indices in enumerate(target_sets):
+    for i,indices in enumerate(group_indices):
         target = {}
         for key in trexo_data.keys():
             target[key] = trexo_data[key][indices]
-        target['truncated_ra'] = np.array(trexo_ra[i])
-        target['truncated_dec'] = np.array(trexo_dec[i])
         grouped_data.append(target)
 
     return grouped_data
