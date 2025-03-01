@@ -54,7 +54,7 @@ jobs:
       - name: Download Vega file
         run: |
           mkdir -p pandeia_dir/sed/hst_calspec
-          wget -O pandeia_dir/sed/hst_calspec/alpha_lyr_stis_011.fits https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_011.fits
+          wget -O pandeia_dir/sed/hst_calspec/alpha_lyr_stis_010.fits https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
 
       - name: Set environment variable
         run: echo "pandeia_refdata=pandeia_dir/" >> $GITHUB_ENV
