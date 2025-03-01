@@ -71,7 +71,7 @@ def check_pandeia_ref_data(latest_version):
     return ui.span(
         ui.HTML(
             f'<span style="color:red">{output}.</span> '
-            'Please follow the instructions in section 2.1 of '
+            'Please follow the instructions in section 3.1 of '
         ),
         ui.tags.a(pandeia_url, href=pandeia_url, target="_blank"),
     )

@@ -5,8 +5,10 @@ __all__ = [
     'ROOT',
     'KNOWN_PROGRAMS',
     'check_latest_version',
+    'get_latest_pandeia_release',
     'get_latest_pandeia_versions',
     'get_version_advice',
+    'get_pandeia_advice',
     'read_spectrum_file',
     'collect_spectra',
     'format_text',
@@ -16,6 +18,7 @@ __all__ = [
 import os
 from packaging.version import parse
 
+from bs4 import BeautifulSoup
 import numpy as np
 import requests
 from shiny import ui
@@ -45,33 +48,29 @@ def check_latest_version(package):
     return latest_version
 
 
-def get_latest_pandeia_versions(package_name='pandeia.engine'):
+def get_latest_pandeia_release():
     """
-    Get latest pandeia.engine version for JWST and Roman branches.
-    To be checked how new JWST pandeia.engine versions are named.
+    Fetch latest pandeia.engine version for JWST from their website
     """
-    url = f"https://pypi.org/pypi/{package_name}/json"
+    url = 'https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+News'
     try:
         response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        versions = sorted([
-            parse(version) for version in data['releases'].keys()
-        ])
-        # split JWST and Roman versions (>2024.X)
-        jwst_versions = [
-            version for version in versions
-            if version.major<2024
-        ]
-        roman_versions = [
-            version for version in versions
-            if version.major>=2024
-        ]
-        return str(jwst_versions[-1]), str(roman_versions[-1])
-    except requests.exceptions.RequestException:
-        # Hardcoded value, need to be manually updated
-        return '4.0', '2024.9.1'
-
+        status_code = response.status_code
+    except:
+        status_code = 0
+    if status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        for a in soup.find_all('a', href=True):
+            link = 'pypi.org/project/pandeia.engine/'
+            if link in a['href']:
+                href = a['href']
+                ini = href.index(link) + len(link)
+                version = href[ini:]
+                if '/' in version:
+                    version = version[0:version.index('/')]
+                return version.strip()
+    # hard-coded default, need to be kept up to date manually:
+    return '2025.3'
 
 
 def get_version_advice(package, latest_version=None):
@@ -102,6 +101,30 @@ def get_version_advice(package, latest_version=None):
     status_advice = ui.HTML(
         f'<br><p><span style="color:{color}">You have {name} '
         f'version {my_version}, the latest version is '
+        f'{latest_version}</span>{advice}</p>'
+    )
+    return status_advice
+
+
+def get_pandeia_advice(package, latest_version):
+    name = package.__name__
+    my_version = parse(package.__version__)
+    latest_version = parse(latest_version)
+    my_major_minor = parse(f'{my_version.major}.{my_version.minor}')
+    latest_major_minor = parse(f'{latest_version.major}.{latest_version.minor}')
+    if my_version >= latest_version:
+        color = '#0B980D'
+        advice = ''
+    else:
+        color = 'red'
+        advice = (
+            f'.<br>You should upgrade {name} with:<br>'
+            f'<span style="font-weight:bold;">pip install --upgrade {name}</span>'
+        )
+
+    status_advice = ui.HTML(
+        f'<br><p><span style="color:{color}">You have {name} '
+        f'version {my_version}, the latest JWST version is '
         f'{latest_version}</span>{advice}</p>'
     )
     return status_advice
