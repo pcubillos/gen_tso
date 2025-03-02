@@ -28,8 +28,9 @@ from gen_tso import plotly_io as plots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
     ROOT,
-    get_latest_pandeia_versions,
+    get_latest_pandeia_release,
     get_version_advice,
+    get_pandeia_advice,
     collect_spectra,
     read_spectrum_file,
     pretty_print_target,
@@ -206,6 +207,19 @@ layout_kwargs = dict(
 
 
 app_ui = ui.page_fluid(
+    # ESA Sky
+    ui.tags.script(
+        """
+        $(function() {
+            Shiny.addCustomMessageHandler("update_esasky", function(message) {
+                var esaskyFrame = document.getElementById("esasky");
+                esaskyFrame.contentWindow.postMessage(
+                    JSON.parse(message.command), 'https://sky.esa.int'
+                );
+            });
+        });
+        """
+    ),
     ui.tags.style(
         """
         .popover {
@@ -247,19 +261,6 @@ app_ui = ui.page_fluid(
         fill=False,
         fillable=True,
     ),
-    ui.tags.script(
-        """
-        $(function() {
-            Shiny.addCustomMessageHandler("update_esasky", function(message) {
-                var esaskyFrame = document.getElementById("esasky");
-                esaskyFrame.contentWindow.postMessage(
-                    JSON.parse(message.command), 'https://sky.esa.int'
-                );
-            });
-        });
-        """
-    ),
-
     # Instrument and detector modes:
     ui.layout_columns(
         #ui.card(
@@ -575,8 +576,17 @@ app_ui = ui.page_fluid(
                 ui.output_ui(id='detector_label'),
                 class_="bg-primary",
             ),
-            # Grism/filter
+            # Aperture/disperser/filter
             ui.panel_well(
+                ui.panel_conditional(
+                    "input.mode == 'sw_tsgrism'",
+                    ui.input_select(
+                        id="aperture",
+                        label="Aperture",
+                        choices={},
+                        selected='',
+                    ),
+                ),
                 ui.input_select(
                     id="disperser",
                     label="Disperser",
@@ -859,7 +869,7 @@ def get_throughput(input):
     disperser = input.disperser.get()
     filter = input.filter.get()
     subarray = input.subarray.get()
-    if not is_consistent(inst, mode, disperser, filter, subarray):
+    if not is_consistent(inst, mode, disperser=disperser, filter=filter, subarray=subarray):
         return None
 
     if mode == 'target_acq':
@@ -979,7 +989,8 @@ def parse_depth_model(input):
 
 def is_consistent(
         inst, mode,
-        disperser=None, filter=None, subarray=None, readout=None,
+        aperture=None, disperser=None, filter=None,
+        subarray=None, readout=None,
     ):
     """
     Check that detector configuration settings are consistent
@@ -987,6 +998,8 @@ def is_consistent(
     """
     detector = get_detector(inst, mode, detectors)
     if detector is None:
+        return False
+    if aperture is not None and aperture not in detector.apertures:
         return False
     if disperser is not None and disperser not in detector.dispersers:
         return False
@@ -1002,13 +1015,14 @@ def is_consistent(
 def parse_instrument(input):
     inst = input.instrument.get().lower()
     mode = input.mode.get()
+    aperture = input.aperture.get()
     disperser = input.disperser.get()
     filter = input.filter.get()
     subarray = input.subarray.get()
     readout = input.readout.get()
 
     consistent = is_consistent(
-        inst, mode, disperser, filter, subarray, readout,
+        inst, mode, aperture, disperser, filter, subarray, readout,
     )
     if not consistent:
         return [None for _ in range(10)]
@@ -1024,9 +1038,6 @@ def parse_instrument(input):
     # Front-end to back-end exceptions:
     if mode == 'mrs_ts':
         aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-    if mode == 'sw_tsgrism':
-        aperture = input.disperser.get()
-        disperser = 'dhs0'
     if mode == 'bots':
         disperser, filter = filter.split('/')
     if mode == 'soss':
@@ -1046,8 +1057,8 @@ def parse_instrument(input):
         ngroup = int(ngroup)
 
     return (
-        inst, mode, disperser, filter, subarray, readout, order,
-        ngroup, nint, aperture,
+        inst, mode, aperture, disperser, filter,
+        subarray, readout, order, ngroup, nint,
     )
 
 
@@ -1118,6 +1129,8 @@ def server(input, output, session):
     esasky_command = reactive.Value(None)
     trexo_info = reactive.Value(None)
     tso_draw = reactive.Value(None)
+    current_script = reactive.Value('')
+    latest_pandeia = reactive.Value(None)
 
     @reactive.effect
     @reactive.event(input.main_settings)
@@ -1128,14 +1141,14 @@ def server(input, output, session):
             last_nasa = f.readline().replace('_','-')
         button_width = '95%'
 
-        latest_pandeia = get_latest_pandeia_versions()
-        latest_pandeia_jwst = latest_pandeia[0]
+        if latest_pandeia.get() is None:
+            latest_pandeia.set(get_latest_pandeia_release())
 
         gen_tso_status = get_version_advice(gen_tso)
-        pandeia_status = get_version_advice(
-            pandeia.engine, latest_pandeia_jwst,
+        pandeia_status = get_pandeia_advice(
+            pandeia.engine, latest_pandeia.get(),
         )
-        pandeia_ref_status = check_pandeia_ref_data(latest_pandeia_jwst)
+        pandeia_ref_status = check_pandeia_ref_data(latest_pandeia.get())
         pysynphot_data = check_pysynphot()
 
         m = ui.modal(
@@ -1217,8 +1230,8 @@ def server(input, output, session):
         This might be a transit/eclipse TSO or a Pandeia perform_calculation
         call.
         """
-        (inst, mode, disperser, filter, subarray, readout, order,
-            ngroup, nint, aperture) = parse_instrument(input)
+        (inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint) = parse_instrument(input)
 
         detector = get_detector(inst, mode, detectors)
         inst_label = detector.instrument_label(disperser, filter)
@@ -1626,6 +1639,19 @@ def server(input, output, session):
         focus = 'science' if mode!='target_acq' else input.target_focus.get()
         ui.update_radio_buttons('target_focus', selected=focus)
 
+        # The aperture
+        choices = detector.apertures
+        aperture = input.aperture.get()
+        if aperture not in choices:
+            aperture = detector.default_aperture
+
+        ui.update_select(
+            'aperture',
+            label=detector.aperture_label,
+            choices=choices,
+            selected=aperture,
+        )
+
         # The disperser
         choices = detector.dispersers
         disperser = input.disperser.get()
@@ -1667,13 +1693,17 @@ def server(input, output, session):
 
 
     @reactive.Effect(priority=1)
-    @reactive.event(input.instrument, input.mode, input.disperser, input.filter)
+    @reactive.event(
+        input.instrument, input.mode,
+        input.aperture, input.disperser, input.filter,
+    )
     def update_subarray():
         inst = input.instrument.get()
         mode = input.mode.get()
+        aperture = input.aperture.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
-        if not is_consistent(inst, mode, disperser, filter):
+        if not is_consistent(inst, mode, aperture, disperser, filter):
             return
         detector = get_detector(inst, mode, detectors)
 
@@ -1683,7 +1713,7 @@ def server(input, output, session):
             disperser = input.disperser.get()
 
         if mode == 'sw_tsgrism':
-            constraint = {'aperture': disperser}
+            constraint = {'aperture': aperture}
         else:
             constraint = {'disperser': disperser}
         choices = detector.get_constrained_val('subarrays', **constraint)
@@ -1706,11 +1736,11 @@ def server(input, output, session):
         mode = input.mode.get()
         disperser = input.disperser.get()
         subarray = input.subarray.get()
-        if not is_consistent(inst, mode, disperser, subarray=subarray):
+        if not is_consistent(inst, mode, disperser=disperser, subarray=subarray):
             return
         detector = get_detector(inst, mode, detectors)
 
-        if mode == 'soss':
+        if mode in ['soss', 'lw_tsgrism']:
             constraint = {'subarray': subarray}
         else:
             constraint = {'disperser': disperser}
@@ -2582,8 +2612,8 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
-        (inst, mode, disperser, filter, subarray, readout, order,
-            ngroup, nint, aperture) = parse_instrument(input)
+        (inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint) = parse_instrument(input)
 
         if mode != 'target_acq':
             ngroup = 2
@@ -2653,8 +2683,8 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.saturation_button)
     def ngroup_from_saturation_fraction():
-        (inst, mode, disperser, filter, subarray, readout, order,
-            ngroup, nint, aperture) = parse_instrument(input)
+        (inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint) = parse_instrument(input)
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
@@ -2878,8 +2908,8 @@ def server(input, output, session):
         saturation_label.get()
         input.ta_sed.get()
 
-        (inst, mode, disperser, filter, subarray, readout, order,
-            ngroup, nint, aperture) = parse_instrument(input)
+        (inst, mode, aperture, disperser, filter, subarray, readout, order,
+            ngroup, nint) = parse_instrument(input)
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
