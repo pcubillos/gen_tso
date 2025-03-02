@@ -74,13 +74,13 @@ default_aperture_strategy = {
 }
 
 
-def get_constraints(inst_config, inst_property, mode, **prop_constraints):
+def get_constraints(config, inst_property, mode, **prop_constraints):
     """
     Extract instrument properties that might be constrained or not.
 
     Parameters
     ----------
-    inst_config: Dict
+    config: Dict
         Instrument config dict.
     inst_property: String
         The property to extract. Select from: dispersers, filters,
@@ -93,7 +93,7 @@ def get_constraints(inst_config, inst_property, mode, **prop_constraints):
     prop_key = list(prop_constraints)[0]
     constraint = prop_constraints[prop_key]
 
-    constraints = inst_config['config_constraints'][prop_key]
+    constraints = config['config_constraints'][prop_key]
     is_constrained = (
         constraint is not None and
         constraint in constraints and
@@ -106,11 +106,11 @@ def get_constraints(inst_config, inst_property, mode, **prop_constraints):
         if mode in constraint_val:
             return constraint_val[mode]
         if constraint_val['default'] is None:
-            return inst_config['mode_config'][mode][inst_property]
+            return config['mode_config'][mode][inst_property]
         return constraint_val['default']
-    if inst_property in inst_config['mode_config'][mode]:
-        return inst_config['mode_config'][mode][inst_property]
-    return inst_config[inst_property]
+    if inst_property in config['mode_config'][mode]:
+        return config['mode_config'][mode][inst_property]
+    return config[inst_property]
 
 
 def str_or_dict(info_dict, selected, mode):
@@ -198,18 +198,18 @@ def get_configs(instrument=None, obs_type=None):
     telescope = 'jwst'
     outputs = []
     for mode, inst in product(modes, instrument):
-        inst_config = get_instrument_config(telescope, inst)
-        if mode not in inst_config['modes']:
+        config = get_instrument_config(telescope, inst)
+        if mode not in config['modes']:
             continue
 
         names = {
-            'dispersers': inst_config['disperser_config'],
-            'filters': inst_config['filter_config'],
-            'readout_patterns': inst_config['readout_pattern_config'],
-            'subarrays': inst_config['subarray_config']['default'],
+            'dispersers': config['disperser_config'],
+            'filters': config['filter_config'],
+            'readout_patterns': config['readout_pattern_config'],
+            'subarrays': config['subarray_config']['default'],
         }
-        if 'slit_config' in inst_config:
-            names['slits'] = inst_config['slit_config']
+        if 'slit_config' in config:
+            names['slits'] = config['slit_config']
         props = list(names)
 
         if mode in spec_modes:
@@ -222,12 +222,12 @@ def get_configs(instrument=None, obs_type=None):
         inst_dict = {}
         inst_dict['instrument'] = inst_names[inst]
         inst_dict['obs_type'] = obs_type
-        mode_name = inst_config['mode_config'][mode]['display_string']
+        mode_name = config['mode_config'][mode]['display_string']
         inst_dict['mode'] = mode
         inst_dict['mode_label'] = mode_name
 
-        aperture_names = inst_config['aperture_config']
-        apertures = inst_config['mode_config'][mode]['apertures']
+        aperture_names = config['aperture_config']
+        apertures = config['mode_config'][mode]['apertures']
         if obs_type == 'acquisition':
             apertures = [
                 aper for aper in apertures
@@ -240,7 +240,7 @@ def get_configs(instrument=None, obs_type=None):
         aper = apertures[0] if mode=='target_acq' else None
 
         for prop in props:
-            vals = get_constraints(inst_config, prop, mode, apertures=aper)
+            vals = get_constraints(config, prop, mode, apertures=aper)
             prop_name = 'readouts' if prop=='readout_patterns' else prop
             inst_dict[prop_name] = {
                 value: str_or_dict(names[prop], value, mode)
@@ -258,34 +258,36 @@ def get_configs(instrument=None, obs_type=None):
             inst_dict['orders'] = None
 
         if obs_type == 'acquisition':
-            groups = inst_config['mode_config'][mode]['enum_ngroups']
+            groups = config['mode_config'][mode]['enum_ngroups']
             if not isinstance(groups, list):
                 groups = groups['default']
             inst_dict['groups'] = groups
             # Integrations and exposures are always one (so far)
-            #print(inst_config['mode_config'][mode]['enum_nexps'])
-            #print(inst_config['mode_config'][mode]['enum_nints'])
+            #print(config['mode_config'][mode]['enum_nexps'])
+            #print(config['mode_config'][mode]['enum_nints'])
 
 
         # Special constraints
         inst_dict['constraints'] = {}
         if mode == 'sw_tsgrism':
             constraints = {
-                aper: get_constraints(inst_config, 'subarrays', mode, apertures=aper)
+                aper: get_constraints(config, 'subarrays', mode, apertures=aper)
                 for aper in apertures
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
         if mode == 'lw_tsgrism':
             constraints = {
-                subarray: get_constraints(inst_config, 'readout_patterns', mode, subarrays=subarray)
+                subarray: get_constraints(
+                    config, 'readout_patterns', mode, subarrays=subarray,
+                )
                 for subarray in inst_dict['subarrays']
             }
             inst_dict['constraints']['readouts'] = {'subarrays': constraints}
 
         if mode == 'bots':
             constraints = {
-                disp: get_constraints(inst_config, 'filters', mode, dispersers=disp)
+                disp: get_constraints(config, 'filters', mode, dispersers=disp)
                 for disp in inst_dict['dispersers']
             }
             inst_dict['constraints']['filters'] = {'dispersers': constraints}
@@ -312,7 +314,7 @@ def get_configs(instrument=None, obs_type=None):
             inst_dict['constraints']['readouts'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
-            group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
+            group_constraints = config['mode_config'][mode]['enum_ngroups']
             constraints = {}
             for subarray in inst_dict['subarrays']:
                 key = subarray if subarray in group_constraints else 'default'
@@ -322,7 +324,7 @@ def get_configs(instrument=None, obs_type=None):
         if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
             constraints = {
                 aper: get_constraints(
-                    inst_config, 'readout_patterns', mode, apertures=aper,
+                    config, 'readout_patterns', mode, apertures=aper,
                 )
                 for aper in inst_dict['apertures']
             }
@@ -330,18 +332,18 @@ def get_configs(instrument=None, obs_type=None):
 
         #if mode == 'lw_ts' or mode == 'sw_ts':
         #    # NIRCam is so special
-        #    inst_dict['double_filter_constraints']  = inst_config['double_filters']
+        #    inst_dict['double_filter_constraints']  = config['double_filters']
         if mode == 'sw_ts':
             constraints = {
                 aper: get_constraints(
-                    inst_config, 'filters', mode, apertures=aper,
+                    config, 'filters', mode, apertures=aper,
                 )
                 for aper in apertures
             }
             inst_dict['constraints']['filters'] = {'apertures': constraints}
             constraints = {
                 aper: get_constraints(
-                    inst_config, 'subarrays', mode, apertures=aper,
+                    config, 'subarrays', mode, apertures=aper,
                 )
                 for aper in apertures
             }
@@ -575,6 +577,7 @@ def generate_all_instruments():
     --------
     >>> from gen_tso.pandeia_io import get_configs, generate_all_instruments
     >>> spec_insts = get_configs(obs_type='spectroscopy')
+    >>> photo_insts = get_configs(obs_type='photometry')
     >>> acq_insts = get_configs(obs_type='acquisition')
     >>> dets = generate_all_instruments()
     >>> det = dets[5]
