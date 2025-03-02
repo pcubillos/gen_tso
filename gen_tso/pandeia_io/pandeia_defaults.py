@@ -28,12 +28,12 @@ inst_names = {
 }
 
 spec_modes = [
-   'lrsslitless',
-   'mrs_ts',
-   'lw_tsgrism',
-   'sw_tsgrism',
-   'soss',
-   'bots',
+    'lrsslitless',
+    'mrs_ts',
+    'lw_tsgrism',
+    'sw_tsgrism',
+    'soss',
+    'bots',
 ]
 photo_modes = [
     'imaging_ts',
@@ -74,7 +74,7 @@ default_aperture_strategy = {
 }
 
 
-def get_constrained_values(inst_config, aper, inst_property, mode):
+def get_constraints(inst_config, inst_property, mode, **prop_constraints):
     """
     Extract instrument properties that might be constrained or not.
 
@@ -82,31 +82,35 @@ def get_constrained_values(inst_config, aper, inst_property, mode):
     ----------
     inst_config: Dict
         Instrument config dict.
-    aper: String
-        Instrument's aperture.
     inst_property: String
         The property to extract. Select from: dispersers, filters,
         subarrays, or readout_patterns.
     mode: String
         Observing mode.
+    **prop_constraints: String
+        Constraining property and value.
     """
-    constraints = inst_config['config_constraints']['apertures']
-    is_constrained = (
-        aper in constraints and
-        inst_property in constraints[aper] and
-        mode in constraints[aper][inst_property]
-    )
+    prop_key = list(prop_constraints)[0]
+    constraint = prop_constraints[prop_key]
 
-    if mode == 'sw_ts' and inst_property == 'filters':
-        values = constraints[aper][inst_property]
-        values = values[mode] if isinstance(values, dict) else values
-    elif is_constrained:
-        values = constraints[aper][inst_property][mode]
-    elif inst_property in inst_config['mode_config'][mode]:
-        values = inst_config['mode_config'][mode][inst_property]
-    else:
-        values = inst_config[inst_property]
-    return values
+    constraints = inst_config['config_constraints'][prop_key]
+    is_constrained = (
+        constraint is not None and
+        constraint in constraints and
+        inst_property in constraints[constraint]
+    )
+    if is_constrained:
+        constraint_val = constraints[constraint][inst_property]
+        if isinstance(constraint_val, list):
+            return constraint_val
+        if mode in constraint_val:
+            return constraint_val[mode]
+        if constraint_val['default'] is None:
+            return inst_config['mode_config'][mode][inst_property]
+        return constraint_val['default']
+    if inst_property in inst_config['mode_config'][mode]:
+        return inst_config['mode_config'][mode][inst_property]
+    return inst_config[inst_property]
 
 
 def str_or_dict(info_dict, selected, mode):
@@ -186,10 +190,10 @@ def get_configs(instrument=None, obs_type=None):
     modes = []
     if 'spectroscopy' in obs_type:
         modes += spec_modes
-    if 'acquisition' in obs_type:
-        modes += acq_modes
     if 'photometry' in obs_type:
         modes += photo_modes
+    if 'acquisition' in obs_type:
+        modes += acq_modes
 
     telescope = 'jwst'
     outputs = []
@@ -198,13 +202,15 @@ def get_configs(instrument=None, obs_type=None):
         if mode not in inst_config['modes']:
             continue
 
-        disperser_names = inst_config['disperser_config']
-        filter_names = inst_config['filter_config']
-        readout_names = inst_config['readout_pattern_config']
-        subarray_names = inst_config['subarray_config']['default']
-        aperture_names = inst_config['aperture_config']
+        names = {
+            'dispersers': inst_config['disperser_config'],
+            'filters': inst_config['filter_config'],
+            'readout_patterns': inst_config['readout_pattern_config'],
+            'subarrays': inst_config['subarray_config']['default'],
+        }
         if 'slit_config' in inst_config:
-            slit_names = inst_config['slit_config']
+            names['slits'] = inst_config['slit_config']
+        props = list(names)
 
         if mode in spec_modes:
             obs_type = 'spectroscopy'
@@ -220,6 +226,7 @@ def get_configs(instrument=None, obs_type=None):
         inst_dict['mode'] = mode
         inst_dict['mode_label'] = mode_name
 
+        aperture_names = inst_config['aperture_config']
         apertures = inst_config['mode_config'][mode]['apertures']
         if obs_type == 'acquisition':
             apertures = [
@@ -230,41 +237,16 @@ def get_configs(instrument=None, obs_type=None):
             aperture: str_or_dict(aperture_names, aperture, mode)
             for aperture in apertures
         }
-        aper = apertures[0]
+        aper = apertures[0] if mode=='target_acq' else None
 
-        dispersers = get_constrained_values(
-            inst_config, aper, 'dispersers', mode,
-        )
-        inst_dict['dispersers'] = {
-            disperser: str_or_dict(disperser_names, disperser, mode)
-            for disperser in dispersers
-        }
-
-        filters = get_constrained_values(inst_config, aper, 'filters', mode)
-        inst_dict['filters'] = {
-            filter: str_or_dict(filter_names, filter, mode)
-            for filter in filters
-        }
-
-        readouts = get_constrained_values(
-            inst_config, aper, 'readout_patterns', mode,
-        )
-        inst_dict['readouts'] = {
-            readout: str_or_dict(readout_names, readout, mode)
-            for readout in readouts
-        }
-
-        subarrays = get_constrained_values(inst_config, aper, 'subarrays', mode)
-        inst_dict['subarrays'] = {
-            subarray: str_or_dict(subarray_names, subarray, mode)
-            for subarray in subarrays
-        }
-
-        slits = get_constrained_values(inst_config, aper, 'slits', mode)
-        inst_dict['slits'] = {
-            slit: str_or_dict(slit_names, slit, mode)
-            for slit in slits
-        }
+        for prop in props:
+            vals = get_constraints(inst_config, prop, mode, apertures=aper)
+            prop_name = 'readouts' if prop=='readout_patterns' else prop
+            inst_dict[prop_name] = {
+                value: str_or_dict(names[prop], value, mode)
+                for value in vals
+            }
+            # print(f'   {prop}\n      {vals}')
 
         if inst_dict['mode'] == 'soss':
             inst_dict['orders'] = {
@@ -288,23 +270,21 @@ def get_configs(instrument=None, obs_type=None):
         # Special constraints
         inst_dict['constraints'] = {}
         if mode == 'sw_tsgrism':
-            aper_constraints = inst_config['config_constraints']['apertures']
             constraints = {
-                aperture: aper_constraints[aperture]['subarrays']['default']
-                for aperture in apertures
+                aper: get_constraints(inst_config, 'subarrays', mode, apertures=aper)
+                for aper in apertures
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
         if mode == 'bots':
-            disp_constraints = inst_config['config_constraints']['dispersers']
             constraints = {
-                disperser: disp_constraints[disperser]['filters']
-                for disperser in dispersers
+                disp: get_constraints(inst_config, 'filters', mode, dispersers=disp)
+                for disp in inst_dict['dispersers']
             }
             inst_dict['constraints']['filters'] = {'dispersers': constraints}
             constraints = {}
-            for disperser in dispersers:
-                subs = subarrays.copy()
+            for disperser in inst_dict['dispersers']:
+                subs = list(inst_dict['subarrays'])
                 if disperser == 'prism':
                     subs.remove('sub1024a')
                 constraints[disperser] = subs
@@ -320,43 +300,43 @@ def get_configs(instrument=None, obs_type=None):
             constraints = {
                 'substrip96': ['nisrapid'],
                 'substrip256': ['nisrapid'],
-                'sossfull': readouts,
+                'sossfull': inst_dict['readouts'],
             }
             inst_dict['constraints']['readouts'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='MIRI' and mode=='target_acq':
             group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
             constraints = {}
-            for subarray in subarrays:
+            for subarray in inst_dict['subarrays']:
                 key = subarray if subarray in group_constraints else 'default'
                 constraints[subarray] = group_constraints[key]
             inst_dict['constraints']['groups'] = {'subarrays': constraints}
 
         if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
             constraints = {
-                aperture: get_constrained_values(
-                    inst_config, aperture, 'readout_patterns', mode,
+                aper: get_constraints(
+                    inst_config, 'readout_patterns', mode, apertures=aper,
                 )
-                for aperture in apertures
+                for aper in inst_dict['apertures']
             }
             inst_dict['constraints']['readouts'] = {'apertures': constraints}
 
-        if mode == 'lw_ts' or mode == 'sw_ts':
-            # NIRCam is so special
-            inst_dict['double_filter_constraints']  = inst_config['double_filters']
+        #if mode == 'lw_ts' or mode == 'sw_ts':
+        #    # NIRCam is so special
+        #    inst_dict['double_filter_constraints']  = inst_config['double_filters']
         if mode == 'sw_ts':
             constraints = {
-                aperture: get_constrained_values(
-                    inst_config, aperture, 'filters', mode,
+                aper: get_constraints(
+                    inst_config, 'filters', mode, apertures=aper,
                 )
-                for aperture in apertures
+                for aper in apertures
             }
             inst_dict['constraints']['filters'] = {'apertures': constraints}
             constraints = {
-                aperture: get_constrained_values(
-                    inst_config, aperture, 'subarrays', mode,
+                aper: get_constraints(
+                    inst_config, 'subarrays', mode, apertures=aper,
                 )
-                for aperture in apertures
+                for aper in apertures
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
