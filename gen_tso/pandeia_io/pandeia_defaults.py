@@ -445,7 +445,10 @@ class Detector:
         else:
             idx_a, idx_d, idx_f, idx_s, idx_r = default_indices
         self.default_aperture = list(apertures)[idx_a]
-        self.default_disperser = list(dispersers)[idx_d]
+        if self.mode == 'target_acq':
+            self.default_disperser = None
+        else:
+            self.default_disperser = list(dispersers)[idx_d]
         self.default_filter = list(filters)[idx_f]
         self.default_subarray = list(subarrays)[idx_s]
         self.default_readout = list(readouts)[idx_r]
@@ -706,9 +709,8 @@ def generate_all_instruments():
         mode = inst['mode']
         aperture_label = 'Acquisition mode'
         apertures = inst['apertures']
-        # Use apertures in place of 'disperser'
-        disperser_label = 'Acquisition mode'
-        dispersers = inst['apertures']
+        disperser_label = 'Disperser'
+        dispersers = inst['dispersers']
         filter_label = 'Filter'
         filters = inst['filters']
         subarrays = inst['subarrays']
@@ -721,9 +723,6 @@ def generate_all_instruments():
             default_indices = 0, 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
             default_indices = 0, 0, 0, 0, 1
-            # Re-label constraint for front-end (aperture-->disperser)
-            r_constraint = constraints['readouts'].pop('apertures')
-            constraints['readouts']['dispersers'] = r_constraint
         if inst['instrument'] == 'NIRSpec':
             default_indices = 0, 0, 0, 1, 0
 

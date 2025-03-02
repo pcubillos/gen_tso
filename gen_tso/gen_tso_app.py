@@ -579,7 +579,7 @@ app_ui = ui.page_fluid(
             # Aperture/disperser/filter
             ui.panel_well(
                 ui.panel_conditional(
-                    "input.mode == 'sw_tsgrism'",
+                    "input.mode == 'sw_tsgrism' || input.mode == 'target_acq'",
                     ui.input_select(
                         id="aperture",
                         label="Aperture",
@@ -587,11 +587,14 @@ app_ui = ui.page_fluid(
                         selected='',
                     ),
                 ),
-                ui.input_select(
-                    id="disperser",
-                    label="Disperser",
-                    choices={},
-                    selected='',
+                ui.panel_conditional(
+                    "input.mode != 'target_acq'",
+                    ui.input_select(
+                        id="disperser",
+                        label="Disperser",
+                        choices={},
+                        selected='',
+                    ),
                 ),
                 ui.input_select(
                     id="filter",
@@ -1030,10 +1033,11 @@ def parse_instrument(input):
     order = input.order.get()
     if mode == 'target_acq':
         ngroup = input.ngroup_acq.get()
+        disperser = None
+        nint = 1
     else:
         ngroup = input.ngroup.get()
-    nint = input.integrations.get()
-    aperture = None
+        nint = input.integrations.get()
 
     # Front-end to back-end exceptions:
     if mode == 'mrs_ts':
@@ -1047,11 +1051,6 @@ def parse_instrument(input):
             order = [int(val) for val in order.split()]
     else:
         order = None
-
-    if mode == 'target_acq':
-        aperture = input.disperser.get()
-        disperser = None
-        nint = 1
 
     if ngroup is not None:
         ngroup = int(ngroup)
@@ -1729,19 +1728,22 @@ def server(input, output, session):
     @reactive.Effect(priority=1)
     @reactive.event(
         input.instrument, input.mode,
-        input.disperser, input.subarray,
+        input.aperture, input.disperser, input.subarray,
     )
     def update_readout():
         inst = input.instrument.get()
         mode = input.mode.get()
+        aperture = input.aperture.get()
         disperser = input.disperser.get()
         subarray = input.subarray.get()
-        if not is_consistent(inst, mode, disperser=disperser, subarray=subarray):
+        if not is_consistent(inst, mode, aperture, disperser, subarray=subarray):
             return
         detector = get_detector(inst, mode, detectors)
 
         if mode in ['soss', 'lw_tsgrism']:
             constraint = {'subarray': subarray}
+        elif mode in ['target_acq']:
+            constraint = {'aperture': aperture}
         else:
             constraint = {'disperser': disperser}
         choices = detector.get_constrained_val('readouts', **constraint)
