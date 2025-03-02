@@ -246,7 +246,6 @@ def get_configs(instrument=None, obs_type=None):
                 value: str_or_dict(names[prop], value, mode)
                 for value in vals
             }
-            # print(f'   {prop}\n      {vals}')
 
         if inst_dict['mode'] == 'soss':
             inst_dict['orders'] = {
@@ -402,8 +401,10 @@ def print_configs(instrument, mode, output):
 class Detector:
     def __init__(
             self, mode, label, instrument, obs_type,
-            disperser_label, dispersers, filter_label, filters,
-            subarrays, readouts, apertures, orders=None,
+            aperture_label, apertures,
+            disperser_label, dispersers,
+            filter_label, filters,
+            subarrays, readouts, orders=None,
             groups=None, default_indices=None,
             constraints={},
         ):
@@ -423,13 +424,14 @@ class Detector:
         self.mode_label = label
         self.instrument = instrument
         self.obs_type = obs_type
+        self.aperture_label = aperture_label
+        self.apertures = apertures
         self.disperser_label = disperser_label
         self.dispersers = dispersers
         self.filter_label = filter_label
         self.filters = filters
         self.subarrays = subarrays
         self.readouts = readouts
-        self.apertures = apertures
         self.groups = groups
         self.constraints = constraints
         if self.mode == 'soss':
@@ -439,9 +441,10 @@ class Detector:
         self.ins_config = get_instrument_config(telescope, instrument.lower())
 
         if default_indices is None:
-            idx_d = idx_f = idx_s = idx_r = 0
+            idx_a = idx_d = idx_f = idx_s = idx_r = 0
         else:
-            idx_d, idx_f, idx_s, idx_r = default_indices
+            idx_a, idx_d, idx_f, idx_s, idx_r = default_indices
+        self.default_aperture = list(apertures)[idx_a]
         self.default_disperser = list(dispersers)[idx_d]
         self.default_filter = list(filters)[idx_f]
         self.default_subarray = list(subarrays)[idx_s]
@@ -595,26 +598,26 @@ def generate_all_instruments():
         orders = inst['orders']
         constraints = inst['constraints']
 
+        aperture_label = 'Aperture'
         if mode == 'lrsslitless':
             disperser_label = 'Disperser'
             filter_label = ''
             filters = {'': ''}
-            default_indices = 0, 0, 0, 0
+            default_indices = 0, 0, 0, 0, 0
         if mode == 'mrs_ts':
             disperser_label = 'Wavelength Range'
             filter_label = ''
             filters = {'': ''}
-            default_indices = 0, 0, 0, 0
+            default_indices = 0, 0, 0, 0, 0
         if mode == 'lw_tsgrism':
             disperser_label = 'Grism'
             filter_label = 'Filter'
-            default_indices = 0, 3, 3, 0
+            default_indices = 0, 0, 3, 3, 0
         if mode == 'sw_tsgrism':
-            # TBD: a hack, in the future, better have an 'aperture' show/hide
-            disperser_label = 'PSF Type'
-            dispersers = apertures
+            aperture_label = 'PSF Type'
+            disperser_label = 'Grism'
             filter_label = 'Filter'
-            default_indices = 3, 4, 0, 0
+            default_indices = 3, 0, 4, 0, 0
         if mode == 'bots':
             disperser_label = 'Slit'
             filter_label = 'Grating/Filter'
@@ -628,25 +631,26 @@ def generate_all_instruments():
                         gratings[f'{disperser}/{filter}'] = label
             filters = gratings
             dispersers = inst['slits']
-            default_indices = 0, 7, 4, 1
+            default_indices = 0, 0, 7, 4, 1
         if mode == 'soss':
             disperser_label = 'Disperser'
             filter_label = 'Filter'
             inst['mode_label'] = 'Single Object Slitless Spectroscopy (SOSS)'
-            default_indices = 0, 0, 0, 1
+            default_indices = 0, 0, 0, 0, 1
 
         det = Detector(
             mode,
             inst['mode_label'],
             inst['instrument'],
             inst['obs_type'],
+            aperture_label,
+            apertures,
             disperser_label,
             dispersers,
             filter_label,
             filters,
             subarrays,
             readouts,
-            apertures,
             orders=orders,
             default_indices=default_indices,
             constraints=constraints,
@@ -700,40 +704,42 @@ def generate_all_instruments():
     acq_insts = get_configs(obs_type='acquisition')
     for inst in acq_insts:
         mode = inst['mode']
+        aperture_label = 'Acquisition mode'
+        apertures = inst['apertures']
         # Use apertures in place of 'disperser'
+        disperser_label = 'Acquisition mode'
         dispersers = inst['apertures']
+        filter_label = 'Filter'
         filters = inst['filters']
         subarrays = inst['subarrays']
         readouts = inst['readouts']
-        apertures = inst['apertures']
-        disperser_label = 'Acquisition mode'
-        filter_label = 'Filter'
         constraints = inst['constraints']
 
         if inst['instrument'] == 'MIRI':
-            default_indices = 0, 0, 5, 0
+            default_indices = 0, 0, 0, 5, 0
         if inst['instrument'] == 'NIRCam':
-            default_indices = 0, 0, 0, 0
+            default_indices = 0, 0, 0, 0, 0
         if inst['instrument'] == 'NIRISS':
-            default_indices = 0, 0, 0, 1
+            default_indices = 0, 0, 0, 0, 1
             # Re-label constraint for front-end (aperture-->disperser)
             r_constraint = constraints['readouts'].pop('apertures')
             constraints['readouts']['dispersers'] = r_constraint
         if inst['instrument'] == 'NIRSpec':
-            default_indices = 0, 0, 1, 0
+            default_indices = 0, 0, 0, 1, 0
 
         det = Detector(
             mode,
             inst['mode_label'],
             inst['instrument'],
             inst['obs_type'],
+            aperture_label,
+            apertures,
             disperser_label,
             dispersers,
             filter_label,
             filters,
             subarrays,
             readouts,
-            apertures,
             groups=inst['groups'],
             default_indices=default_indices,
             constraints=constraints,
