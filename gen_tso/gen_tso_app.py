@@ -1430,16 +1430,12 @@ def server(input, output, session):
         instrument = detector.instrument
 
         # The instrumental setting
+        aperture = tso['aperture']
         filter = tso['filter']
+        disperser = tso['disperser']
         if mode == 'bots':
             filter = f"{tso['disperser']}/{tso['filter']}"
             disperser = None
-        elif mode == 'sw_tsgrism':
-            disperser = tso['aperture']
-        elif mode == 'target_acq':
-            disperser = tso['aperture']
-        else:
-            disperser = tso['disperser']
         subarray = tso['subarray']
         readout = tso['readout']
         order = tso['order']
@@ -1455,6 +1451,12 @@ def server(input, output, session):
         mode_choices = modes[instrument]
         ui.update_select('mode', choices=mode_choices, selected=mode)
         ui.update_select(
+            'aperture',
+            label=detector.aperture_label,
+            choices=detector.apertures,
+            selected=aperture,
+        )
+        ui.update_select(
             'disperser',
             label=detector.disperser_label,
             choices=detector.dispersers,
@@ -1466,10 +1468,23 @@ def server(input, output, session):
             choices=detector.filters,
             selected=filter,
         )
-        choices = detector.get_constrained_val('subarrays', disperser=disperser)
+
+        if mode == 'sw_tsgrism':
+            constraint = {'aperture': aperture}
+        else:
+            constraint = {'disperser': disperser}
+        choices = detector.get_constrained_val('subarrays', **constraint)
         ui.update_select('subarray', choices=choices, selected=subarray)
-        choices = detector.get_constrained_val('readouts', disperser=disperser)
+
+        if mode in ['soss', 'lw_tsgrism']:
+            constraint = {'subarray': subarray}
+        elif mode == 'target_acq':
+            constraint = {'aperture': aperture}
+        else:
+            constraint = {'disperser': disperser}
+        choices = detector.get_constrained_val('readouts', **constraint)
         ui.update_select('readout', choices=choices, selected=readout)
+
         if mode == 'soss':
             choices = detector.get_constrained_val('orders', subarray=subarray)
             order = ' '.join([str(val) for val in order])
@@ -1643,7 +1658,6 @@ def server(input, output, session):
         aperture = input.aperture.get()
         if aperture not in choices:
             aperture = detector.default_aperture
-
         ui.update_select(
             'aperture',
             label=detector.aperture_label,
@@ -1656,7 +1670,6 @@ def server(input, output, session):
         disperser = input.disperser.get()
         if disperser not in choices:
             disperser = detector.default_disperser
-
         ui.update_select(
             'disperser',
             label=detector.disperser_label,
