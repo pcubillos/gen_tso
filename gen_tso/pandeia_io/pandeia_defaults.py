@@ -276,6 +276,13 @@ def get_configs(instrument=None, obs_type=None):
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
+        if mode == 'lw_tsgrism':
+            constraints = {
+                subarray: get_constraints(inst_config, 'readout_patterns', mode, subarrays=subarray)
+                for subarray in inst_dict['subarrays']
+            }
+            inst_dict['constraints']['readouts'] = {'subarrays': constraints}
+
         if mode == 'bots':
             constraints = {
                 disp: get_constraints(inst_config, 'filters', mode, dispersers=disp)
