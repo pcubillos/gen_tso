@@ -18,7 +18,7 @@ A collection of scripts to run `Gen TSO` from a jupyter notebook or a python int
 **Databases:**
 
 - [Display and parse existing JWST programs](tutorials_jwst_programs.qmd)
-- [Fetch JWST programs for TSO](tutorials_fetch_jwst_programs.qmd)
+- [Fetch JWST TSO programs](tutorials_fetch_jwst_programs.qmd)
 
 <br>
 ---

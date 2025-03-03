@@ -10,7 +10,7 @@ This tutorial is split into three sections:
 
 - [Fetch TSO files](#fetch-tso-files)
 - [Parse to database](#parse-files-to-database)
-- [Playground](#playground)
+<!--  - [Playground](#playground) -->
 
 <br>
 
@@ -157,7 +157,7 @@ for program in KNOWN_PROGRAMS:
     observations += cat.parse_program(program)
 ```
 
-That's all.  Now we can take a look or save the outputs, e.g.:
+That's all.  Now we can take a look at the content, save to file, etc. For example:
 
 ```python
 # Save to pickle file
@@ -201,33 +201,166 @@ event = 'transit'
 ```
 :::
 
-## Playground
+---
 
-### Get target planets
+### List phase-curve progams
+
+Here's another example to show all phase-curve programs
+
+```python
+import gen_tso.catalogs as cat
+import pickle
+
+
+# Pick up the picle file saved in the previous step
+with open('JWST_TSO_programs.pickle', 'rb') as handle:
+    observations = pickle.load(handle)
+
+# List all phase curve programs
+ntotal = 0
+print(' N      Program  Obs  Target        Status')
+print('---------------  -------------------------')
+for obs in observations:
+    event = obs['event']
+    host = cat.get_observation_host(obs, targets)
+    if event == 'phase curve':
+        ntotal += 1
+        category = obs['category']
+        pid = obs['pid']
+        oid = obs['observation']
+        target = obs['target']
+        status = obs['status']
+        print(f"{ntotal:2}  {category:>6} {pid}  {oid:>3}  {host:12s}  {status}")
+
+```
+::: {.cell-output-stdout}
+```
+ N      Program  Obs  Target        Status
+--  -----------  -------------------------
+ 1     GTO 1201    1  WASP-121      Executed
+ 2     GTO 1201    2  LTT 9779      Executed
+ 3     GTO 1224    2  WASP-43       Executed
+ 4     ERS 1366   11  WASP-43       Executed
+ 5      GO 1729    1  WASP-121      Executed
+ 6      GO 1803    1  GJ 1214       Executed
+ 7      GO 2008    1  HD 80606      Implementation
+ 8      GO 2158    1  NGTS-10       Executed
+ 9      GO 2159    1  K2-141        Executed
+10      GO 2347    1  K2-141        Executed
+11      GO 2488    1  HD 80606      Executed
+12      GO 2508    1  GJ 367        Executed
+13  SURVEY 2765    1  TOI-849       Withdrawn
+14  SURVEY 2765    2  TOI-849       Withdrawn
+15  SURVEY 2765    3  TOI-849       Withdrawn
+16  SURVEY 2765    4  TOI-2109      Withdrawn
+17  SURVEY 2765    5  TOI-2109      Withdrawn
+18  SURVEY 2765    6  TOI-2109      Withdrawn
+19      GO 3077    1  TRAPPIST-1    Executed
+20      GO 3077    2  TRAPPIST-1    Executed
+21      GO 3231    1  LTT 9779      Executed
+22      GO 3263    1  TOI-1685      Executed
+23      GO 3315    3  K2-22         Executed
+24      GO 3784    1  TOI-2445      Executed
+25      GO 3860    1  TOI-561       Executed
+26      GO 4008    1  LHS 3844      Executed
+27      GO 5022    1  WASP-103      Implementation
+28      GO 5268    1  WASP-76       Executed
+```
+:::
+
+
+---
+
+### Get targetted planet(s)
 
 Now that we have the JWST programs information, we can cross-check
 with the catalog of exoplanet to find out which planet(s) are targeted
 by each observation:
 
 ```python
-# Find the planet (by host name, labels, or phase constraints)
-from gen_tso.catalogs import Catalog
+import gen_tso.catalogs as cat
+import pickle
 
-catalog = Catalog()
+
+# Pick up the picle file saved in the previous step
+with open('JWST_TSO_programs.pickle', 'rb') as handle:
+    observations = pickle.load(handle)
+
+# Cross check only with transiting planets
+catalog = cat.Catalog()
 targets = [
     target for target in catalog.targets
     if target.is_transiting
 ]
 
+# Find the planet (by host name, labels, or phase constraints)
 for obs in observations:
     obs['planets'] = cat.get_planet_letters(obs, targets)
 
-    pid = o['pid']
-    oid = o['observation']
-    target = o['target']
-    event = o['event']
-    print(f"{pid} {oid:3} {target:20s} {event:11}  {planets}")
+
+# Show planets in multi-planet systems
+print('PID   Obs  Target        Planets     Event type')
+print('-----------------------------------------------')
+for obs in observations:
+    host = cat.get_observation_host(obs, targets)
+    all_planets = [
+         target.planet
+         for target in targets
+         if target.host == host
+    ]
+    if len(all_planets) == 0:
+        print('Failed!!')
+    if len(all_planets) > 1:
+        pid = obs['pid']
+        oid = obs['observation']
+        target = obs['target']
+        event = obs['event']
+        planets = obs['planets']
+        print(f"{pid}  {oid:>3}  {host:12s}  {repr(planets):10}  {event}")
 ```
+
+::: {.cell-output-stdout}
+```
+PID   Obs  Target        Planets     Event type
+-----------------------------------------------
+1177    7  TRAPPIST-1    ['b']       eclipse
+1177    8  TRAPPIST-1    ['b']       eclipse
+1177    9  TRAPPIST-1    ['b']       eclipse
+1177   10  TRAPPIST-1    ['b']       eclipse
+1177   11  TRAPPIST-1    ['b']       eclipse
+1201  101  TRAPPIST-1    ['f']       transit
+1201  102  TRAPPIST-1    ['f']       transit
+1201  103  TRAPPIST-1    ['f']       transit
+1201  104  TRAPPIST-1    ['f']       transit
+1201  105  TRAPPIST-1    ['f']       transit
+1201  111  TRAPPIST-1    ['d']       transit
+1201  112  TRAPPIST-1    ['d']       transit
+1201  301  L 98-59       ['c']       transit
+1201  302  L 98-59       ['c']       transit
+1201  311  L 98-59       ['d']       transit
+1201  401  LP 791-18     ['c']       transit
+1224    1  L 98-59       ['d']       transit
+
+...
+
+6193    1  TOI-700       ['d']       transit
+6193    2  TOI-700       ['e']       transit
+6456    1  TRAPPIST-1    ['b', 'e']  transit
+6456    2  TRAPPIST-1    ['b', 'e']  transit
+6456    3  TRAPPIST-1    ['b', 'e']  transit
+6456    4  TRAPPIST-1    ['b', 'e']  transit
+6456    5  TRAPPIST-1    ['b', 'e']  transit
+6456   15  TRAPPIST-1    ['b', 'e']  transit
+6457    1  LP 791-18     ['d']       eclipse
+6457    2  LP 791-18     ['d']       eclipse
+6457    3  LP 791-18     ['d']       eclipse
+6457    4  LP 791-18     ['d']       eclipse
+6457    5  LP 791-18     ['d']       eclipse
+6491    1  Kepler-167    ['e']       transit
+6543    1  LHS 1140      ['b']       transit
+6543    2  LHS 1140      ['b']       transit
+```
+:::
 
 ### Plot phase coverage
 
@@ -321,17 +454,5 @@ for i in range(nobs):
     plt.text(phase, i, obs[i]['target'] + ' ' +obs[i]['pid'], color=color)
 plt.ylim(0, nobs+1)
 ```
-
-
-The latest TSO run for a given Pandeia object can be saved with this method:
-```python
-pando.save_tso(filename='tso_transit_WASP-80b_nircam_lw_f444w.picke')
-```
-
-See [this tutorial](tutorials_tso_post_processing.qmd) to load that pickle file and simulate some spectra.
-
-Now lets set up a NIRCam/F444W observation and run the TSO calculation.
-First, we need to know what are the available options.  These are the
-instruments and their respective modes:
 
 
