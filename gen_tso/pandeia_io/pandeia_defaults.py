@@ -93,7 +93,9 @@ def get_constraints(config, inst_property, mode, **prop_constraints):
     prop_key = list(prop_constraints)[0]
     constraint = prop_constraints[prop_key]
 
-    constraints = config['config_constraints'][prop_key]
+    constraints = {}
+    if prop_key in config['config_constraints']:
+        constraints = config['config_constraints'][prop_key]
     is_constrained = (
         constraint is not None and
         constraint in constraints and
