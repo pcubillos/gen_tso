@@ -1489,6 +1489,7 @@ def server(input, output, session):
             choices = detector.get_constrained_val('orders', subarray=subarray)
             order = ' '.join([str(val) for val in order])
             ui.update_select('order', choices=choices, selected=order)
+
         if mode == 'target_acq':
             if ngroup != input.ngroup_acq.get():
                 ui.update_select(id='ngroup_acq', selected=ngroup)
@@ -2049,13 +2050,13 @@ def server(input, output, session):
             ui.tags.a(programs[i], href=hrefs[i], target="_blank")
             for i in range(nobs)
         ]
+        planets = [', '.join(planets) for planets in data['planets']]
 
         data_df = {
             'Program ID': programs,
             'PI': pi,
-            'Target': data['trexo_name'],
-            # TBD: fetch which planet(s)
-            #'planet': ['b' for _ in pi],
+            'Target name': data['trexo_name'],
+            'Planet(s)': planets,
             'Event': data['event'],
             'Status': data['status'],
             'Instrument / Mode': data['mode'],
