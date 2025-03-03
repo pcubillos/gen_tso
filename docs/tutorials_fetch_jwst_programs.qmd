@@ -216,6 +216,13 @@ import pickle
 with open('JWST_TSO_programs.pickle', 'rb') as handle:
     observations = pickle.load(handle)
 
+# Cross check only with transiting planets
+catalog = cat.Catalog()
+targets = [
+    target for target in catalog.targets
+    if target.is_transiting
+]
+
 # List all phase curve programs
 ntotal = 0
 print(' N      Program  Obs  Target        Status')
