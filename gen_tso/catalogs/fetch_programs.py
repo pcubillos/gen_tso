@@ -18,6 +18,7 @@ __all__ = [
     '_planet_from_label',
     '_planet_from_period',
     '_clean_label',
+    'get_observation_host',
     'get_planet_letters',
 ]
 
@@ -33,7 +34,7 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import requests
 
-from ..utils import ROOT, KNOWN_PROGRAMS
+from ..utils import ROOT
 from .catalogs import Catalog
 from .utils import (
     normalize_name,
@@ -613,9 +614,53 @@ def _clean_label(label, hosts):
     return label.strip()
 
 
+def get_observation_host(obs, targets):
+    """
+    Cross-check observation's target with catalog to find the host name
+
+    Parameters
+    ----------
+    observation: Dictionary
+        A dict with a JWST TSO's information
+    targets: List of Target
+        Catalog of targets to cross-check the observation's target name.
+
+    Returns
+    -------
+    host: String
+        The host name of the observation's target.
+    """
+    target_name = obs['target']
+    name = normalize_name(target_name)
+
+    for target in targets:
+        hosts = [target.host] + [get_host(alias) for alias in target.aliases]
+        if name in hosts:
+            return target.host
+    # If not found
+    return None
+
+
 def get_planet_letters(obs, targets=None, verbose=False):
     """
     Find the planet(s) targeted by a given JWST observation
+    These are found from the observations info by looking at:
+    - if the target is in a single-planet system
+    - if the target- or observation-label names the planet
+    - if the period matches known orbital periods in the system
+    - manually identified
+
+    Parameters
+    ----------
+    observation: Dictionary
+        A dict with a JWST TSO's information
+    targets: List of Target
+        Catalog of targets to cross-check the observation's target name.
+
+    Returns
+    -------
+    planet_letters: List of strings
+        List of all planets (known to be) targetted by an observation.
     """
     if targets is None:
         catalog = Catalog()
@@ -639,12 +684,7 @@ def get_planet_letters(obs, targets=None, verbose=False):
         return planet_letters
 
     # Cross-check target with catalog:
-    name = target_name[:]
-    if name[0] == '-':
-        name = name[1:]
-    if name.startswith('NAME-'):
-        name = name[5:]
-    name = normalize_name(name)
+    name = normalize_name(target_name)
     # Find host / planets
     planets = []
     for target in targets:
@@ -686,6 +726,6 @@ def get_planet_letters(obs, targets=None, verbose=False):
     if pid=='3818' and obs_id=='2' and visit=='1':
         return ['d']
 
-    print(f'No planet info for: {info}  {name:15}  {repr(obs_label)}')
+    #print(f'No planet info for: {info}  {name:15}  {repr(obs_label)}')
     return []
 
