@@ -207,6 +207,7 @@ def normalize_name(target):
     # Planet letter is in the name
     if name.lower().endswith('b') and not name[-2].isalpha():
         name = name[:-1]
+
     # Custom corrections
     name = name.replace('-offset', '')
     name = name.replace('-updated', '')

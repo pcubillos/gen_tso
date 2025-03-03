@@ -10,6 +10,8 @@ __all__ = [
 ]
 
 from datetime import datetime
+import os
+
 from astropy.io import ascii
 import numpy as np
 import prompt_toolkit as ptk
@@ -311,11 +313,26 @@ def load_trexolists(grouped=False, trexo_file=None):
     trexo_data['ra'] = np.array(trexolist_data['R.A. 2000'])
     trexo_data['dec'] = np.array(trexolist_data['Dec. 2000'])
 
+    planets_file = f'{ROOT}data/planets_per_program.txt'
+    if os.path.exists(planets_file):
+        trexo_planets = []
+        planet_data = np.loadtxt(planets_file, dtype=str)
+        for i in range(len(programs)):
+            program = programs[i]
+            obs = trexo_data['observation'][i]
+            for p, o, planets in planet_data:
+                if program==int(p) and obs==int(o):
+                    trexo_planets.append(planets.split(','))
+                    break
+        else:
+            trexo_planets.append([])
+        #trexo_data['planets'] = np.array(trexo_planets, dtype=object)
+        trexo_data['planets'] = trexo_planets
+
     trexo_data['event'] = np.array([
         event.lower().replace('phasec', 'phase')
         for event in trexolist_data['Event']
     ])
-    # see_phase?
 
     trexo_data['mode'] = np.array([
         obs.replace('.', ' ')
@@ -394,7 +411,10 @@ def load_trexolists(grouped=False, trexo_file=None):
     for i,indices in enumerate(group_indices):
         target = {}
         for key in trexo_data.keys():
-            target[key] = trexo_data[key][indices]
+            if isinstance(trexo_data[key], list):
+                target[key] = [trexo_data[key][idx] for idx in indices]
+            else:
+                target[key] = trexo_data[key][indices]
         grouped_data.append(target)
 
     return grouped_data
