@@ -53,7 +53,7 @@ import gen_tso.viewer_popovers as pops
 
 def load_catalog():
     catalog = cat.Catalog()
-    is_jwst = np.array([target.is_jwst for target in catalog.targets])
+    is_jwst = np.array([target.is_jwst_planet for target in catalog.targets])
     is_transit = np.array([target.is_transiting for target in catalog.targets])
     is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
     return catalog, is_jwst, is_transit, is_confirmed
@@ -1940,7 +1940,7 @@ def server(input, output, session):
 
         m = ui.modal(
             info,
-            ui.HTML(aliases),
+            ui.span(aliases, style="font-family: monospace;"),
             title=ui.markdown(f'System parameters for: **{target.planet}**'),
             size='l',
             easy_close=True,
@@ -2137,14 +2137,20 @@ def server(input, output, session):
             placement='top',
         )
 
-        if target.is_jwst:
+        if target.is_jwst_host:
+            if target.is_jwst_planet:
+                tip = "This is a JWST target"
+                fill_color = '#FAC205'
+            else:
+                tip = ui.markdown("This *host* is a JWST target")
+                fill_color = 'goldenrod'
             trexolists_tooltip = ui.tooltip(
                 ui.input_action_link(
                     id='show_observations',
                     label='',
-                    icon=fa.icon_svg("circle-info", fill='goldenrod'),
+                    icon=fa.icon_svg("circle-info", fill=fill_color),
                 ),
-                "This target's host is on TrExoLiSTS",
+                tip,
                 placement='top',
             )
         else:
