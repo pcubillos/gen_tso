@@ -102,18 +102,23 @@ class Catalog():
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
-            target.is_jwst = target.host in jwst_hosts and target.is_transiting
-            if target.is_jwst:
+            target.is_jwst_host = target.host in jwst_hosts and target.is_transiting
+            if target.is_jwst_host:
                 for j in range(njwst):
                     if target.host in trexo_data[j]['nea_hosts']:
                         break
                 target.trexo_data = trexo_data[j]
+                planets = np.unique(np.concatenate(trexo_data[j]['planets']))
+                letter = u.get_letter(target.planet).strip()
+                target.is_jwst_planet = letter in planets
+            else:
+                target.is_jwst_planet = False
 
             if target.planet in planets_aka:
                 target.aliases = planets_aka[target.planet]
 
         self._transit_mask = [target.is_transiting for target in self.targets]
-        self._jwst_mask = [target.is_jwst for target in self.targets]
+        self._jwst_mask = [target.is_jwst_host for target in self.targets]
         self._confirmed_mask = [target.is_confirmed for target in self.targets]
 
 
@@ -326,7 +331,6 @@ def load_trexolists(grouped=False, trexo_file=None):
                     break
         else:
             trexo_planets.append([])
-        #trexo_data['planets'] = np.array(trexo_planets, dtype=object)
         trexo_data['planets'] = trexo_planets
 
     trexo_data['event'] = np.array([
