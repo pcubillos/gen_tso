@@ -159,10 +159,11 @@ class Target():
         self._complete_values()
 
     def machine_readable_text(self):
-        is_jwst = ''
-        if hasattr(self, 'is_jwst'):
-            is_jwst = f'is_jwst_host = {self.is_jwst}\n'
-        status = 'confirmed' if self.is_confirmed else 'candidate'
+        is_jwst_planet = is_jwst_host = ''
+        if hasattr(self, 'is_jwst_planet'):
+            is_jwst_planet = f'is_jwst_planet = {self.is_jwst_planet}\n'
+            is_jwst_host = f'is_jwst_host = {self.is_jwst_host}\n'
+        status = 'confirmed planet' if self.is_confirmed else 'candidate'
         mplanet_label = 'm_sini' if self.is_min_mass else 'mplanet'
 
         rstar = u.as_str(self.rstar, '.3f', 'np.nan')
@@ -207,7 +208,8 @@ class Target():
             f"a_rstar = {a_rstar}\n"
 
             f'\nis_transiting = {self.is_transiting}\n'
-            f'{is_jwst}'
+            f'{is_jwst_planet}'
+            f'{is_jwst_host}'
             f'status = {repr(status)}\n'
         )
         return report
