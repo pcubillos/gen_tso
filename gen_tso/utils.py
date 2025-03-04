@@ -344,29 +344,35 @@ def pretty_print_target(target):
     else:
         aliases = ''
 
+    color = '#15B01A' if target.is_jwst_planet else 'black'
+    jwst_planet = f'<span style="color:{color}">{target.is_jwst_planet}</span>'
+    color = '#15B01A' if target.is_jwst_host else 'black'
+    jwst_host = f'<span style="color:{color}">{target.is_jwst_host}</span>'
+
     planet_info = ui.HTML(
-        f'planet = {target.planet} <br>'
+        f'planet = {repr(target.planet)}<br>'
+        f'is_jwst_planet = {jwst_planet}<br>'
         f'is_transiting = {target.is_transiting}<br>'
-        f'status = {status} planet<br><br>'
+        f"status = '{status} planet'<br><br>"
         f"rplanet = {rplanet} r_earth<br>"
         f"{mplanet_label} = {mplanet} m_earth<br>"
-        f"semi-major axis = {sma} AU<br>"
+        f"semi_major_axis = {sma} AU<br>"
         f"period = {period} d<br>"
-        f"equilibrium temp = {eq_temp} K<br>"
-        f"transit_dur (T14) = {t_dur} h<br>"
+        f"equilibrium_temp = {eq_temp} K<br>"
+        f"transit_duration = {t_dur} h<br>"
         f"rplanet/rstar = {rprs}<br>"
         f"a/rstar = {ars}<br>"
     )
 
     star_info = ui.HTML(
-        f'host = {target.host}<br>'
-        f'is JWST host = {target.is_jwst}<br>'
-        f'<br><br>'
+        f'host = {repr(target.host)}<br>'
+        f'is_jwst_host = {jwst_host}<br>'
+        f'<br><br><br>'
         f"rstar = {rstar} r_sun<br>"
         f"mstar = {mstar} m_sun<br>"
         f"log_g = {logg}<br>"
         f"metallicity = {metal}<br>"
-        f"effective temp = {teff} K<br>"
+        f"effective_temp = {teff} K<br>"
         f"Ks_mag = {ks_mag}<br>"
         f"RA = {target.ra:.3f} deg<br>"
         f"dec = {target.dec:.3f} deg<br>"
