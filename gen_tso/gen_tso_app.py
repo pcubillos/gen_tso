@@ -220,6 +220,20 @@ app_ui = ui.page_fluid(
         });
         """
     ),
+    # Copy to clipboard
+    ui.HTML("""
+        <script>
+        Shiny.addCustomMessageHandler('copy_to_clipboard', function(message) {
+            navigator.clipboard.writeText(message)
+                .then(function() {
+                    Shiny.setInputValue("copy_status", "success", {priority: "event"});
+                })
+                .catch(function(err) {
+                    Shiny.setInputValue("copy_status", "failure", {priority: "event"});
+                });
+        });
+        </script>
+    """),
     ui.tags.style(
         """
         .popover {
@@ -1119,7 +1133,6 @@ def server(input, output, session):
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
     warning_text = reactive.Value('')
-    machine_readable_info = reactive.Value(False)
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
     preset_ngroup = reactive.Value(None)
@@ -1128,7 +1141,7 @@ def server(input, output, session):
     esasky_command = reactive.Value(None)
     trexo_info = reactive.Value(None)
     tso_draw = reactive.Value(None)
-    current_script = reactive.Value('')
+    clipboard = reactive.Value('')
     latest_pandeia = reactive.Value(None)
 
     @reactive.effect
@@ -1930,7 +1943,7 @@ def server(input, output, session):
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         planet_info, star_info, aliases = pretty_print_target(target)
-        machine_readable_info.set(False)
+        clipboard.set(target.machine_readable_text())
 
         info = ui.layout_columns(
             ui.span(planet_info, style="font-family: monospace;"),
@@ -1945,12 +1958,32 @@ def server(input, output, session):
             size='l',
             easy_close=True,
             footer=ui.input_action_button(
-                id="re_text",
-                label="as machine readable",
+                id="copy_planet",
+                label="Copy to clipboard",
                 class_='btn btn-sm',
             ),
         )
         ui.modal_show(m)
+
+
+    @reactive.effect
+    @reactive.event(input.copy_planet)
+    async def copy_clipboard():
+        await session.send_custom_message(
+            "copy_to_clipboard",
+            clipboard.get(),
+        )
+
+    @reactive.effect
+    @reactive.event(input.copy_status)
+    def notify_copy_status():
+        status = input.copy_status()
+        msg_type = 'message' if status == "success" else 'warning'
+        if status == "success":
+            msg = "Copied to clipboard!"
+        elif status == "failure":
+            msg = "Failed to copy!"
+        ui.notification_show(msg, type=msg_type, duration=4)
 
 
     @reactive.effect
@@ -2073,45 +2106,6 @@ def server(input, output, session):
             styles=styles,
             width='100%',
         )
-
-
-    @reactive.Effect
-    @reactive.event(input.re_text)
-    def _():
-        mri = machine_readable_info.get()
-        machine_readable_info.set(~mri)
-
-        name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
-        if machine_readable_info.get():
-            info = ui.span(
-                ui.HTML(target.machine_readable_text().replace('\n','<br>')),
-                style="font-family: monospace; font-size:medium;",
-            )
-            button_label = 'as pretty text'
-        else:
-            planet_info, star_info, aliases = pretty_print_target(target)
-            info = ui.layout_columns(
-                ui.span(planet_info, style="font-family: monospace;"),
-                ui.span(star_info, style="font-family: monospace;"),
-                width=1/2,
-            )
-            info = [info, ui.HTML(aliases)]
-            button_label = 'as machine readable'
-
-        ui.modal_remove()
-        m = ui.modal(
-            info,
-            title=ui.markdown(f'System parameters for: **{target.planet}**'),
-            size='l',
-            easy_close=True,
-            footer=ui.input_action_button(
-                id="re_text",
-                label=button_label,
-                class_='btn btn-sm',
-            ),
-        )
-        ui.modal_show(m)
 
 
     @render.ui
