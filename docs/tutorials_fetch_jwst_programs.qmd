@@ -347,9 +347,7 @@ PID   Obs  Target        Planets     Event type
 1201  311  L 98-59       ['d']       transit
 1201  401  LP 791-18     ['c']       transit
 1224    1  L 98-59       ['d']       transit
-
 ...
-
 6193    1  TOI-700       ['d']       transit
 6193    2  TOI-700       ['e']       transit
 6456    1  TRAPPIST-1    ['b', 'e']  transit
@@ -369,97 +367,226 @@ PID   Obs  Target        Planets     Event type
 ```
 :::
 
+---
+
 ### Plot phase coverage
 
-```python
-from astropy.coordinates import Angle
-import astropy.units as u
+This script uses the phase constraints data from the JWST programs
+to plot the orbital phase coverage by each observation. Here's the setup:
 
+::: {.callout-note}
+Note that only observations with phase constraints are shown because
+that's where the phase data comes from (some programs use date
+constraints instead).
+:::
 
-ra = [
-    Angle(obs['RA'], unit=u.hourangle).radian
-    for obs in observations
-]
-dec = [
-    Angle(obs['dec'], unit=u.deg).radian
-    for obs in observations
-]
-
-
-# Compare to trexolists
-from gen_tso.catalogs import load_trexolists
-trexo = load_trexolists()
-t_programs = trexo['program']
-t_obs = trexo['observation']
-t_visit = trexo['visit']
-t_event = trexo['event']
-n_trexo = len(t_programs)
-for i in range(n_trexo):
-    p = t_programs[i].split()[1]
-    o = str(t_obs[i])
-    v = str(t_visit[i])
-    e = str(t_event[i])
-    e = 'phase curve' if e == 'phase' else e
-    missing = True
-    for ob in observations:
-        if ob['pid']==p and ob['observation']==o and ob['visit']==v:
-            missing = False
-            if ob['event'] != e:
-                print(f"diff {p} {o:3} {repr(ob['event'])} -- {repr(e)}")
-            break
-    if missing:
-        print(f'Missing: {p} {o} {v}')
-for ob in observations:
-    missing = True
-    for i in range(n_trexo):
-        p = t_programs[i].split()[1]
-        o = str(t_obs[i])
-        v = str(t_visit[i])
-        if ob['pid']==p and ob['observation']==o and ob['visit']==v:
-            missing = False
-            break
-    if missing:
-        p = ob['pid']
-        o = ob['observation']
-        v= ob['visit']
-        print(f'New: {p} {o} {v}')
-```
 
 ```python
+import gen_tso.catalogs as cat
+import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+plt.ion()
+
+
+# Pick up the picle file saved in the previous step
+with open('JWST_TSO_programs.pickle', 'rb') as handle:
+    observations = pickle.load(handle)
+nobs = len(observations)
+
+# Cross check only with transiting planets
+catalog = cat.Catalog()
+targets = [
+    target for target in catalog.targets
+    if target.is_transiting
+]
+
+# Get the planet (by host name, labels, or phase constraints)
+for obs in observations:
+    host = cat.get_observation_host(obs, targets)
+    letters = cat.get_planet_letters(obs, targets)
+    planets = ','.join(letters)
+    obs['planets'] = host + ' ' + planets
+
+    period, phase, obs_duration = cat.get_phase_info(obs)
+    if period is not None:
+        obs['period'] = period
+        obs['phase_start'] = phase
+        obs['phase_duration'] = obs_duration
+
+
+labels = np.array([obs['planets'] for obs in observations])
+isort = np.argsort(labels)
+unique_planets = np.unique(labels)
+
 # Plot orbital phase coverage
 periods = [
-    o['period'] if 'phase_duration' in o else 0
-    for o in obs
+    obs['period'] if 'phase_duration' in obs else 0
+    for obs in observations
 ]
+
+# We will use the period for color-coding
 log_period = np.log10(periods)
 max_period = np.amax(log_period)
 max_period = 1.5
-nobs = len(observations)
+```
 
+Now make some plots:
+```python
+# Plot the transits
 fig = plt.figure(0)
 plt.clf()
-plt.subplots_adjust(0.1, 0.1, 0.98, 0.98)
-fig.set_size_inches(6,6)
-plt.axvline(1, color='r', zorder=-1)
-plt.axvline(2, color='r', zorder=-1)
-plt.axvline(0.5, color='k', zorder=-1)
-plt.axvline(1.5, color='k', zorder=-1)
-plt.axvline(2.5, color='k', zorder=-1)
+plt.subplots_adjust(0.01, 0.05, 0.99, 0.97, wspace=0.03)
+fig.set_size_inches(8,9)
+axes = [
+    plt.axes(131),
+    plt.axes(132),
+    plt.axes(133),
+]
+panel = 0
+counts = 0
+ax = axes[panel]
+ax.set_title('JWST TSO transits', fontsize=12, weight='bold')
+for planet in unique_planets:
+    indices = np.where(labels == planet)[0]
+    is_new = True
+    if counts > 88:
+        ax.set_ylim(-counts, 0)
+        counts = 0
+        panel += 1
+        ax = axes[panel]
+    for i in indices:
+        planet = observations[i]['planets']
+        event = observations[i]['event']
+        status = observations[i]['status']
+        failed = status in ['Skipped', 'Failed', 'Withdrawn']
+        if event != 'transit' or 'phase_duration' not in observations[i]:
+            continue
+        if failed:
+            continue
+        counts += 1
+        y = -counts
+        phase = observations[i]['phase_start']
+        duration = observations[i]['phase_duration']
+        color = plt.cm.viridis_r(log_period[i]/max_period)
+        ax.broken_barh([(phase, duration)], (y, 1), color=color)
+        if is_new:
+            ax.axhline(y+1, color='0.9', lw=0.75, zorder=-10)
+            ax.text(
+                phase, y+1, planet, fontsize=7.5,
+                color='xkcd:blue', ha='right', va='top',
+            )
+            is_new = False
 
-for i in range(nobs):
-    if 'phase_duration' not in obs[i]:
-        continue
-    phase = obs[i]['phase0']
-    duration = obs[i]['phase_duration']
-    plt.broken_barh(
-        [(phase, duration)], (i, 1),
-        color=plt.cm.viridis_r(log_period[i]/max_period),
-    )
-    color = 'k' if obs[i]['event']=='transit' else 'r'
-    if obs[i]['event']=='phase curve':
-        color = 'xkcd:blue'
-    plt.text(phase, i, obs[i]['target'] + ' ' +obs[i]['pid'], color=color)
-plt.ylim(0, nobs+1)
+ax.set_ylim(-counts, 0)
+for ax in axes:
+    ax.set_xlim(0.73, 1.35)
+    ax.set_xticks([0.75, 1.0, 1.25])
+    ax.tick_params(which='both', direction='in', labelsize=11)
+    ax.set_yticks([])
+    ax.set_xlabel('Orbital phase', fontsize=12)
+    plt.savefig('JWST_TSO_transits.png', dpi=300)
 ```
+![](images/JWST_TSO_transits.png){width=600px}
+
+::: {.callout-note}
+Beware that the phase values from the programs (T0 or periods) may
+not correspond to the true physical orbital-phase properties
+(for sake of simplifying the observing constraints).  I did my best to
+make corrections when I noticed, but I might not have caught all of them.
+:::
+
+And now the eclipses and phase curves:
+
+```python
+# Plot the phase curves and eclipses
+fig = plt.figure(1)
+plt.clf()
+plt.subplots_adjust(0.01, 0.05, 0.99, 0.97, wspace=0.03, hspace=0.25)
+gs = GridSpec(ncols=2, nrows=3)
+fig.set_size_inches(8,9)
+ax = fig.add_subplot(gs[0,0:2])
+counts = 0
+ax.set_title('JWST TSO phase curves', fontsize=12, weight='bold')
+for planet in unique_planets:
+    indices = np.where(labels == planet)[0]
+    is_new = True
+    for i in indices:
+        planet = observations[i]['planets']
+        event = observations[i]['event']
+        status = observations[i]['status']
+        failed = status in ['Skipped', 'Failed', 'Withdrawn']
+        if event != 'phase curve' or 'phase_duration' not in observations[i]:
+            continue
+        if failed:
+            continue
+        counts += 1
+        y = -counts
+        phase = observations[i]['phase_start']
+        duration = observations[i]['phase_duration']
+        color = plt.cm.viridis_r(log_period[i]/max_period)
+        ax.broken_barh([(phase, duration)], (y, 1), color=color)
+        if is_new:
+            ax.axhline(y+1, color='0.9', lw=0.75, zorder=-10)
+            ax.text(
+                phase, y+1, planet, fontsize=7.5,
+                color='xkcd:blue', ha='right', va='top',
+            )
+            is_new = False
+
+ax.set_ylim(-counts, 0)
+ax.set_xlim(-0.2, 4.4)
+ax.tick_params(which='both', direction='in', labelsize=11)
+ax.set_yticks([])
+ax.set_xlabel('Orbital phase', fontsize=12)
+
+axes = [
+    fig.add_subplot(gs[1:3,0]),
+    fig.add_subplot(gs[1:3,1]),
+]
+ax = axes[0]
+counts = 0
+ax.set_title('JWST TSO eclipses', fontsize=12, weight='bold')
+for planet in unique_planets:
+    indices = np.where(labels == planet)[0]
+    is_new = True
+    if counts > 55:
+        ax.set_ylim(-counts, 0)
+        counts = 0
+        ax = axes[1]
+    for i in indices:
+        planet = observations[i]['planets']
+        event = observations[i]['event']
+        status = observations[i]['status']
+        failed = status in ['Skipped', 'Failed', 'Withdrawn']
+        if event != 'eclipse' or 'phase_duration' not in observations[i]:
+            continue
+        if failed:
+            continue
+        counts += 1
+        y = -counts
+        phase = observations[i]['phase_start']
+        duration = observations[i]['phase_duration']
+        color = plt.cm.viridis_r(log_period[i]/max_period)
+        ax.broken_barh([(phase, duration)], (y, 1), color=color)
+        if is_new:
+            ax.axhline(y+1, color='0.9', lw=0.75, zorder=-10)
+            ax.text(
+                phase, y+1, planet, fontsize=7.5,
+                color='xkcd:blue', ha='right', va='top',
+            )
+            is_new = False
+
+ax.set_ylim(-counts, 0)
+for ax in axes:
+    ax.set_xlim(0.21, 0.85)
+    ax.set_xticks([0.25, 0.5, 0.75])
+    ax.tick_params(which='both', direction='in', labelsize=11)
+    ax.set_yticks([])
+    ax.set_xlabel('Orbital phase', fontsize=12)
+    plt.savefig('JWST_TSO_eclipses.png', dpi=300)
+```
+
+![](images/JWST_TSO_eclipses.png){width=600px}
 
 
