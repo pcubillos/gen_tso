@@ -322,12 +322,15 @@ def get_phase_info(obs):
     phase_doubling = 1
     if pid == '3860':
         phase_doubling = 4
-    elif is_phase or pid == '2080':
+    elif is_phase or pid in ['2084']:
         phase_doubling = 2
 
     phase_duration *= phase_doubling
     period /= phase_doubling
     phase *= phase_doubling
+    # Manual guesstimate
+    if pid == '1201' and 'eclipse' in obs['label']:
+        phase -= 0.5
     phase -= int(phase)
 
     return period, phase, phase_duration
