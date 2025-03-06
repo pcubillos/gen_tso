@@ -105,30 +105,53 @@ def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
-        ins_config = get_instrument_config(telescope, instrument)
+        config = get_instrument_config(telescope, instrument)
     else:
-        ins_config = instrument.ins_config
+        config = instrument.ins_config
 
     # When switching instrument, subarray and readout updates are not atomic
-    if subarray not in ins_config['subarray_config']['default']:
+    if subarray not in config['subarray_config']['default']:
         return None
-    if readout not in ins_config['readout_pattern_config']:
+    if readout not in config['readout_pattern_config']:
         return None
 
-    subarray_config = ins_config['subarray_config']['default'][subarray]
-    readout_config = ins_config['readout_pattern_config'][readout]
-    tfffr = subarray_config['tfffr']
-    tframe = subarray_config['tframe']
+    subarray_config = config['subarray_config']
+    readout_config = config['readout_pattern_config'][readout]
+
     nframe = readout_config['nframe']
     ndrop2 = readout_config['ndrop2']
+    tfffr = subarray_config['default'][subarray]['tfffr']
+    tframe = subarray_config['default'][subarray]['tframe']
+    has_tframe = (
+        readout in subarray_config and
+        subarray in subarray_config[readout]
+    )
+    if has_tframe:
+        tframe = subarray_config[readout][subarray]["tframe"]
+        tfffr = subarray_config[readout][subarray]["tfffr"]
+
     ndrop1 = ndrop3 = 0
+    if "ndrop1" in readout_config:
+        ndrop1 = readout_config["ndrop1"]
+    if "ndrop3" in readout_config:
+        ndrop3 = readout_config["ndrop3"]
+
     nreset1 = nreset2 = 1
-    if 'nreset1' in readout_config:
-        nreset1 = readout_config['nreset1']
-    elif 'nreset1' in subarray_config:
-        nreset1 = subarray_config['nreset1']
-    if 'nreset2' in readout_config:
-        nreset2 = readout_config['nreset2']
+    if "nreset1" in subarray_config["default"][subarray]:
+        nreset1 = subarray_config["default"][subarray]["nreset1"]
+        nreset2 = subarray_config["default"][subarray]["nreset2"]
+    has_nreset = (
+        readout in subarray_config and
+        subarray in subarray_config[readout] and
+        "nreset1" in subarray_config[readout][subarray]
+    )
+    if has_nreset:
+        nreset1 = subarray_config[readout][subarray]["nreset1"]
+        nreset2 = subarray_config[readout][subarray]["nreset2"]
+
+    if "nreset1" in readout_config:
+        nreset1 = readout_config["nreset1"]
+        nreset2 = readout_config["nreset2"]
 
     def exp_time(nint):
         time = nexp * (
@@ -261,7 +284,7 @@ def bin_search_exposure_time(
 def integration_time(instrument, subarray, readout, ngroup):
     """
     Compute JWST's integration time for a given instrument configuration.
-    Based on pandeia.engine.exposure.
+    Based on pandeia.engine.exposure.get_times()
 
     Examples
     --------
@@ -278,20 +301,29 @@ def integration_time(instrument, subarray, readout, ngroup):
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
-        ins_config = get_instrument_config(telescope, instrument)
+        config = get_instrument_config(telescope, instrument)
     else:
-        ins_config = instrument.ins_config
+        config = instrument.ins_config
 
     # When switching instrument, subarray and readout updates are not atomic
-    if subarray not in ins_config['subarray_config']['default']:
+    if subarray not in config['subarray_config']['default']:
         return 0.0
-    if readout not in ins_config['readout_pattern_config']:
+    if readout not in config['readout_pattern_config']:
         return 0.0
 
-    tframe = ins_config['subarray_config']['default'][subarray]['tframe']
-    nframe = ins_config['readout_pattern_config'][readout]['nframe']
-    ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
+    nframe = config['readout_pattern_config'][readout]['nframe']
+    ndrop2 = config['readout_pattern_config'][readout]['ndrop2']
+    tframe = config['subarray_config']['default'][subarray]['tframe']
+    has_tframe = (
+        readout in config['subarray_config'] and
+        subarray in config['subarray_config'][readout]
+    )
+    if has_tframe:
+        tframe = config['subarray_config'][readout][subarray]["tframe"]
+
     ndrop1 = 0
+    if "ndrop1" in config['readout_pattern_config'][readout]:
+        ndrop1 = config['readout_pattern_config'][readout]["ndrop1"]
 
     integration_time = tframe * (
         ndrop1 + (ngroup - 1) * (nframe + ndrop2) + nframe
