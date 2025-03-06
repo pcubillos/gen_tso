@@ -23,7 +23,6 @@ nplanets = len(catalog.targets)
 for target in catalog.targets:
     has_transits = (
         target.is_jwst_planet and
-        target.is_transiting and
         'transit' in target.trexo_data['event']
     )
 

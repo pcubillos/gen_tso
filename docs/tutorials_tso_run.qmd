@@ -81,7 +81,7 @@ instruments and their respective modes:
         <td rowspan="2"><span data-qmd="__miri__"></span></td> <td>lrsslitless</td> <td>target_acq</td>
     </tr>
     <tr>
-        <td>miri_ts</td> <td></td>
+        <td>mrs_ts</td> <td></td>
     </tr>
 
     <tr>
