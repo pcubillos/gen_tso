@@ -60,26 +60,27 @@ class PandeiaCalculation():
     mode: string
         Observing mode. If not set, default to the first item for
         each instrument from this list below:
-
-          instrument   mode          comments
-          ----------   ----          --------
-          nircam:      lw_tsgrism    spectroscopy
-                       sw_tsgrism    spectroscopy
-                       target_acq    aquisition
-          niriss:      soss          spectroscopy
-                       target_acq    aquisition
-          nirspec:     bots          spectroscopy
-                       target_acq    aquisition
-          miri:        lrsslitless   spectroscopy
-                       mrs_ts        spectroscopy
-                       target_acq    aquisition
+        Spectroscopy: instrument  mode
+        ------------------------------
+                      miri        lrsslitless
+                      miri        mrs_ts
+                      nircam      lw_tsgrism
+                      nircam      sw_tsgrism
+                      niriss      soss
+                      nirspec     bots
+        Acquisition:
+                      miri        target_acq
+                      nircam      target_acq
+                      niriss      target_acq
+                      nirspec     target_acq
 
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
 
-    >>> pando = jwst.PandeiaCalculation('nircam')
     >>> pando = jwst.PandeiaCalculation('nirspec')
+    >>> pando = jwst.PandeiaCalculation('nircam')
+    >>> pando = jwst.PandeiaCalculation('nircam', 'sw_tsgrism')
     >>> pando = jwst.PandeiaCalculation('nircam', 'target_acq')
     """
     def __init__(self, instrument, mode=None):
@@ -100,6 +101,7 @@ class PandeiaCalculation():
         )
         # Set default config for TSO:
         detector = get_detector(self.instrument, self.mode, detectors)
+        self._detector = detector
         disperser = detector.default_disperser
         filter = detector.default_filter
         subarray = detector.default_subarray
@@ -122,7 +124,11 @@ class PandeiaCalculation():
             self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
 
-    def get_configs(self, output=None):
+    def get_configs(
+        self, output=None,
+        # *, aperture=None, disperser=None,
+        # filter=None, subarray=None, readout=None,
+    ):
         """
         Print out or return the list of available configurations.
 
@@ -130,41 +136,47 @@ class PandeiaCalculation():
         ----------
         output: String
             The configuration variable to list. Select from:
-            readouts, subarrays, filters, or dispersers.
+            apertures, readouts, subarrays, filters, or dispersers.
 
         Returns
         -------
             outputs: 1D list of strings
             The list of available inputs for the requested variable.
         """
-        ins_config = get_instrument_config(self.telescope, self.instrument)
-        config = ins_config['mode_config'][self.mode]
+        detector = self._detector
+
+        # TBD: collect constraints:
+        #if output in detector.constraints:
+        #    if constraint in detector.constraints[output]
+        #        TBD
 
         screen_output = ''
-        if self.instrument == 'nirspec':
-            gratings_dict = ins_config['config_constraints']['dispersers']
+        apertures = list(detector.apertures)
+        screen_output += f'apertures: {apertures}\n'
+
+        if self.mode == 'bots':
+            gratings_dict = detector.constraints['filters']['dispersers']
             gratings = filters = dispersers = []
             for grating, filter_list in gratings_dict.items():
-                for filter in filter_list['filters']:
+                for filter in filter_list:
                     gratings.append(f'{grating}/{filter}')
-            screen_output += f'grating/filter pairs: {gratings}\n'
+            screen_output += f'grating/filter pairs: {sorted(gratings)}\n'
         else:
-            dispersers = [disperser for disperser in config['dispersers']]
-            filters = config['filters']
+            dispersers = list(detector.dispersers)
+            filters = list(detector.filters)
             screen_output += f'dispersers: {dispersers}\n'
             screen_output += f'filters: {filters}\n'
 
-        subarrays = config['subarrays']
+        subarrays = list(detector.subarrays)
         screen_output += f'subarrays: {subarrays}\n'
 
-        if self.instrument == 'niriss':
-            readouts = ins_config['readout_patterns']
-        else:
-            readouts = config['readout_patterns']
+        readouts = list(detector.readouts)
         screen_output += f'readout patterns: {readouts}\n'
 
         if output is None:
             print(screen_output)
+        elif output == 'apertures':
+            return apertures
         elif output == 'readouts':
             return readouts
         elif output == 'subarrays':

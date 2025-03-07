@@ -98,6 +98,136 @@ def test_get_scene_unset():
         assert scene[key] == val
 
 
+# Spectroscopy
+def test_get_configs_miri_lrs(capsys):
+    pando = jwst.PandeiaCalculation('miri', 'lrsslitless')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['imager']
+dispersers: ['p750l']
+filters: ['']
+subarrays: ['slitlessprism']
+readout patterns: ['fastr1', 'slowr1']
+"""
+
+
+def test_get_configs_miri_mrs(capsys):
+    pando = jwst.PandeiaCalculation('miri', 'mrs_ts')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['ch1', 'ch2', 'ch3', 'ch4']
+dispersers: ['short', 'medium', 'long']
+filters: ['']
+subarrays: ['full']
+readout patterns: ['fastr1', 'slowr1']
+"""
+
+
+def test_get_configs_nircam_lw_tsgrism(capsys):
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['lw']
+dispersers: ['grismr']
+filters: ['f277w', 'f322w2', 'f356w', 'f444w']
+subarrays: ['full', 'subgrism128', 'subgrism256', 'subgrism64', 'full (noutputs=1)', 'subgrism128 (noutputs=1)', 'subgrism256 (noutputs=1)', 'subgrism64 (noutputs=1)', 'sub41s1_2-spectra', 'sub82s2_4-spectra', 'sub164s4_8-spectra', 'sub260s4_8-spectra']
+readout patterns: ['rapid', 'bright1', 'bright2', 'shallow2', 'shallow4', 'medium2', 'medium8', 'mediumdeep2', 'mediumdeep8', 'deep2', 'deep8', 'dhs3', 'dhs4', 'dhs5', 'dhs6', 'dhs7']
+"""
+
+
+def test_get_configs_nircam_sw_tsgrism(capsys):
+    pando = jwst.PandeiaCalculation('nircam', 'sw_tsgrism')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['dhs0spec2', 'dhs0spec4', 'dhs0spec8', 'dhs0bright']
+dispersers: ['dhs0']
+filters: ['f070w', 'f090w', 'f115w', 'f150w', 'f150w2', 'f200w']
+subarrays: ['sub41s1_2-spectra', 'sub82s2_4-spectra', 'sub164s4_8-spectra', 'sub260s4_8-spectra']
+readout patterns: ['rapid', 'bright1', 'dhs3', 'dhs4', 'dhs5', 'dhs6', 'dhs7']
+"""
+
+
+def test_get_configs_nirspec_bots(capsys):
+    pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['s1600a1']
+grating/filter pairs: ['g140h/f070lp', 'g140h/f100lp', 'g140m/f070lp', 'g140m/f100lp', 'g235h/f170lp', 'g235m/f170lp', 'g395h/f290lp', 'g395m/f290lp', 'prism/clear']
+subarrays: ['sub512', 'sub512s', 'sub1024a', 'sub1024b', 'sub2048']
+readout patterns: ['nrs', 'nrsrapid']
+"""
+
+
+def test_get_configs_niriss_soss(capsys):
+    pando = jwst.PandeiaCalculation('niriss', 'soss')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['soss']
+dispersers: ['gr700xd']
+filters: ['clear', 'f277w']
+subarrays: ['substrip256', 'substrip96', 'sossfull']
+readout patterns: ['nis', 'nisrapid']
+"""
+
+# Acquisition
+def test_get_configs_miri_acq():
+    pando = jwst.PandeiaCalculation('miri', 'target_acq')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['imager']
+dispersers: []
+filters: ['f560w', 'f1000w', 'f1500w', 'fnd']
+subarrays: ['full', 'brightsky', 'sub256', 'sub128', 'sub64', 'slitlessprism']
+readout patterns: ['fast', 'fastgrpavg', 'fastgrpavg8', 'fastgrpavg16', 'fastgrpavg32', 'fastgrpavg64']
+"""
+
+
+def test_get_configs_nircam_acq():
+    pando = jwst.PandeiaCalculation('nircam', 'target_acq')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['lw']
+dispersers: []
+filters: ['f335m', 'f405n']
+subarrays: ['sub32tats']
+readout patterns: ['rapid', 'bright1', 'bright2', 'shallow2', 'shallow4', 'medium2', 'medium8', 'mediumdeep2', 'mediumdeep8', 'deep2', 'deep8']
+"""
+
+
+def test_get_configs_nirspec_acq():
+    pando = jwst.PandeiaCalculation('nirspec', 'target_acq')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['s1600a1']
+dispersers: []
+filters: ['f110w', 'f140x', 'clear']
+subarrays: ['full', 'sub32', 'sub2048']
+readout patterns: ['nrsrapid', 'nrsrapidd6']
+"""
+
+
+def test_get_configs_niriss_acq():
+    pando = jwst.PandeiaCalculation('niriss', 'target_acq')
+    pando.get_configs()
+
+    captured = capsys.readouterr()
+    expected_captured = """apertures: ['imager', 'nrm']
+dispersers: []
+filters: ['f480m']
+subarrays: ['subtaami']
+readout patterns: ['nis', 'nisrapid']
+"""
+
+
 def test_show_config(capsys):
     pando = jwst.PandeiaCalculation('nirspec', 'bots')
     pando.set_scene(
