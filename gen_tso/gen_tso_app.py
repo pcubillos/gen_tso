@@ -9,7 +9,6 @@ import sys
 import textwrap
 from datetime import timedelta, datetime
 
-
 import faicons as fa
 import numpy as np
 import pandas as pd
@@ -87,13 +86,20 @@ filter_throughputs = jwst.filter_throughputs()
 
 modes = {}
 for inst in instruments:
+    choices = {}
     spec_modes = {}
     for det in detectors:
         if det.instrument == inst and det.obs_type=='spectroscopy':
             spec_modes[det.mode] = det.mode_label
-    choices = {}
     choices['Spectroscopy'] = spec_modes
-    #choices['Photometry'] = photo_modes  TBD
+
+    photo_modes = {}
+    for det in detectors:
+        if det.instrument == inst and det.obs_type=='photometry':
+            photo_modes[det.mode] = det.mode_label
+    if len(photo_modes) > 0:
+        choices['Photometry'] = photo_modes
+
     acq_modes = {}
     for det in detectors:
         if det.instrument == inst and det.obs_type=='acquisition':
@@ -205,7 +211,6 @@ layout_kwargs = dict(
     class_="pb-2 pt-0 m-0",
 )
 
-
 app_ui = ui.page_fluid(
     # ESA Sky
     ui.tags.script(
@@ -277,7 +282,6 @@ app_ui = ui.page_fluid(
     ),
     # Instrument and detector modes:
     ui.layout_columns(
-        #ui.card(
         cs.custom_card(
             ui.card_header("Select instrument and mode"),
             ui.layout_columns(
@@ -593,7 +597,7 @@ app_ui = ui.page_fluid(
             # Aperture/disperser/filter
             ui.panel_well(
                 ui.panel_conditional(
-                    "input.mode == 'sw_tsgrism' || input.mode == 'target_acq'",
+                    "['sw_tsgrism', 'bots', 'sw_ts', 'lw_ts', 'target_acq'].includes(input.mode)",
                     ui.input_select(
                         id="aperture",
                         label="Aperture",
@@ -602,7 +606,7 @@ app_ui = ui.page_fluid(
                     ),
                 ),
                 ui.panel_conditional(
-                    "input.mode != 'target_acq'",
+                    "!['target_acq', 'imaging_ts', 'sw_ts', 'lw_ts', 'bots'].includes(input.mode)",
                     ui.input_select(
                         id="disperser",
                         label="Disperser",
@@ -610,11 +614,14 @@ app_ui = ui.page_fluid(
                         selected='',
                     ),
                 ),
-                ui.input_select(
-                    id="filter",
-                    label="Filter",
-                    choices={},
-                    selected='',
+                ui.panel_conditional(
+                    "!['lrsslitless', 'mrs_ts'].includes(input.mode)",
+                    ui.input_select(
+                        id="filter",
+                        label="Filter",
+                        choices={},
+                        selected='',
+                    ),
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
@@ -881,26 +888,29 @@ def planet_model_name(input):
 
 
 def get_throughput(input):
-    inst = input.instrument.get().lower()
-    mode = input.mode.get()
-    disperser = input.disperser.get()
-    filter = input.filter.get()
-    subarray = input.subarray.get()
-    if not is_consistent(inst, mode, disperser=disperser, filter=filter, subarray=subarray):
+    inst, mode, aper, disperser, filter, subarray = parse_instrument(input)[0:6]
+    if inst is None:
         return None
 
     if mode == 'target_acq':
         obs_type = 'acquisition'
+    elif mode in ['imaging_ts', 'lw_ts', 'sw_ts']:
+        obs_type = 'photometry'
     else:
-        # TBD: fix when photometry goes live
         obs_type = 'spectroscopy'
+
+    key = aper if obs_type == 'photometry' else subarray
+    if key not in filter_throughputs[obs_type][inst][mode]:
+        return None
 
     if mode == 'lrsslitless':
         filter = 'None'
+    elif mode == 'bots':
+        filter = f'{disperser}/{filter}'
     elif mode == 'mrs_ts':
         filter = disperser
 
-    return filter_throughputs[obs_type][inst][mode][subarray][filter]
+    return filter_throughputs[obs_type][inst][mode][key][filter]
 
 
 def get_auto_sed(input):
@@ -1016,8 +1026,12 @@ def is_consistent(
     detector = get_detector(inst, mode, detectors)
     if detector is None:
         return False
-    if aperture is not None and aperture not in detector.apertures:
-        return False
+    if aperture is not None:
+        has_pupils = mode in ['lw_ts', 'sw_ts']
+        if has_pupils and aperture not in detector.pupils:
+            return False
+        if not has_pupils and aperture not in detector.apertures:
+            return False
     if disperser is not None and disperser not in detector.dispersers:
         return False
     if filter is not None and filter not in detector.filters:
@@ -1044,7 +1058,6 @@ def parse_instrument(input):
     if not consistent:
         return [None for _ in range(10)]
 
-    order = input.order.get()
     if mode == 'target_acq':
         ngroup = input.ngroup_acq.get()
         disperser = None
@@ -1054,10 +1067,15 @@ def parse_instrument(input):
         nint = input.integrations.get()
 
     # Front-end to back-end exceptions:
+    if mode in ['lw_ts', 'sw_ts']:
+        detector = get_detector(inst, mode, detectors)
+        aperture = detector.pupil_to_aperture[aperture]
     if mode == 'mrs_ts':
         aperture = ['ch1', 'ch2', 'ch3', 'ch4']
     if mode == 'bots':
         disperser, filter = filter.split('/')
+
+    order = input.order.get()
     if mode == 'soss':
         if filter == 'f277w':
             order = [1]
@@ -1090,7 +1108,6 @@ def get_saturation_values(
     band_label = sed_items[-1]
     sat_guess_label = '_'.join(sed_items[0:-2])
     can_guess = band_label == 'Ks' and sat_guess_label in flux_rate_splines
-
     pixel_rate = None
     full_well = None
     if sat_label in cache_saturation:
@@ -1669,6 +1686,8 @@ def server(input, output, session):
 
         # The aperture
         choices = detector.apertures
+        if mode in ['lw_ts', 'sw_ts']:
+            choices = detector.pupils
         aperture = input.aperture.get()
         if aperture not in choices:
             aperture = detector.default_aperture
@@ -1691,18 +1710,6 @@ def server(input, output, session):
             selected=disperser,
         )
 
-        # The filter
-        choices = detector.filters
-        filter = input.filter.get()
-        if filter not in choices:
-            filter = detector.default_filter
-        ui.update_select(
-            'filter',
-            label=detector.filter_label,
-            choices=choices,
-            selected=filter,
-        )
-
         selected = input.filter_filter.get()
         if detector.obs_type == 'acquisition':
             choices = [detector.instrument]
@@ -1718,6 +1725,30 @@ def server(input, output, session):
         )
 
 
+    @reactive.Effect(priority=2)
+    @reactive.event(input.instrument, input.mode, input.aperture)
+    def update_filter():
+        inst = input.instrument.get()
+        mode = input.mode.get()
+        aperture = input.aperture.get()
+        if not is_consistent(inst, mode, aperture):
+            return
+        detector = get_detector(inst, mode, detectors)
+        choices = detector.get_constrained_val('filters', pupil=aperture)
+
+        filter = input.filter.get()
+        if filter not in choices:
+            filter = detector.default_filter
+        if filter not in choices:
+            filter = list(choices)[0]
+        ui.update_select(
+            'filter',
+            label=detector.filter_label,
+            choices=choices,
+            selected=filter,
+        )
+
+
     @reactive.Effect(priority=1)
     @reactive.event(
         input.instrument, input.mode,
@@ -1726,10 +1757,10 @@ def server(input, output, session):
     def update_subarray():
         inst = input.instrument.get()
         mode = input.mode.get()
-        aperture = input.aperture.get()
+        aper = input.aperture.get()
         disperser = input.disperser.get()
         filter = input.filter.get()
-        if not is_consistent(inst, mode, aperture, disperser, filter):
+        if not is_consistent(inst, mode, aper, disperser, filter):
             return
         detector = get_detector(inst, mode, detectors)
 
@@ -1738,8 +1769,8 @@ def server(input, output, session):
         else:
             disperser = input.disperser.get()
 
-        if mode == 'sw_tsgrism':
-            constraint = {'aperture': aperture}
+        if mode in ['sw_tsgrism', 'sw_ts']:
+            constraint = {'aperture': aper}
         else:
             constraint = {'disperser': disperser}
         choices = detector.get_constrained_val('subarrays', **constraint)
@@ -1902,6 +1933,7 @@ def server(input, output, session):
             type="message",
             duration=5,
         )
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
@@ -2752,12 +2784,12 @@ def server(input, output, session):
     @render_plotly
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
-
         inst = input.instrument.get().lower()
         mode = input.mode.get()
+        aperture = input.aperture.get()
         filter = input.filter.get()
         subarray = input.subarray.get()
-        if not is_consistent(inst, mode, filter=filter, subarray=subarray):
+        if not is_consistent(inst, mode, aperture, filter=filter, subarray=subarray):
             return
 
         if mode == 'lrsslitless':
@@ -2767,11 +2799,19 @@ def server(input, output, session):
 
         if mode == 'target_acq':
             throughputs = filter_throughputs['acquisition']
+            key = subarray
+        elif mode in ['imaging_ts', 'lw_ts', 'sw_ts']:
+            throughputs = filter_throughputs['photometry']
+            detector = get_detector(inst, mode, detectors)
+            if hasattr(detector, 'pupils'):
+                aperture = detector.pupil_to_aperture[aperture]
+            key = aperture
         else:
             throughputs = filter_throughputs['spectroscopy']
+            key = subarray
 
         fig = plots.plotly_filters(
-            throughputs, inst, mode, subarray, filter, show_all,
+            throughputs, inst, mode, key, filter, show_all,
         )
         return fig
 
