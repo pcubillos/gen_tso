@@ -211,14 +211,16 @@ class PandeiaCalculation():
                 bounds = bounds[0]
             return bounds
 
-        if self.mode in ['lw_tsgrism', 'target_acq']:
+        if self.mode in ['lw_tsgrism', 'target_acq', 'lw_ts', 'sw_ts']:
             config = conf['range'][aperture][filter]
-        if self.mode in ['sw_tsgrism']:
+        elif self.mode in ['sw_tsgrism']:
             ranges = conf['range'][aperture]['dhs0_2']
             ranges.update(conf['range'][aperture]['dhs0_1'])
             config = ranges[filter]
         elif self.mode in ['lrsslitless', 'mrs_ts']:
             config = conf['range'][aperture][disperser]
+        elif self.mode in ['imaging_ts']:
+            config = conf['range'][aperture][filter]
         elif self.mode == 'soss':
             order = 1
             disperser = f'{disperser}_{order}'
@@ -608,18 +610,20 @@ class PandeiaCalculation():
         aperture, disperser, filter, subarray, readout, order, nint, ngroup = params
         if aperture is not None:
             self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser is not None:
+        if disperser == '':
+            self.calc['configuration']['instrument']['disperser'] = None
+        elif disperser is not None:
             self.calc['configuration']['instrument']['disperser'] = disperser
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-        if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
-        if order is not None and self.mode == 'soss':
-            self.calc['strategy']['order'] = order
         if filter == '':
             self.calc['configuration']['instrument']['filter'] = None
         elif filter is not None:
             self.calc['configuration']['instrument']['filter'] = filter
+        if subarray is not None:
+            self.calc['configuration']['detector']['subarray'] = subarray
+        if readout is not None:
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+        if order is not None and self.mode == 'soss':
+            self.calc['strategy']['order'] = order
 
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
@@ -627,7 +631,7 @@ class PandeiaCalculation():
         self._ensure_wl_reference_in_range()
 
         self.report = perform_calculation(self.calc)
-        # In pandeia ver 2024.9, NIRISS/SOSS returns float32 for wl arrays
+        # In pandeia ver 2024.9+, NIRISS/SOSS returns float32 for wl arrays
         # need to convert to double for safety
         wl = np.array(self.report['1d']['extracted_flux'][0], dtype=float)
         self.report['1d']['extracted_flux'][0] = wl
@@ -675,12 +679,12 @@ class PandeiaCalculation():
             aperture = self.calc['configuration']['instrument']['aperture']
         if disperser is None:
             disperser = self.calc['configuration']['instrument']['disperser']
-        if readout is None:
-            readout = self.calc['configuration']['detector']['readout_pattern']
-        if subarray is None:
-            subarray = self.calc['configuration']['detector']['subarray']
         if filter is None:
             filter = self.calc['configuration']['instrument']['filter']
+        if subarray is None:
+            subarray = self.calc['configuration']['detector']['subarray']
+        if readout is None:
+            readout = self.calc['configuration']['detector']['readout_pattern']
 
         if ngroup is None:
             raise TypeError("Missing required argument: 'ngroup'")
@@ -858,8 +862,8 @@ class PandeiaCalculation():
             scene_in = depth_scene
             scene_out = star_scene
 
-        if not isinstance(ngroup, Iterable):
-            ngroup = [ngroup]
+        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
+            aperture = [aperture]
         if not isinstance(disperser, Iterable) or isinstance(disperser, str):
             disperser = [disperser]
         if not isinstance(filter, Iterable) or isinstance(filter, str):
@@ -868,10 +872,10 @@ class PandeiaCalculation():
             subarray = [subarray]
         if not isinstance(readout, Iterable) or isinstance(readout, str):
             readout = [readout]
-        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
-            aperture = [aperture]
         if not isinstance(order, Iterable) or isinstance(order, str):
             order = [order]
+        if not isinstance(ngroup, Iterable):
+            ngroup = [ngroup]
 
         configs = product(
             aperture, disperser, filter, subarray, readout, order, ngroup,
@@ -899,18 +903,20 @@ class PandeiaCalculation():
         aperture, disperser, filter, subarray, readout, order, ngroup = config
         if aperture is not None:
             self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser is not None:
+        if disperser == '':
+            self.calc['configuration']['instrument']['disperser'] = None
+        elif disperser is not None:
             self.calc['configuration']['instrument']['disperser'] = disperser
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-        if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
-        if order is not None and self.mode == 'soss':
-            self.calc['strategy']['order'] = order
         if filter == '':
             self.calc['configuration']['instrument']['filter'] = None
         elif filter is not None:
             self.calc['configuration']['instrument']['filter'] = filter
+        if subarray is not None:
+            self.calc['configuration']['detector']['subarray'] = subarray
+        if readout is not None:
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+        if order is not None and self.mode == 'soss':
+            self.calc['strategy']['order'] = order
 
         # Now that everything is defined I can turn durations into integs:
         inst = self.instrument

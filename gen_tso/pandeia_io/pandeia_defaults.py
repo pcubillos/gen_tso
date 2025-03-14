@@ -270,6 +270,15 @@ def get_configs(instrument=None, obs_type=None):
 
         # Special constraints
         inst_dict['constraints'] = {}
+        # MIRI
+        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
+            group_constraints = config['mode_config'][mode]['enum_ngroups']
+            constraints = {}
+            for subarray in inst_dict['subarrays']:
+                key = subarray if subarray in group_constraints else 'default'
+                constraints[subarray] = group_constraints[key]
+            inst_dict['constraints']['groups'] = {'subarrays': constraints}
+
         # NIRCam
         if mode == 'sw_tsgrism':
             constraints = {
@@ -366,15 +375,6 @@ def get_configs(instrument=None, obs_type=None):
                 for aper in inst_dict['apertures']
             }
             inst_dict['constraints']['readouts'] = {'apertures': constraints}
-
-        # MIRI
-        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
-            group_constraints = config['mode_config'][mode]['enum_ngroups']
-            constraints = {}
-            for subarray in inst_dict['subarrays']:
-                key = subarray if subarray in group_constraints else 'default'
-                constraints[subarray] = group_constraints[key]
-            inst_dict['constraints']['groups'] = {'subarrays': constraints}
 
         outputs.append(inst_dict)
     return outputs
