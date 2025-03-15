@@ -887,30 +887,30 @@ def planet_model_name(input):
         return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 
-def get_throughput(input):
-    inst, mode, aper, disperser, filter, subarray = parse_instrument(input)[0:6]
-    if inst is None:
-        return None
+def throughput_config(input, evaluate=False):
+    config = parse_instrument(
+        input, 'instrument', 'mode',
+        'aperture', 'disperser', 'filter', 'subarray', 'detector',
+    )
+    if config is None:
+        return
+    inst, mode, aperture, disperser, filter, subarray, detector = config
+    obs_type = detector.obs_type
 
-    if mode == 'target_acq':
-        obs_type = 'acquisition'
-    elif mode in ['imaging_ts', 'lw_ts', 'sw_ts']:
-        obs_type = 'photometry'
-    else:
-        obs_type = 'spectroscopy'
-
-    key = aper if obs_type == 'photometry' else subarray
+    key = aperture if obs_type == 'photometry' else subarray
     if key not in filter_throughputs[obs_type][inst][mode]:
         return None
 
     if mode == 'lrsslitless':
         filter = 'None'
-    elif mode == 'bots':
-        filter = f'{disperser}/{filter}'
     elif mode == 'mrs_ts':
         filter = disperser
+    elif mode == 'bots':
+        filter = f'{disperser}/{filter}'
 
-    return filter_throughputs[obs_type][inst][mode][key][filter]
+    if evaluate:
+        return filter_throughputs[obs_type][inst][mode][key][filter]
+    return obs_type, inst, mode, key, filter
 
 
 def get_auto_sed(input):
@@ -1014,83 +1014,93 @@ def parse_depth_model(input):
     return depth_label, wl, depth
 
 
-def is_consistent(
-        inst, mode,
-        aperture=None, disperser=None, filter=None,
-        subarray=None, readout=None,
-    ):
+def parse_instrument(input, *args):
     """
-    Check that detector configuration settings are consistent
-    between them.
+    Parse instrumental configuration from front-end to back-end.
+    Ensure that only the requested parameters are a valid configuration.
     """
-    detector = get_detector(inst, mode, detectors)
-    if detector is None:
-        return False
-    if aperture is not None:
-        has_pupils = mode in ['lw_ts', 'sw_ts']
-        if has_pupils and aperture not in detector.pupils:
-            return False
-        if not has_pupils and aperture not in detector.apertures:
-            return False
-    if disperser is not None and disperser not in detector.dispersers:
-        return False
-    if filter is not None and filter not in detector.filters:
-        return False
-    if subarray is not None and subarray not in detector.subarrays:
-        return False
-    if readout is not None and readout not in detector.readouts:
-        return False
-    return True
-
-
-def parse_instrument(input):
+    # instrument and mode always checked
     inst = input.instrument.get().lower()
     mode = input.mode.get()
-    aperture = input.aperture.get()
-    disperser = input.disperser.get()
-    filter = input.filter.get()
-    subarray = input.subarray.get()
-    readout = input.readout.get()
+    detector = get_detector(inst, mode, detectors)
+    if detector is None:
+        return None
 
-    consistent = is_consistent(
-        inst, mode, aperture, disperser, filter, subarray, readout,
-    )
-    if not consistent:
-        return [None for _ in range(10)]
+    config = {
+        'instrument': inst,
+        'mode': mode,
+        'detector': detector,
+    }
 
-    if mode == 'target_acq':
-        ngroup = input.ngroup_acq.get()
-        disperser = None
-        nint = 1
-    else:
-        ngroup = input.ngroup.get()
-        nint = input.integrations.get()
+    if 'aperture' in args:
+        aperture = input.aperture.get()
+        has_pupils = mode in ['lw_ts', 'sw_ts']
+        if has_pupils and aperture not in detector.pupils:
+            return None
+        if not has_pupils and aperture not in detector.apertures:
+            return None
+        if has_pupils:
+            aperture = detector.pupil_to_aperture[aperture]
+        config['aperture'] = aperture
 
-    # Front-end to back-end exceptions:
-    if mode in ['lw_ts', 'sw_ts']:
-        detector = get_detector(inst, mode, detectors)
-        aperture = detector.pupil_to_aperture[aperture]
-    if mode == 'mrs_ts':
-        aperture = ['ch1', 'ch2', 'ch3', 'ch4']
-    if mode == 'bots':
-        disperser, filter = filter.split('/')
+    if 'disperser' in args:
+        disperser = input.disperser.get()
+        if disperser not in detector.dispersers:
+            return None
+        config['disperser'] = disperser
 
-    order = input.order.get()
-    if mode == 'soss':
-        if filter == 'f277w':
-            order = [1]
+    if 'filter' in args:
+        filter = input.filter.get()
+        if filter not in detector.filters:
+            return None
+        config['filter'] = filter
+
+    if 'subarray' in args:
+        subarray = input.subarray.get()
+        if subarray not in detector.subarrays:
+            return None
+        config['subarray'] = subarray
+
+    if 'readout' in args:
+        readout = input.readout.get()
+        if readout not in detector.readouts:
+            return None
+        config['readout'] = readout
+
+    # Now parse front-end to back-end:
+    if 'ngroup' in args:
+        if mode == 'target_acq':
+            ngroup = int(input.ngroup_acq.get())
+            config['disperser'] = None
         else:
-            order = [int(val) for val in order.split()]
-    else:
-        order = None
+            ngroup = input.ngroup.get()
+        config['ngroup'] = ngroup
 
-    if ngroup is not None:
-        ngroup = int(ngroup)
+    config['nint'] = 1 if mode == 'target_acq' else input.integrations.get()
 
-    return (
-        inst, mode, aperture, disperser, filter,
-        subarray, readout, order, ngroup, nint,
-    )
+    if mode == 'mrs_ts':
+        config['aperture'] = ['ch1', 'ch2', 'ch3', 'ch4']
+
+    if mode == 'bots' and ('disperser' in args or 'filter' in args):
+        if 'filter' not in args:
+            filter = input.filter.get()
+        config['disperser'], config['filter'] = filter.split('/')
+
+    if 'order' in args:
+        if mode == 'soss':
+            if filter == 'f277w':
+                order = [1]
+            else:
+                order = input.order.get()
+                order = [int(val) for val in order.split()]
+        else:
+            order = None
+        config['order'] = order
+
+    # Return in the same order as requested
+    config_list = [config[arg] for arg in args]
+
+    return config_list
 
 
 def get_saturation_values(
@@ -1253,16 +1263,20 @@ def server(input, output, session):
             error_msg = ui.markdown(f"**Error:**<br>{warning}")
             ui.notification_show(error_msg, type="error", duration=8)
 
+
     def run_pandeia(input):
         """
         Perform a pandeia calculation on  science or acquisition target.
         This might be a transit/eclipse TSO or a Pandeia perform_calculation
         call.
         """
-        (inst, mode, aperture, disperser, filter, subarray, readout, order,
-            ngroup, nint) = parse_instrument(input)
+        config = parse_instrument(
+            input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
+            'subarray', 'readout', 'order', 'ngroup', 'nint', 'detector',
+        )
+        inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
+        order, ngroup, nint, detector = config[7:]
 
-        detector = get_detector(inst, mode, detectors)
         inst_label = detector.instrument_label(disperser, filter)
 
         run_is_tso = True
@@ -1653,10 +1667,7 @@ def server(input, output, session):
     @render.ui
     @reactive.event(input.mode)
     def detector_label():
-        inst = input.instrument.get()
         mode = input.mode.get()
-        if not is_consistent(inst, mode):
-            return
         sw_warning = (
             'The SW Grism Time Series mode is still being calibrated; '
             'the SNR and saturation estimates provided by the ETC '
@@ -1674,20 +1685,20 @@ def server(input, output, session):
 
     @reactive.Effect(priority=2)
     @reactive.event(input.instrument, input.mode)
-    def _():
-        inst = input.instrument.get()
-        mode = input.mode.get()
-        if not is_consistent(inst, mode):
+    def update_aperture_and_disperser():
+        config = parse_instrument(input, 'mode', 'detector')
+        if config is None:
             return
-        detector = get_detector(inst, mode, detectors)
+        mode, detector = config
 
         focus = 'science' if mode!='target_acq' else input.target_focus.get()
         ui.update_radio_buttons('target_focus', selected=focus)
 
         # The aperture
         choices = detector.apertures
-        if mode in ['lw_ts', 'sw_ts']:
+        if hasattr(detector, 'pupils'):
             choices = detector.pupils
+
         aperture = input.aperture.get()
         if aperture not in choices:
             aperture = detector.default_aperture
@@ -1728,12 +1739,13 @@ def server(input, output, session):
     @reactive.Effect(priority=2)
     @reactive.event(input.instrument, input.mode, input.aperture)
     def update_filter():
-        inst = input.instrument.get()
-        mode = input.mode.get()
-        aperture = input.aperture.get()
-        if not is_consistent(inst, mode, aperture):
+        config = parse_instrument(input, 'mode', 'aperture', 'detector')
+        if config is None:
             return
-        detector = get_detector(inst, mode, detectors)
+        mode, aperture, detector = config
+
+        # override pupil-to-aperture correction
+        aperture = input.aperture.get()
         choices = detector.get_constrained_val('filters', pupil=aperture)
 
         filter = input.filter.get()
@@ -1755,22 +1767,15 @@ def server(input, output, session):
         input.aperture, input.disperser, input.filter,
     )
     def update_subarray():
-        inst = input.instrument.get()
-        mode = input.mode.get()
-        aper = input.aperture.get()
-        disperser = input.disperser.get()
-        filter = input.filter.get()
-        if not is_consistent(inst, mode, aper, disperser, filter):
+        config = parse_instrument(
+            input, 'mode', 'aperture', 'disperser', 'filter', 'detector',
+        )
+        if config is None:
             return
-        detector = get_detector(inst, mode, detectors)
-
-        if mode == 'bots':
-            disperser = input.filter.get().split('/')[0]
-        else:
-            disperser = input.disperser.get()
+        mode, aperture, disperser, filter, detector = config
 
         if mode in ['sw_tsgrism', 'sw_ts']:
-            constraint = {'aperture': aper}
+            constraint = {'aperture': aperture}
         else:
             constraint = {'disperser': disperser}
         choices = detector.get_constrained_val('subarrays', **constraint)
@@ -1789,14 +1794,12 @@ def server(input, output, session):
         input.aperture, input.disperser, input.subarray,
     )
     def update_readout():
-        inst = input.instrument.get()
-        mode = input.mode.get()
-        aperture = input.aperture.get()
-        disperser = input.disperser.get()
-        subarray = input.subarray.get()
-        if not is_consistent(inst, mode, aperture, disperser, subarray=subarray):
+        config = parse_instrument(
+            input, 'mode', 'aperture', 'disperser', 'subarray', 'detector',
+        )
+        if config is None:
             return
-        detector = get_detector(inst, mode, detectors)
+        mode, aperture, disperser, subarray, detector = config
 
         if mode in ['soss', 'lw_tsgrism']:
             constraint = {'subarray': subarray}
@@ -2602,16 +2605,13 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
     @reactive.Effect
-    @reactive.event(input.subarray)
-    def set_soss_orders():
-        inst = input.instrument.get()
-        mode = input.mode.get()
-        subarray = input.subarray.get()
-        if not is_consistent(inst, mode, subarray=subarray):
+    @reactive.event(input.mode, input.subarray)
+    def update_orders():
+        config = parse_instrument(input, 'mode', 'subarray', 'detector')
+        if config is None or config[0] != 'soss':
             return
-        if mode != 'soss':
-            return
-        detector = get_detector(inst, mode, detectors)
+
+        mode, subarray, detector = config
         choices = detector.get_constrained_val('orders', subarray=subarray)
         order = input.order.get()
         if order not in choices:
@@ -2622,11 +2622,11 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.mode, input.subarray)
     def update_groups_input():
-        inst = input.instrument.get()
-        mode = input.mode.get()
-        subarray = input.subarray.get()
-        if not is_consistent(inst, mode, subarray=subarray):
+        config = parse_instrument(input, 'mode', 'subarray', 'detector')
+        if config is None:
             return
+        mode, subarray, detector = config
+
         if mode == 'target_acq':
             current_value = input.ngroup_acq.get()
         else:
@@ -2645,7 +2645,6 @@ def server(input, output, session):
             value = current_value
 
         if mode == 'target_acq':
-            detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
             if value not in choices:
                 value = choices[0]
@@ -2660,8 +2659,12 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
-        (inst, mode, aperture, disperser, filter, subarray, readout, order,
-            ngroup, nint) = parse_instrument(input)
+        config = parse_instrument(
+            input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
+            'subarray', 'readout', 'order', 'ngroup',
+        )
+        inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
+        order, ngroup = config[7:]
 
         if mode != 'target_acq':
             ngroup = 2
@@ -2731,8 +2734,12 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.saturation_button)
     def ngroup_from_saturation_fraction():
-        (inst, mode, aperture, disperser, filter, subarray, readout, order,
-            ngroup, nint) = parse_instrument(input)
+        config = parse_instrument(
+            input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
+            'subarray', 'readout', 'order', 'ngroup', 'detector',
+        )
+        inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
+        order, ngroup, detector = config[7:]
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
@@ -2769,7 +2776,6 @@ def server(input, output, session):
         ngroup_req = int(req_saturation*ngroup/sat_fraction)
 
         if mode == 'target_acq':
-            detector = get_detector(inst, mode, detectors)
             choices = detector.get_constrained_val('groups', subarray=subarray)
             masked_choices = np.array(choices) <= ngroup_req
             masked_choices[0] = True
@@ -2782,33 +2788,18 @@ def server(input, output, session):
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Viewers
     @render_plotly
+    @reactive.event(
+        input.filter_filter, input.instrument, input.mode,
+        input.aperture, input.disperser, input.filter, input.subarray,
+    )
     def plotly_filters():
         show_all = req(input.filter_filter).get() == 'all'
-        inst = input.instrument.get().lower()
-        mode = input.mode.get()
-        aperture = input.aperture.get()
-        filter = input.filter.get()
-        subarray = input.subarray.get()
-        if not is_consistent(inst, mode, aperture, filter=filter, subarray=subarray):
+        config = throughput_config(input)
+        if config is None:
             return
 
-        if mode == 'lrsslitless':
-            filter = 'None'
-        elif mode == 'mrs_ts':
-            filter = input.disperser.get()
-
-        if mode == 'target_acq':
-            throughputs = filter_throughputs['acquisition']
-            key = subarray
-        elif mode in ['imaging_ts', 'lw_ts', 'sw_ts']:
-            throughputs = filter_throughputs['photometry']
-            detector = get_detector(inst, mode, detectors)
-            if hasattr(detector, 'pupils'):
-                aperture = detector.pupil_to_aperture[aperture]
-            key = aperture
-        else:
-            throughputs = filter_throughputs['spectroscopy']
-            key = subarray
+        obs_type, inst, mode, key, filter = config
+        throughputs = filter_throughputs[obs_type]
 
         fig = plots.plotly_filters(
             throughputs, inst, mode, key, filter, show_all,
@@ -2818,11 +2809,12 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_sed():
-        # Gather bookmarked SEDs
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
-        throughput = get_throughput(input)
+        throughput = throughput_config(input, evaluate=True)
         if throughput is None:
             return
+
+        # Gather bookmarked SEDs
         model_names = bookmarked_spectra['sed']
         if len(model_names) == 0:
             fig = go.Figure()
@@ -2830,7 +2822,7 @@ def server(input, output, session):
             return fig
 
         sed_models = [spectra['sed'][model] for model in model_names]
-        _, _, _, _, current_model = parse_sed(input)
+        current_model = parse_sed(input)[-1]
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
@@ -2847,13 +2839,20 @@ def server(input, output, session):
         return fig
 
 
-    @output
     @render_plotly
+    @reactive.event(
+        input.bookmark_depth, update_depth_flag,
+        input.plot_depth_xscale, input.depth_wl_min, input.depth_wl_max,
+        input.plot_depth_units, input.depth_resolution, input.obs_geometry,
+        input.instrument, input.mode,
+        input.aperture, input.disperser, input.filter, input.subarray,
+    )
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
-        throughput = get_throughput(input)
+        throughput = throughput_config(input, evaluate=True)
         if throughput is None:
             return
+
         update_depth_flag.get()
         obs_geometry = input.obs_geometry.get()
         model_names = bookmarked_spectra[obs_geometry]
@@ -2865,9 +2864,9 @@ def server(input, output, session):
             return fig
 
         current_model = planet_model_name(input)
-        units = input.plot_depth_units.get()
         wl_scale = input.plot_depth_xscale.get()
         wl_range = [input.depth_wl_min.get(), input.depth_wl_max.get()]
+        units = input.plot_depth_units.get()
         resolution = input.depth_resolution.get()
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
@@ -2964,8 +2963,16 @@ def server(input, output, session):
         saturation_label.get()
         input.ta_sed.get()
 
-        (inst, mode, aperture, disperser, filter, subarray, readout, order,
-            ngroup, nint) = parse_instrument(input)
+        config = parse_instrument(
+            input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
+            'subarray', 'readout', 'order', 'ngroup', 'nint',
+        )
+        if config is None:
+            warning_text.set(warnings)
+            return ui.HTML('<pre> </pre>')
+
+        inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
+        order, ngroup, nint = config[7:]
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
@@ -2978,7 +2985,7 @@ def server(input, output, session):
         depth_label = parse_obs(input)[1]
         transit_dur = float(input.t_dur.get())
 
-        if inst is None or ngroup is None or parse_sed(input)[-1] is None:
+        if ngroup is None or parse_sed(input)[-1] is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
 
