@@ -234,7 +234,7 @@ class PandeiaCalculation():
         """
         Make sure that reference wavelength is in the range of the detector
         """
-        if self.mode == 'target_acq':
+        if self.mode in ['target_acq', 'imaging_ts', 'lw_ts', 'sw_ts']:
             return
         if 'reference_wavelength' not in self.calc['strategy']:
             self.calc['strategy']['reference_wavelength'] = -1.0
