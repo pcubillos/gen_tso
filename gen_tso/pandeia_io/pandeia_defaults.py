@@ -889,6 +889,11 @@ def make_detector_label(
         return f'NIRCam {filter.upper()} {subarray} {readout}'
     if mode == 'sw_tsgrism':
         return f'NIRCam {filter.upper()} {subarray} {readout}'
+    if mode == 'lw_ts':
+        subarray = subarray.replace('grism', '').replace('_dhs', '')
+        return f'NIRCam imaging {filter.upper()} {subarray} {readout}'
+    if mode == 'sw_ts':
+        return f'NIRCam imaging {filter.upper()} {subarray} {readout}'
 
     if mode == 'bots':
         if filter == 'f070lp':
