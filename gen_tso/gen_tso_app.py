@@ -594,8 +594,17 @@ app_ui = ui.page_fluid(
                 ui.output_ui(id='detector_label'),
                 class_="bg-primary",
             ),
-            # Aperture/disperser/filter
+            # pairing / aperture / disperser / filter
             ui.panel_well(
+                ui.panel_conditional(
+                    "input.mode == 'sw_ts'",
+                    ui.input_select(
+                        id="pairing",
+                        label="LW Pairing",
+                        choices=detectors[8].pairings,
+                        selected=list(detectors[8].pairings)[1],
+                    ),
+                ),
                 ui.panel_conditional(
                     "['sw_tsgrism', 'bots', 'sw_ts', 'lw_ts', 'target_acq'].includes(input.mode)",
                     ui.input_select(
@@ -625,7 +634,7 @@ app_ui = ui.page_fluid(
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
-            # subarray / readout
+            # subarray / readout / order
             ui.panel_well(
                 ui.input_select(
                     id="subarray",
@@ -1684,7 +1693,7 @@ def server(input, output, session):
 
 
     @reactive.Effect(priority=2)
-    @reactive.event(input.instrument, input.mode)
+    @reactive.event(input.instrument, input.mode, input.pairing)
     def update_aperture_and_disperser():
         config = parse_instrument(input, 'mode', 'detector')
         if config is None:
@@ -1697,11 +1706,14 @@ def server(input, output, session):
         # The aperture
         choices = detector.apertures
         if hasattr(detector, 'pupils'):
-            choices = detector.pupils
+            pairing = input.pairing.get()
+            choices = detector.get_constrained_val('pupils', pairing=pairing)
 
         aperture = input.aperture.get()
         if aperture not in choices:
             aperture = detector.default_aperture
+        if aperture not in choices:
+            aperture = list(choices)[0]
         ui.update_select(
             'aperture',
             label=detector.aperture_label,

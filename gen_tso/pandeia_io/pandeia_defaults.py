@@ -324,10 +324,6 @@ def get_configs(instrument=None, obs_type=None):
             inst_dict['pupil_to_aperture'] = pupil_to_aperture
 
         if mode == 'sw_ts':
-            pairing = {
-                'imaging': 'LW Imaging Time Series',
-                'grism': 'LW Grism Time Series',
-            }
             inst_dict['constraints']['filters']['apertures'] = constraints
             constraints = {
                 aper: get_constraints(
@@ -336,6 +332,18 @@ def get_configs(instrument=None, obs_type=None):
                 for aper in apertures
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
+            pairings = {
+                'imaging': 'LW Imaging Time Series',
+                'grism': 'LW Grism Time Series',
+            }
+            constraints = {pairing: [] for pairing in pairings}
+            for pupil in inst_dict['pupils']:
+                if inst_dict['pupil_to_aperture'][pupil] in ['sw', 'wlp8__ts']:
+                    constraints['imaging'].append(pupil)
+                else:
+                    constraints['grism'].append(pupil)
+            inst_dict['pairings'] = pairings
+            inst_dict['constraints']['pupils'] = {'pairings': constraints}
 
         # NIRSpec
         if mode == 'bots':
@@ -484,7 +492,7 @@ class Detector:
     def get_constrained_val(
             self, var,
             disperser=None, filter=None, subarray=None, readout=None,
-            aperture=None, pupil=None,
+            aperture=None, pupil=None, pairing=None,
         ):
         """
         det = generate_all_instruments()[5]
@@ -502,6 +510,7 @@ class Detector:
             'readouts': readout,
             'apertures': aperture,
             'pupils': pupil,
+            'pairings': pairing,
         }
 
         default_vals = getattr(self, var)
@@ -742,6 +751,8 @@ def generate_all_instruments():
         if mode in ['lw_ts', 'sw_ts']:
             det.pupils = inst['pupils']
             det.pupil_to_aperture = inst['pupil_to_aperture']
+        if mode == 'sw_ts':
+            det.pairings = inst['pairings']
 
     # Acquisition observing modes
     acq_insts = get_configs(obs_type='acquisition')
@@ -751,6 +762,7 @@ def generate_all_instruments():
         apertures = inst['apertures']
         disperser_label = 'Disperser'
         dispersers = inst['dispersers']
+        dispersers = {'':''}
         filter_label = 'Filter'
         filters = inst['filters']
         subarrays = inst['subarrays']
@@ -871,11 +883,13 @@ def make_detector_label(
     if mode == 'soss':
         order = f' O{order[0]}' if len(order)==1 else ''
         return f'NIRISS {mode.upper()} {subarray}{order}'
+
     if mode == 'lw_tsgrism':
         subarray = subarray.replace('grism', '').replace('_dhs', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
     if mode == 'sw_tsgrism':
         return f'NIRCam {filter.upper()} {subarray} {readout}'
+
     if mode == 'bots':
         if filter == 'f070lp':
             disperser = f'{disperser}/{filter}'
