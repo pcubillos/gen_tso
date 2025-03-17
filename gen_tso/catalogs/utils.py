@@ -186,12 +186,14 @@ def normalize_name(target):
     # Prefixes
     name = name.replace('GL', 'GJ')
     prefixes = [
-        'L', 'G', 'HD', 'GJ', 'LTT', 'LHS', 'HIP', 'WD', 'LP', '2MASS', 'PSR',
+        'L', 'G', 'HD', 'GJ', 'LTT', 'LHS', 'HIP', 'WD',
+        'LP', '2MASS', 'PSR', 'IRAS', 'TYC', 'TIC', 'PSO',
     ]
     for prefix in prefixes:
         prefix_len = len(prefix)
         if name.startswith(prefix) and not name[prefix_len].isalpha():
             name = name.replace(f'{prefix}-', f'{prefix} ')
+            name = name.replace(f'{prefix}_', f'{prefix} ')
             if name[prefix_len] != ' ':
                 name = f'{prefix} ' + name[prefix_len:]
 
@@ -207,6 +209,8 @@ def normalize_name(target):
     # Planet letter is in the name
     if name.lower().endswith('b') and not name[-2].isalpha():
         name = name[:-1]
+    if name.lower().endswith('d') and not name[-2].isalpha():
+        name = name[:-1]
 
     # Custom corrections
     name = name.replace('-offset', '')
@@ -216,7 +220,7 @@ def normalize_name(target):
     if name.endswith('-'):
         name = name[:-1]
 
-    if name in ['55CNC', 'RHO01-CNC', '-RHO01-CNC']:
+    if name.upper() in ['55CNC', 'RHO01-CNC', '-RHO01-CNC']:
         name = '55 Cnc'
     if name == 'WD 1856':
         name = 'WD 1856+534'
