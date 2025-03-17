@@ -5,6 +5,7 @@ __all__ = [
     'find_target',
     'Catalog',
     'load_trexolists',
+    'load_programs',
     'load_targets',
     'load_aliases',
 ]
@@ -19,9 +20,10 @@ import prompt_toolkit as ptk
 from astropy.coordinates import Angle, SkyCoord
 from astropy.units import hourangle, deg
 
-from ..utils import ROOT
+from ..utils import ROOT, KNOWN_PROGRAMS
 from . import utils as u
 from .target import Target
+from .fetch_programs import parse_program
 
 
 def find_target(targets=None):
@@ -419,6 +421,76 @@ def load_trexolists(grouped=False, trexo_file=None):
                 target[key] = [trexo_data[key][idx] for idx in indices]
             else:
                 target[key] = trexo_data[key][indices]
+        grouped_data.append(target)
+
+    return grouped_data
+
+
+def load_programs(grouped=False, verbose=False):
+    """
+    Get the data from the downloaded JWST programs (xml files)
+    Note that the programs know targets by host star, not by
+    individual planets in a given system.
+
+    Parameters
+    ----------
+    grouped: Bool
+        - If False, return a 1D list of all observations
+        - If True, return a nested list of observations grouped by
+          host target.
+    verbose: Bool
+        If True and there were program files not found, show a
+        warning in the screen outputs and tell how to fetch the files.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> programs = cat.load_programs()
+    """
+    observations = []
+    for pid in KNOWN_PROGRAMS:
+        not_found = []
+        try:
+            obs = parse_program(pid)
+            observations += obs
+        except FileNotFoundError:
+            not_found.append(pid)
+
+    if len(not_found) > 0 and verbose:
+        print(
+            f'There are missing JWST-program files.  '
+            f'Fetch from the command line with:\n  tso --update_programs'
+            f'\n\nMissing programs:\n{not_found}'
+        )
+
+    for obs in observations:
+        target = obs['target']
+        norm_target = u.normalize_name(target)
+        obs['target'] = norm_target
+        obs['target_in_program'] = target
+
+    if not grouped:
+        return observations
+
+    # Use RA and dec to detect aliases for a same object
+    ra = [Angle(obs['ra'], unit=hourangle).deg for obs in observations]
+    dec = [Angle(obs['dec'], unit=deg).deg for obs in observations]
+    coords = SkyCoord(ra, dec, unit='deg', frame='icrs')
+
+    nobs = len(observations)
+    taken = np.zeros(nobs, bool)
+    group_indices = []
+    for i in range(nobs):
+        if taken[i]:
+            continue
+        seps = coords[i].separation(coords).to('arcsec').value
+        indices = np.where(seps < 50)[0]
+        taken[indices] = True
+        group_indices.append(indices)
+
+    grouped_data = []
+    for i,indices in enumerate(group_indices):
+        target = [observations[j] for j in indices]
         grouped_data.append(target)
 
     return grouped_data
