@@ -44,6 +44,7 @@ KNOWN_PROGRAMS = [
     8846, 8864, 8877, 9025, 9033, 9095, 9101,
 ]
 
+
 def check_latest_version(package):
     response = requests.get(f'https://pypi.org/pypi/{package}/json')
     latest_version = response.json()['info']['version']

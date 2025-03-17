@@ -35,7 +35,6 @@ import pyratbay.constants as pc
 import requests
 
 from ..utils import ROOT
-from .catalogs import Catalog
 from .utils import (
     normalize_name,
     get_host,
@@ -175,7 +174,7 @@ def fetch_jwst_programs(programs, apt_command=None, output_path=None):
         output_path = f'{ROOT}data/programs/'
 
     # Fetch status xml files
-    status_programs = _fetch_programs(programs, output_path, 'status')
+    _fetch_programs(programs, output_path, 'status')
 
     # Fetch APT files, export to xml
     apt_programs = _fetch_programs(programs, output_path, 'APT')
@@ -266,10 +265,13 @@ def _parse_window(window_text):
     window: String
         A string representation of the start - end date span
     """
-    window_format = "%b %d, %Y"
+    if "(" not in window_text:
+        return "not yet assigned"
+
     idx_end = window_text.index('(')
     dates = window_text[0:idx_end].split('-')
 
+    window_format = "%b %d, %Y"
     start = datetime.strptime(dates[0].strip(), window_format)
     end = datetime.strptime(dates[1].strip(), window_format)
     start_date = start.strftime('%Y-%m-%d')
@@ -375,7 +377,7 @@ def guess_event_type(obs):
     if event == '':
         obs_id = obs['observation']
         visit = obs['visit']
-        print(f'{pid} {obs_id:3} {visit}  Missing')
+        print(f'{pid} {obs_id:3} {visit}  Could not identify event type')
     return event
 
 
@@ -440,7 +442,7 @@ def parse_program(pid, path=None):
     observations: List of dictionaries
         Dictionaries with the observations information:
         - The program's category, PI and PID, and proprietary period
-        - The target's name, RA, and dec
+        - The target's name, ra, and dec
         - The observation's number, visit, duration (hours),
           status, start and end dates (or planned window), labels,
           and event type (eclipse, transit, or phase curve)
@@ -457,6 +459,7 @@ def parse_program(pid, path=None):
 
     # The program
     pi_category = root.find('.//apt:ProposalCategory', ns).text
+    cycle = root.find('.//apt:Cycle', ns).text
     prop = root.find('.//apt:ProprietaryPeriod', ns).text
     proprietary_period = prop[prop.find('[')+1:prop.find(' Month')]
     path = ".//apt:PrincipalInvestigator/apt:InvestigatorAddress/apt:LastName"
@@ -472,8 +475,11 @@ def parse_program(pid, path=None):
         archive_name = child.find('apt:TargetArchiveName', ns)
         if archive_name is not None:
             target['archive_name'] = archive_name.text
-        coords = child.find('apt:EquatorialCoordinates', ns).get('Value')
-        target['RA'] = ':'.join(coords.split()[0:3])
+        coords = child.find('apt:EquatorialCoordinates', ns)
+        if coords is None:
+            continue
+        coords = coords.get('Value')
+        target['ra'] = ':'.join(coords.split()[0:3])
         target['dec'] = ':'.join(coords.split()[3:6])
         epoch = child.find('apt:Epoch', ns)
         if epoch is not None:
@@ -490,6 +496,7 @@ def parse_program(pid, path=None):
                 'category': pi_category,
                 'pi': pi_lastname,
                 'pid': str(pid),
+                'cycle': int(cycle),
                 'proprietary': proprietary_period,
             }
             reqs = np.unique([
@@ -520,7 +527,7 @@ def parse_program(pid, path=None):
 
             target_id = obs.find('apt:TargetID', ns).text
             observation['target'] = targets[target_id]['name']
-            observation['RA'] = targets[target_id]['RA']
+            observation['ra'] = targets[target_id]['ra']
             observation['dec'] = targets[target_id]['dec']
             observation['instrument'] = obs.find('apt:Instrument', ns).text
 
@@ -644,7 +651,7 @@ def get_observation_host(obs, targets):
     return None
 
 
-def get_planet_letters(obs, targets=None, verbose=False):
+def get_planet_letters(obs, targets, verbose=False):
     """
     Find the planet(s) targeted by a given JWST observation
     These are found from the observations info by looking at:
@@ -664,14 +671,18 @@ def get_planet_letters(obs, targets=None, verbose=False):
     -------
     planet_letters: List of strings
         List of all planets (known to be) targetted by an observation.
-    """
-    if targets is None:
-        catalog = Catalog()
-        targets = [
-            target for target in catalog.targets
-            if target.is_transiting
-        ]
 
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> obs = cat.parse_program(pid=3712)
+
+    >>> targets = [
+    >>>     target for target in cat.Catalog().targets
+    >>>     if target.is_transiting
+    >>> ]
+    >>> letters = cat.get_planet_letters(obs[0], targets)
+    """
     pid = obs["pid"]
     obs_id = obs["observation"]
     visit = obs["visit"]
@@ -695,9 +706,6 @@ def get_planet_letters(obs, targets=None, verbose=False):
         hosts = [get_host(alias) for alias in aliases]
         if name in hosts:
             planets.append(target)
-    if len(planets) == 0:
-        print(f'{repr(name)} not found!')
-        return []
 
     # Single-planet systems
     if len(planets) == 1:
@@ -705,30 +713,33 @@ def get_planet_letters(obs, targets=None, verbose=False):
         return planet_letters
 
     # From label
-    obs_label = obs['label']
-    hosts = [planets[0].host] + [get_host(a) for a in planets[0].aliases]
-    label = _clean_label(obs_label.lower(), hosts)
-    planet_letters = _planet_from_label(label)
-    if len(planet_letters) > 0:
-        if verbose:
-            print(f'{info}{repr(obs_label)}  {planet_letters}')
-        return planet_letters
+    if len(planets) > 0:
+        obs_label = obs['label']
+        hosts = [planets[0].host] + [get_host(a) for a in planets[0].aliases]
+        label = _clean_label(obs_label.lower(), hosts)
+        planet_letters = _planet_from_label(label)
+        if len(planet_letters) > 0:
+            if verbose:
+                print(f'{info}{repr(obs_label)}  {planet_letters}')
+            return planet_letters
 
-    # From period
-    if 'period' in obs:
-        planet_letters = [_planet_from_period(obs, planets)]
-        if verbose:
-            period = obs["period"]
-            periods = np.round([p.period for p in planets], 1)
-            print(f'{info}{name:15}{period:6.1f}  {periods}  {planet_letters}')
-        return planet_letters
+        # From period
+        if 'period' in obs:
+            planet_letters = [_planet_from_period(obs, planets)]
+            if verbose:
+                period = obs["period"]
+                periods = np.round([p.period for p in planets], 1)
+                print(f'{info}{name:15}{period:6.1f}  {periods}  {planet_letters}')
+            return planet_letters
 
     # else, hardcoded patching:
+    if pid=='8739':
+        return ['b']
     if pid=='2420' and obs_id=='5' and visit=='1':
         return ['c']
     if pid=='3818' and obs_id=='2' and visit=='1':
         return ['d']
 
-    #print(f'No planet info for: {info}  {name:15}  {repr(obs_label)}')
+    print(f'Could not determine planet for {repr(name)} (PID={pid})')
     return []
 
