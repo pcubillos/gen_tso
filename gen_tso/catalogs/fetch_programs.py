@@ -441,13 +441,18 @@ def parse_program(pid, path=None):
     -------
     observations: List of dictionaries
         Dictionaries with the observations information:
-        - The program's category, PI and PID, and proprietary period
+        - The program's category, PI and PID, cycle, and proprietary period
         - The target's name, ra, and dec
         - The observation's number, visit, duration (hours),
           status, start and end dates (or planned window), labels,
           and event type (eclipse, transit, or phase curve)
         - The instrument, detector mode, disperser, filter,
           subarray, readout, groups, and integrations.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> obs = cat.parse_program(pid=3712)
     """
     if path is None:
         path = f'{ROOT}data/programs/'

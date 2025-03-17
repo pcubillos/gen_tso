@@ -44,7 +44,15 @@ def main():
         import gen_tso.catalogs as cat
         cat.update_exoplanet_archive()
 
-    if '--update_db' not in sys.argv and '--update_exo' not in sys.argv:
+    if '--update_programs' in sys.argv:
+        import gen_tso.catalogs as cat
+        cat.fetch_jwst_programs()
+
+    if (
+        '--update_db' not in sys.argv and
+        '--update_exo' not in sys.argv and
+        '--update_programs' not in sys.argv
+    ):
         reload = '--debug' in sys.argv
         app = os.path.realpath(os.path.dirname(__file__)) + '/gen_tso_app.py'
         run_app(app, reload=reload, launch_browser=True, dev_mode=False)
