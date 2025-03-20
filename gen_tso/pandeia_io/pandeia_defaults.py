@@ -842,7 +842,7 @@ def make_save_label(
 
     if mode == 'mrs':
         return f'tso{target}_{inst}_{mode}_{aperture}.pickle'
-    elif mode == 'ts_imaging':
+    elif mode == 'imaging_ts':
         return f'tso{target}_{inst}_{mode}_{filter}.pickle'
     elif mode in ['lrs', 'soss']:
         return f'tso{target}_{inst}_{mode}.pickle'
@@ -893,7 +893,7 @@ def make_detector_label(
         subarray = subarray.replace('grism', '').replace('_dhs', '')
         return f'NIRCam imaging {filter.upper()} {subarray} {readout}'
     if mode == 'sw_ts':
-        return f'NIRCam imaging {filter.upper()} {subarray} {readout}'
+        return f'NIRCam imaging {aperture} {filter.upper()} {subarray} {readout}'
 
     if mode == 'bots':
         if filter == 'f070lp':
