@@ -674,6 +674,7 @@ app_ui = ui.page_fluid(
                         id="ngroup_acq",
                         label="",
                         choices=[''],
+                        selected='3',
                     ),
                 ),
                 ui.panel_conditional(
@@ -1077,6 +1078,15 @@ def parse_instrument(input, *args):
         config['readout'] = readout
 
     # Now parse front-end to back-end:
+    if 'pairing' in args:
+        if mode == 'sw_ts':
+            config['pairing'] = input.pairing.get()
+        else:
+            config['pairing'] = None
+
+    if 'pupil' in args:
+        config['pupil'] = input.aperture.get()
+
     if 'ngroup' in args:
         if mode == 'target_acq':
             ngroup = int(input.ngroup_acq.get())
@@ -1171,7 +1181,6 @@ def server(input, output, session):
     warning_text = reactive.Value('')
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
-    preset_ngroup = reactive.Value(None)
     preset_sed = reactive.Value(None)
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
@@ -1281,10 +1290,11 @@ def server(input, output, session):
         """
         config = parse_instrument(
             input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
-            'subarray', 'readout', 'order', 'ngroup', 'nint', 'detector',
+            'subarray', 'readout', 'order', 'ngroup', 'nint',
+            'pairing', 'pupil', 'detector',
         )
         inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
-        order, ngroup, nint, detector = config[7:]
+        order, ngroup, nint, pairing, pupil, detector = config[7:]
 
         inst_label = detector.instrument_label(disperser, filter)
 
@@ -1343,14 +1353,13 @@ def server(input, output, session):
             spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
             bookmarked_spectra['sed'].append(sed_label)
 
+        depth_label, wl, depth = parse_depth_model(input)
         if not run_is_tso:
-            depth_label = ''
             tso = pando.perform_calculation(
                 ngroup, nint,
                 disperser, filter, subarray, readout, aperture, order,
             )
         else:
-            depth_label, wl, depth = parse_depth_model(input)
             if depth_label is None:
                 msg = f"**Error:**<br>No {obs_geometry} depth model to simulate"
                 ui.notification_show(ui.markdown(msg), type="error", duration=5)
@@ -1402,6 +1411,8 @@ def server(input, output, session):
             teq_planet=teq_planet,
             target_focus=target_focus,
             # The instrumental setting
+            pairing=pairing,
+            pupil=pupil,
             aperture=aperture,
             disperser=disperser,
             filter=filter,
@@ -1464,7 +1475,7 @@ def server(input, output, session):
         print('~~ TSO done! ~~')
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.display_tso_run)
     def update_full_state():
         """
@@ -1494,27 +1505,33 @@ def server(input, output, session):
         order = tso['order']
         ngroup = tso['ngroup']
 
-        # Schedule preset values for invalidation:
-        if mode != input.mode.get() or subarray != input.subarray.get():
-            preset_ngroup.set(
-                {'mode':mode, 'subarray':subarray, 'ngroup':ngroup}
-            )
-
         ui.update_navs('instrument', selected=instrument)
         mode_choices = modes[instrument]
         ui.update_select('mode', choices=mode_choices, selected=mode)
+
+        pairing = tso['pairing']
+        if mode == 'sw_ts':
+            ui.update_select('pairing', selected=pairing)
+
+        apertures = detector.apertures
+        if hasattr(detector, 'pupils'):
+            aperture = tso['pupil']
+            apertures = detector.get_constrained_val('pupils', pairing=pairing)
         ui.update_select(
             'aperture',
             label=detector.aperture_label,
-            choices=detector.apertures,
+            choices=apertures,
             selected=aperture,
         )
+
         ui.update_select(
             'disperser',
             label=detector.disperser_label,
             choices=detector.dispersers,
             selected=disperser,
         )
+
+        choices = detector.get_constrained_val('filters', pupil=aperture)
         ui.update_select(
             'filter',
             label=detector.filter_label,
@@ -1522,16 +1539,17 @@ def server(input, output, session):
             selected=filter,
         )
 
-        if mode == 'sw_tsgrism':
+        if mode in ['sw_tsgrism', 'sw_ts']:
             constraint = {'aperture': aperture}
         else:
             constraint = {'disperser': disperser}
         choices = detector.get_constrained_val('subarrays', **constraint)
         ui.update_select('subarray', choices=choices, selected=subarray)
 
+
         if mode in ['soss', 'lw_tsgrism']:
             constraint = {'subarray': subarray}
-        elif mode == 'target_acq':
+        elif mode in ['target_acq']:
             constraint = {'aperture': aperture}
         else:
             constraint = {'disperser': disperser}
@@ -1545,10 +1563,13 @@ def server(input, output, session):
 
         if mode == 'target_acq':
             if ngroup != input.ngroup_acq.get():
-                ui.update_select(id='ngroup_acq', selected=ngroup)
+                ngroup = str(ngroup)
+                choices = detector.get_constrained_val('groups', subarray=subarray)
+                ui.update_select('ngroup_acq', choices=choices, selected=ngroup)
         else:
             if ngroup != input.ngroup.get():
-                ui.update_numeric(id='ngroup', value=ngroup)
+                ui.update_numeric('ngroup', value=ngroup)
+
 
         # The target:
         current_target = input.target.get()
@@ -2634,39 +2655,28 @@ def server(input, output, session):
     @reactive.Effect
     @reactive.event(input.mode, input.subarray)
     def update_groups_input():
-        config = parse_instrument(input, 'mode', 'subarray', 'detector')
+        config = parse_instrument(
+            input, 'mode', 'aperture', 'disperser', 'filter',
+            'subarray', 'detector',
+        )
         if config is None:
             return
-        mode, subarray, detector = config
+        mode, aperture, disperser, filter, subarray, detector = config
 
         if mode == 'target_acq':
-            current_value = input.ngroup_acq.get()
+            ngroup = input.ngroup_acq.get()
         else:
-            current_value = input.ngroup.get()
-
-        preset = preset_ngroup.get()
-        has_preset = (
-            preset is not None and
-            preset['mode'] == mode and
-            preset['subarray'] == subarray
-        )
-        if has_preset:
-            value = preset['ngroup']
-            preset_ngroup.set(None)
-        else:
-            value = current_value
+            ngroup = input.ngroup.get()
 
         if mode == 'target_acq':
             choices = detector.get_constrained_val('groups', subarray=subarray)
-            if value not in choices:
-                value = choices[0]
-            ui.update_select(
-                id="ngroup_acq",
-                choices=choices,
-                selected=str(value),
-            )
+            if not ngroup.isnumeric() or int(ngroup) not in choices:
+                ngroup = choices[0]
+            ngroup = str(ngroup)
+            ui.update_select(id="ngroup_acq", choices=choices, selected=ngroup)
         else:
-            ui.update_numeric(id="ngroup", value=value)
+            ui.update_numeric(id="ngroup", value=ngroup)
+
 
     @reactive.Effect
     @reactive.event(input.calc_saturation)
@@ -2791,9 +2801,10 @@ def server(input, output, session):
             choices = detector.get_constrained_val('groups', subarray=subarray)
             masked_choices = np.array(choices) <= ngroup_req
             masked_choices[0] = True
-            selected = np.array(choices)[masked_choices][-1]
-            ui.update_select(id='ngroup_acq', selected=str(selected))
+            ngroup = str(np.array(choices)[masked_choices][-1])
+            ui.update_select(id='ngroup_acq', choices=choices, selected=ngroup)
         else:
+            ngroup_req = int(np.clip(ngroup_req, 2, np.inf))
             ui.update_numeric(id='ngroup', value=ngroup_req)
 
 
