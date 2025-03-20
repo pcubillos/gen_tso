@@ -37,6 +37,7 @@ from pyratbay.tools import u
 import prompt_toolkit
 
 from ..utils import format_text
+from .pandeia_defaults import filter_throughputs
 
 
 def read_noise_variance(report, ins_config):
@@ -56,16 +57,17 @@ def read_noise_variance(report, ins_config):
         The instrumental read noise (electrons per pixel?)
     """
     report_config = report['input']['configuration']['instrument']
-    if report_config['mode'] == 'mrs_ts':
-        aperture = report_config['aperture']
-        aperture = ins_config['aperture_config'][aperture]['detector']
-    elif report_config['mode'] == 'sw_tsgrism':
+    if report_config['mode'] in ['sw_tsgrism', 'sw_ts']:
         aperture = report_config['aperture']
         noise = ins_config['detector_config']['sw']['rn']
         if aperture not in noise:
             aperture = 'default'
         read_noise = noise[aperture]
         return read_noise
+
+    if report_config['mode'] == 'mrs_ts':
+        aperture = report_config['aperture']
+        aperture = ins_config['aperture_config'][aperture]['detector']
     else:
         aperture = report_config['aperture']
 
@@ -436,9 +438,13 @@ def load_sed_list(source):
     sed_path = sed.default_refdata_directory
     with open(f'{sed_path}/sed/{source}/spectra.json', 'r') as f:
         info = json.load(f)
-    teff = np.array([model['teff'] for model in info.values()])
-    log_g = np.array([model['log_g'] for model in info.values()])
     names = np.array([model['display_string'] for model in info.values()])
+    if source == 'bt_settl':
+        teff = np.array([model.split()[1] for model in names], dtype=float)
+        log_g = np.array([model.split()[2] for model in names], dtype=float)
+    else:
+        teff = np.array([model['teff'] for model in info.values()])
+        log_g = np.array([model['log_g'] for model in info.values()])
     keys = np.array(list(info.keys()))
     tsort = np.argsort(teff)[::-1]
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
@@ -560,7 +566,7 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
 
     if sed_type == 'flat':
         sed['unit'] = sed_model
-    elif sed_type in ['phoenix', 'k93models']:
+    elif sed_type in ['phoenix', 'k93models', 'bt_settl']:
         sed['key'] = sed_model
     elif sed_type == 'blackbody':
         sed['temp'] = sed_model
@@ -650,7 +656,7 @@ def extract_sed(scene, wl_range=None):
     )
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
     if normalization.type == 'none':
-        if sed_model.sed_type in ['phoenix', 'k93models']:
+        if sed_model.sed_type in ['phoenix', 'k93models', 'bt_settl']:
             # Convert wavelengths from A to um:
             wave *= 1e-4  # pc.A / pc.um
         if sed_model.sed_type == 'blackbody':
@@ -846,38 +852,61 @@ def simulate_tso(
     var_out = tso['var_out'] * n_obs
     wl = tso['wl']
 
-    # Binning
-    wl_min = np.amin(wl)
-    wl_max = np.amax(wl)
-    if resolution is not None:
-        bin_edges = constant_resolution_spectrum(wl_min, wl_max, resolution)
-        bin_edges = np.append(bin_edges, wl_max)
-    elif bins is not None:
-        bin_edges = np.copy(bins)
-        if bins[0] > wl_min:
-            bin_edges = np.append(wl_min, bin_edges)
-        else:
-            bin_edges[0] = wl_min
-        if bins[-1] < wl_max:
-            bin_edges = np.append(bin_edges, wl_max)
-        else:
-            bin_edges[-1] = wl_max
-    else:
-        bin_edges = 0.5* (wl[1:] + wl[:-1])
+    # Photometry
+    if len(wl) == 1:
+        bin_in = flux_in
+        bin_out = flux_out
+        bin_vin = var_in
+        bin_vout = var_out
+        # get throughput
+        config = tso['report_in']['input']['configuration']['instrument']
+        inst = config['instrument']
+        mode = config['mode']
+        aperture = config['aperture']
+        filter = config['filter']
+        throughputs = filter_throughputs()['photometry']
+        passband = throughputs[inst][mode][aperture][filter]
+        # Bandwidth (see NIRCam filters jdocs, Rieke+2008, Eq 1):
+        band_wl = passband['wl']
+        response = passband['response']
+        bin_wl = wl
+        bin_widths = np.array([
+            np.trapezoid(response, band_wl) / np.amax(response)
+        ])
 
-    bin_wl = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-    bin_widths = bin_wl - bin_edges[:-1]
-    nbins = len(bin_wl)
-    bin_out = np.zeros(nbins)
-    bin_in = np.zeros(nbins)
-    bin_vout = np.zeros(nbins)
-    bin_vin = np.zeros(nbins)
-    for i in range(nbins):
-        bin_mask = (wl>=bin_edges[i]) & (wl<bin_edges[i+1])
-        bin_out[i] = np.sum(flux_out[bin_mask])
-        bin_in[i] = np.sum(flux_in[bin_mask])
-        bin_vout[i] = np.sum(var_out[bin_mask])
-        bin_vin[i] = np.sum(var_in[bin_mask])
+    # Spectroscopy binning
+    else:
+        wl_min = np.amin(wl)
+        wl_max = np.amax(wl)
+        if resolution is not None:
+            bin_edges = constant_resolution_spectrum(wl_min, wl_max, resolution)
+            bin_edges = np.append(bin_edges, wl_max)
+        elif bins is not None:
+            bin_edges = np.copy(bins)
+            if bins[0] > wl_min:
+                bin_edges = np.append(wl_min, bin_edges)
+            else:
+                bin_edges[0] = wl_min
+            if bins[-1] < wl_max:
+                bin_edges = np.append(bin_edges, wl_max)
+            else:
+                bin_edges[-1] = wl_max
+        else:
+            bin_edges = 0.5* (wl[1:] + wl[:-1])
+
+        bin_wl = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        bin_widths = bin_wl - bin_edges[:-1]
+        nbins = len(bin_wl)
+        bin_out = np.zeros(nbins)
+        bin_in = np.zeros(nbins)
+        bin_vout = np.zeros(nbins)
+        bin_vin = np.zeros(nbins)
+        for i in range(nbins):
+            bin_mask = (wl>=bin_edges[i]) & (wl<bin_edges[i+1])
+            bin_out[i] = np.sum(flux_out[bin_mask])
+            bin_in[i] = np.sum(flux_in[bin_mask])
+            bin_vout[i] = np.sum(var_out[bin_mask])
+            bin_vin[i] = np.sum(var_in[bin_mask])
 
     bin_err = np.sqrt(
         (dt_out/dt_in/bin_out)**2.0 * bin_vin +
