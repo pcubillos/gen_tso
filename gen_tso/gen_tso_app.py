@@ -673,7 +673,7 @@ app_ui = ui.page_fluid(
                     ui.input_select(
                         id="ngroup_acq",
                         label="",
-                        choices=[''],
+                        choices=['3'],
                         selected='3',
                     ),
                 ),

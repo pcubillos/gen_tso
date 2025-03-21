@@ -60,8 +60,8 @@ class PandeiaCalculation():
     mode: string
         Observing mode. If not set, default to the first item for
         each instrument from this list below:
+
         Spectroscopy: instrument  mode
-        ------------------------------
                       miri        lrsslitless
                       miri        mrs_ts
                       nircam      lw_tsgrism
@@ -102,6 +102,7 @@ class PandeiaCalculation():
         # Set default config for TSO:
         detector = get_detector(self.instrument, self.mode, detectors)
         self._detector = detector
+        aperture = detector.default_aperture
         disperser = detector.default_disperser
         filter = detector.default_filter
         subarray = detector.default_subarray
@@ -110,7 +111,7 @@ class PandeiaCalculation():
             disperser, filter = filter.split('/')
 
         if self.mode == 'target_acq':
-            self.calc['configuration']['instrument']['aperture'] = disperser
+            self.calc['configuration']['instrument']['aperture'] = aperture
         else:
             self.calc['configuration']['instrument']['disperser'] = disperser
         self.calc['configuration']['instrument']['filter'] = filter
@@ -608,20 +609,25 @@ class PandeiaCalculation():
         """
         # Unpack configuration parameters
         aperture, disperser, filter, subarray, readout, order, nint, ngroup = params
+        config = self.calc['configuration']
         if aperture is not None:
-            self.calc['configuration']['instrument']['aperture'] = aperture
+            config['instrument']['aperture'] = aperture
         if disperser == '':
-            self.calc['configuration']['instrument']['disperser'] = None
+            config['instrument']['disperser'] = None
         elif disperser is not None:
-            self.calc['configuration']['instrument']['disperser'] = disperser
+            config['instrument']['disperser'] = disperser
+        if config['instrument']['disperser'] == '':
+            config['instrument']['disperser'] = None
         if filter == '':
-            self.calc['configuration']['instrument']['filter'] = None
+            config['instrument']['filter'] = None
         elif filter is not None:
-            self.calc['configuration']['instrument']['filter'] = filter
+            config['instrument']['filter'] = filter
+        if config['instrument']['filter'] == '':
+            config['instrument']['filter'] = None
         if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
+            config['detector']['subarray'] = subarray
         if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
+            config['detector']['readout_pattern'] = readout
         if order is not None and self.mode == 'soss':
             self.calc['strategy']['order'] = order
 
