@@ -116,7 +116,7 @@ def plotly_filters(
     >>> import gen_tso.pandeia_io as jwst
     >>> import gen_tso.plotly_io as plots
     >>>
-    >>> passbands = jwst.filter_throughputs()['spectroscopy']
+    >>> passbands = jwst.get_throughputs('spectroscopy')
     >>> fig = plots.plotly_filters(
     >>>     passbands, 'nircam', 'lw_tsgrism', 'subgrism64', 'f444w',
     >>>     show_all=True,
@@ -517,7 +517,7 @@ def plotly_tso_spectra(
             wl_err = sim_depths[i]['wl_widths']
 
         mode = tso['report_in']['input']['configuration']['instrument']['mode']
-        if mode in ['sw_ts', 'lw_ts', 'imaging_ts']:
+        if mode in jwst._photo_modes:
             input_wl, input_depth = tso['input_depth']
             wl_min = np.amin(input_wl)
             wl_max = np.amax(input_wl)
@@ -539,7 +539,7 @@ def plotly_tso_spectra(
         ))
         legends.append(model_label)
 
-        if mode in ['sw_ts', 'lw_ts', 'imaging_ts']:
+        if mode in jwst._photo_modes:
             error_x = dict(
                 type='data', symmetric=False, visible=True,
                 array=wl_err[:,1], arrayminus=wl_err[:,0],

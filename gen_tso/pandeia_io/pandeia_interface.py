@@ -7,15 +7,15 @@ __all__ = [
     'bin_search_exposure_time',
     'integration_time',
     'saturation_level',
-    'load_sed_list',
+    'get_sed_list',
     'find_closest_sed',
     'extract_sed',
     'make_scene',
     'set_depth_scene',
     'get_bandwidths',
     'simulate_tso',
-    'get_tso_wl_range',
-    'get_tso_depth_range',
+    '_get_tso_wl_range',
+    '_get_tso_depth_range',
     '_print_pandeia_exposure',
     '_print_pandeia_saturation',
     '_print_pandeia_stats',
@@ -38,7 +38,7 @@ from pyratbay.tools import u
 import prompt_toolkit
 
 from ..utils import format_text
-from .pandeia_defaults import filter_throughputs
+from .pandeia_defaults import get_throughputs, _photo_modes
 
 
 def read_noise_variance(report, ins_config):
@@ -408,7 +408,7 @@ def saturation_level(reports, get_max=False):
     return brightest_pixel_rate, full_well
 
 
-def load_sed_list(source):
+def get_sed_list(source):
     """
     Load list of available PHOENIX or Kurucz stellar SED models
 
@@ -432,9 +432,9 @@ def load_sed_list(source):
     --------
     >>> import gen_tso.pandeia_io as jwst
     >>> # PHOENIX models
-    >>> keys, names, teff, log_g = jwst.load_sed_list('phoenix')
+    >>> keys, names, teff, log_g = jwst.get_sed_list('phoenix')
     >>> # Kurucz models
-    >>> keys, names, teff, log_g = jwst.load_sed_list('k93models')
+    >>> keys, names, teff, log_g = jwst.get_sed_list('k93models')
     """
     sed_path = sed.default_refdata_directory
     with open(f'{sed_path}/sed/{source}/spectra.json', 'r') as f:
@@ -494,7 +494,7 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
     SED: 'k7v'
     >>>
     >>> # PHOENIX models when I already have the list of models:
-    >>> keys, names, p_teff, p_logg = jwst.load_sed_list('phoenix')
+    >>> keys, names, p_teff, p_logg = jwst.get_sed_list('phoenix')
     >>> teff = 4143.0
     >>> logg = 4.66
     >>> idx = jwst.find_closest_sed(teff, logg, p_teff, p_logg)
@@ -503,7 +503,7 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
     """
     return_key = False
     if models_teff is None or models_logg is None:
-        keys, names, models_teff, models_logg = load_sed_list(sed_type)
+        keys, names, models_teff, models_logg = get_sed_list(sed_type)
         return_key = True
     cost = (
         np.abs(np.log10(teff/models_teff)) +
@@ -525,7 +525,7 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
         Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
     sed_model:
         The SED model required for each sed_type:
-        - phoenix or k93models: the model key (see load_sed_list)
+        - phoenix or k93models: the model key (see get_sed_list)
         - blackbody: the effective temperature (K)
         - flat: the unit ('flam' or 'fnu')
     norm_band: String
@@ -801,7 +801,7 @@ def get_bandwidths(inst, mode, aperture, filter):
     >>> pando = jwst.PandeiaCalculation(inst, mode)
     >>> wl0, bw, min_wl, max_wl = jwst.get_bandwidths(inst, mode, aper, filter)
     """
-    throughputs = filter_throughputs(inst=inst, mode=mode)
+    throughputs = get_throughputs(inst=inst, mode=mode)
     passband = throughputs[aperture][filter]
     band_wl = passband['wl']
     response = passband['response']
@@ -842,9 +842,15 @@ def simulate_tso(
     Returns
     -------
     bin_wl: 1D array
+        Wavelengths of binned transit/eclipse spectrum.
     bin_spec: 1D array
+        Binned simulated transit/eclipse spectrum.
     bin_err: 1D array
-    bin_widths: 1D array
+        Uncertainties of bin_spec.
+    bin_widths: 1D or 2D array
+        For spectra, the 1D bin widths of bin_wl.
+        For photometry, an array of shape [1,2] with the (lower,upper)
+        widths of the passband relative to bin_wl.
 
     Examples
     --------
@@ -853,10 +859,10 @@ def simulate_tso(
 
     >>> scene = jwst.make_scene(
     >>>     sed_type='phoenix', sed_model='k5v',
-    >>>     norm_band='2mass,ks', norm_magnitude=8.637,
+    >>>     norm_band='2mass,ks', norm_magnitude=8.351,
     >>> )
 
-    >>> # With NIRSpec
+    >>> # NIRSpec BOTS spectra
     >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
     >>> pando.calc['scene'] = [scene]
     >>> disperser='g395h'
@@ -868,9 +874,7 @@ def simulate_tso(
     >>> transit_dur = 2.71
     >>> obs_dur = 6.0
     >>> obs_type = 'transit'
-
-    >>> depth_model = np.loadtxt(
-    >>>     '../planet_spectra/WASP80b_transit.dat', unpack=True)
+    >>> depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
 
     >>> tso = pando.tso_calculation(
     >>>     obs_type, transit_dur, obs_dur, depth_model,
@@ -963,7 +967,7 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
-def get_tso_wl_range(tso_run):
+def _get_tso_wl_range(tso_run):
     """
     Get the wavelength range covered by a TSO calculation
 
@@ -993,7 +997,7 @@ def get_tso_wl_range(tso_run):
         mode = config['mode']
         aper = config['aperture']
         filter = config['filter']
-        if mode in ['sw_ts', 'lw_ts', 'imaging_ts']:
+        if mode in _photo_modes:
             wl0, bw, wl_min, wl_max = get_bandwidths(inst, mode, aper, filter)
             dwl_lo = wl0 - wl_min
             dwl_hi = wl_max - wl0
@@ -1017,7 +1021,7 @@ def get_tso_wl_range(tso_run):
     return min_wl, max_wl
 
 
-def get_tso_depth_range(tso_run, resolution, units):
+def _get_tso_depth_range(tso_run, resolution, units):
     """
     Get the transit/eclipse depth range covered by a TSO calculation
 
@@ -1043,7 +1047,7 @@ def get_tso_depth_range(tso_run, resolution, units):
     if not isinstance(runs, list):
         runs = [runs]
 
-    min_wl, max_wl = get_tso_wl_range(tso_run)
+    min_wl, max_wl = _get_tso_wl_range(tso_run)
     max_depth = []
     min_depth = []
     for tso in runs:
@@ -1055,7 +1059,7 @@ def get_tso_depth_range(tso_run, resolution, units):
         d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
 
         mode = tso['report_in']['input']['configuration']['instrument']['mode']
-        if mode in ['sw_ts', 'lw_ts', 'imaging_ts']:
+        if mode in _photo_modes:
             input_wl, input_depth = tso['input_depth']
             wl_min = np.amax([min_wl, np.amin(input_wl)])
             wl_max = np.amin([max_wl, np.amax(input_wl)])

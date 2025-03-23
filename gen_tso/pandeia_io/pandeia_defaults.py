@@ -4,11 +4,14 @@
 __all__ = [
     'get_instruments',
     'get_modes',
-    'default_aperture_strategy',
-    'get_configs',
-    'filter_throughputs',
+    '_spec_modes',
+    '_photo_modes',
+    '_acq_modes',
+    '_default_aperture_strategy',
+    '_get_configs',
+    'get_throughputs',
     'generate_all_instruments',
-    'load_flux_rate_splines',
+    '_load_flux_rate_splines',
     'Detector',
 ]
 
@@ -22,6 +25,7 @@ from pandeia.engine.calc_utils import get_instrument_config
 from ..utils import ROOT
 
 
+# Dictionaries
 inst_names = {
     'miri': 'MIRI',
     'nircam': 'NIRCam',
@@ -29,19 +33,30 @@ inst_names = {
     'nirspec': 'NIRSpec',
 }
 
-SPEC_MODES = {
+spec_dict = {
     'miri': ['lrsslitless', 'mrs_ts'],
     'nircam': ['lw_tsgrism', 'sw_tsgrism'],
     'niriss': ['soss'],
     'nirspec': ['bots'],
 }
 
-PHOTO_MODES = {
+photo_dict = {
     'miri': ['imaging_ts'],
     'nircam': ['lw_ts', 'sw_ts'],
 }
 
-ACQ_MODES = ['target_acq']
+# Lists
+_spec_modes = []
+for modes in spec_dict.values():
+    _spec_modes += modes
+
+_photo_modes = []
+for modes in photo_dict.values():
+    _photo_modes += modes
+
+_acq_modes = [
+    'target_acq',
+]
 
 def get_instruments():
     """
@@ -79,33 +94,14 @@ def get_modes(instrument, type=None):
         types = [type]
 
     if 'spectroscopy' in types:
-        modes += SPEC_MODES[instrument]
-    if 'photometry' in types and instrument in PHOTO_MODES:
-        modes += PHOTO_MODES[instrument]
+        modes += spec_dict[instrument]
+    if 'photometry' in types and instrument in photo_dict:
+        modes += photo_dict[instrument]
     if 'acquisition' in types:
-        modes += ACQ_MODES
+        modes += _acq_modes
 
     return modes
 
-
-spec_modes = [
-    'lrsslitless',
-    'mrs_ts',
-    'lw_tsgrism',
-    'sw_tsgrism',
-    'soss',
-    'bots',
-]
-
-photo_modes = [
-    'imaging_ts',
-    'lw_ts',
-    'sw_ts',
-]
-
-acq_modes = [
-    'target_acq',
-]
 
 
 # Spectra extraction apertures (arcsec) based on values reported in:
@@ -113,7 +109,7 @@ acq_modes = [
 # Alderson et al. (2023) NIRSpec/G395H
 # Bouwman et al. (2024)  MIRI/LRS
 # Bell et al. (2024)     MIRI/LRS
-default_aperture_strategy = {
+_default_aperture_strategy = {
     'lrsslitless': dict(
         aperture_size = 0.6,
         sky_annulus = [1.0, 2.5],
@@ -200,7 +196,7 @@ def str_or_dict(info_dict, selected, mode):
     return info_dict[selected]['display_string']['default']
 
 
-def get_configs(instrument=None, obs_type=None):
+def _get_configs(instrument=None, obs_type=None):
     """
     Collect the information from the available observing modes
     (Names, modes, dispersers, readout patterns, subarrays, slits).
@@ -227,14 +223,14 @@ def get_configs(instrument=None, obs_type=None):
 
     Examples
     --------
-    >>> from gen_tso.pandeia_io import get_configs
+    >>> from gen_tso.pandeia_io import _get_configs
 
-    >>> insts = get_configs(obs_type='spectroscopy')
-    >>> insts = get_configs(obs_type='photometry')
-    >>> insts = get_configs(obs_type='acquisition')
+    >>> insts = _get_configs(obs_type='spectroscopy')
+    >>> insts = _get_configs(obs_type='photometry')
+    >>> insts = _get_configs(obs_type='acquisition')
 
-    >>> insts = get_configs(instrument='miri')
-    >>> insts = get_configs(instrument='nircam', obs_type='spectroscopy')
+    >>> insts = _get_configs(instrument='miri')
+    >>> insts = _get_configs(instrument='nircam', obs_type='spectroscopy')
     """
     ta_apertures = {
         'miri': ['imager'],
@@ -254,11 +250,11 @@ def get_configs(instrument=None, obs_type=None):
 
     modes = []
     if 'spectroscopy' in obs_type:
-        modes += spec_modes
+        modes += _spec_modes
     if 'photometry' in obs_type:
-        modes += photo_modes
+        modes += _photo_modes
     if 'acquisition' in obs_type:
-        modes += acq_modes
+        modes += _acq_modes
 
     telescope = 'jwst'
     outputs = []
@@ -277,11 +273,11 @@ def get_configs(instrument=None, obs_type=None):
             names['slits'] = config['slit_config']
         props = list(names)
 
-        if mode in spec_modes:
+        if mode in _spec_modes:
             obs_type = 'spectroscopy'
-        elif mode in acq_modes:
+        elif mode in _acq_modes:
             obs_type = 'acquisition'
-        elif mode in photo_modes:
+        elif mode in _photo_modes:
             obs_type = 'photometry'
 
         inst_dict = {}
@@ -645,7 +641,7 @@ class Detector:
         return label
 
 
-def filter_throughputs(type=None, inst=None, mode=None):
+def get_throughputs(type=None, inst=None, mode=None):
     """
     Collect the throughput response curves for each instrument configuration
 
@@ -672,9 +668,9 @@ def filter_throughputs(type=None, inst=None, mode=None):
     >>> import gen_tso.pandeia_io as jwst
     >>>
     >>> # All available throughputs
-    >>> filter_throughputs = jwst.filter_throughputs()
+    >>> throughputs = jwst.get_throughputs()
     >>> # All throughputs for NIRSpec
-    >>> filter_throughputs = jwst.filter_throughputs('nirspec')
+    >>> throughputs = jwst.get_throughputs('nirspec')
     """
     if mode is not None:
         if inst is None:
@@ -726,25 +722,18 @@ def generate_all_instruments():
     A list of Detector() objects to keep the instrument observing mode
     configurations.
 
-    TBD
-    ---
-    Imaging
-        'imaging_ts': 'Imaging Time Series'
-        'sw_ts': 'SW Time Series'
-        'lw_ts': 'LW Time Series'
-
     Examples
     --------
-    >>> from gen_tso.pandeia_io import get_configs, generate_all_instruments
-    >>> spec_insts = get_configs(obs_type='spectroscopy')
-    >>> photo_insts = get_configs(obs_type='photometry')
-    >>> acq_insts = get_configs(obs_type='acquisition')
+    >>> from gen_tso.pandeia_io import _get_configs, generate_all_instruments
+    >>> spec_insts = _get_configs(obs_type='spectroscopy')
+    >>> photo_insts = _get_configs(obs_type='photometry')
+    >>> acq_insts = _get_configs(obs_type='acquisition')
     >>> dets = generate_all_instruments()
     >>> det = dets[5]
     """
     detectors = []
     # Spectroscopic observing modes
-    spec_insts = get_configs(obs_type='spectroscopy')
+    spec_insts = _get_configs(obs_type='spectroscopy')
     for inst in spec_insts:
         mode = inst['mode']
         dispersers = inst['dispersers']
@@ -815,7 +804,7 @@ def generate_all_instruments():
         detectors.append(det)
 
     # Photometry observing modes
-    photo_insts = get_configs(obs_type='photometry')
+    photo_insts = _get_configs(obs_type='photometry')
     for inst in photo_insts:
         mode = inst['mode']
         apertures = inst['apertures']
@@ -861,7 +850,7 @@ def generate_all_instruments():
             det.pairings = inst['pairings']
 
     # Acquisition observing modes
-    acq_insts = get_configs(obs_type='acquisition')
+    acq_insts = _get_configs(obs_type='acquisition')
     for inst in acq_insts:
         mode = inst['mode']
         aperture_label = 'Acquisition mode'
@@ -1052,7 +1041,7 @@ def make_obs_label(
     return label
 
 
-def load_flux_rate_splines(obs_label=None):
+def _load_flux_rate_splines(obs_label=None):
     """
     Get dictionary of cubic spline functions for pre-calculated
     brightest pixel flux rates at given instrumental and SED config
@@ -1077,7 +1066,7 @@ def load_flux_rate_splines(obs_label=None):
     >>> import gen_tso.pandeia_io as jwst
     >>>
     >>> # Extract all splines, evaluate for one config:
-    >>> flux_rate_splines, full_wells = jwst.load_flux_rate_splines()
+    >>> flux_rate_splines, full_wells = jwst._load_flux_rate_splines()
     >>> obs_label = 'lw_tsgrism_f444w_phoenix_k5v'
     >>> spline = flux_rate_splines[obs_label]
     >>> print(spline(8.351), full_wells[obs_label])
@@ -1085,7 +1074,7 @@ def load_flux_rate_splines(obs_label=None):
     >>>
     >>> # Extract a single config:
     >>> obs_label = 'lw_tsgrism_f444w_phoenix_k5v'
-    >>> flux_rate_spline, full_well = jwst.load_flux_rate_splines(obs_label)
+    >>> flux_rate_spline, full_well = jwst._load_flux_rate_splines(obs_label)
     >>> print(flux_rate_spline(8.351), full_well)
     3.1140479065012263 58100.0
     """

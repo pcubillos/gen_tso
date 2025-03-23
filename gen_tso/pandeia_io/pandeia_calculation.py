@@ -28,17 +28,18 @@ from .pandeia_interface import (
     tso_print,
 )
 from .pandeia_defaults import (
-    default_aperture_strategy,
+    _spec_modes,
+    _default_aperture_strategy,
+    _load_flux_rate_splines,
     generate_all_instruments,
-    filter_throughputs,
+    get_throughputs,
     get_detector,
-    load_flux_rate_splines,
     make_saturation_label,
 )
 
 try:
     detectors = generate_all_instruments()
-    bots_throughputs = filter_throughputs()['spectroscopy']['nirspec']['bots']
+    bots_throughputs = get_throughputs(inst='nirspec', mode='bots')
 except:
     print(
         "\n~~~  WARNING  ~~~"
@@ -119,8 +120,8 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['readout_pattern'] = readout
         self._ensure_wl_reference_in_range()
         # Default aperture/sky annuli:
-        if self.mode in default_aperture_strategy:
-            strat = default_aperture_strategy[self.mode]
+        if self.mode in _default_aperture_strategy:
+            strat = _default_aperture_strategy[self.mode]
             self.calc['strategy']['aperture_size'] = strat['aperture_size']
             self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
@@ -235,7 +236,7 @@ class PandeiaCalculation():
         """
         Make sure that reference wavelength is in the range of the detector
         """
-        if self.mode in ['target_acq', 'imaging_ts', 'lw_ts', 'sw_ts']:
+        if self.mode not in _spec_modes:
             return
         if 'reference_wavelength' not in self.calc['strategy']:
             self.calc['strategy']['reference_wavelength'] = -1.0
@@ -272,7 +273,7 @@ class PandeiaCalculation():
             Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
         sed_model:
             The SED model required for each sed_type:
-            - phoenix or k93models: the model key (see load_sed_list)
+            - phoenix or k93models: the model key (see get_sed_list)
             - blackbody: the effective temperature (K)
             - flat: the unit ('flam' or 'fnu')
         norm_band: String
@@ -471,7 +472,7 @@ class PandeiaCalculation():
                 sed_label,
             )
 
-            flux_rate_func, full_well = load_flux_rate_splines(sat_guess_label)
+            flux_rate_func, full_well = _load_flux_rate_splines(sat_guess_label)
             if flux_rate_func is None:
                 print(
                     'Error, no flux_rate spline for configuration '

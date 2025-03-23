@@ -36,11 +36,11 @@ from gen_tso.utils import (
 )
 import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
+    _load_flux_rate_splines,
     get_detector,
     make_obs_label,
     make_saturation_label,
     make_save_label,
-    load_flux_rate_splines,
 )
 from gen_tso.pandeia_io.pandeia_setup import (
     check_pandeia_ref_data,
@@ -63,8 +63,8 @@ catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 nplanets = len(catalog.targets)
 
 # Catalog of stellar SEDs:
-p_keys, p_models, p_teff, p_logg = jwst.load_sed_list('phoenix')
-k_keys, k_models, k_teff, k_logg = jwst.load_sed_list('k93models')
+p_keys, p_models, p_teff, p_logg = jwst.get_sed_list('phoenix')
+k_keys, k_models, k_teff, k_logg = jwst.get_sed_list('k93models')
 
 phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
 kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
@@ -82,7 +82,7 @@ bands_dict = {
 }
 detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
-filter_throughputs = jwst.filter_throughputs()
+throughputs = jwst.get_throughputs()
 
 modes = {}
 for inst in instruments:
@@ -108,7 +108,7 @@ for inst in instruments:
     modes[inst] = choices
 
 # Pre-computed flux rates
-flux_rate_splines, full_wells = load_flux_rate_splines()
+flux_rate_splines, full_wells = _load_flux_rate_splines()
 
 
 depth_choices = {
@@ -908,7 +908,7 @@ def throughput_config(input, evaluate=False):
     obs_type = detector.obs_type
 
     key = aperture if obs_type == 'photometry' else subarray
-    if key not in filter_throughputs[obs_type][inst][mode]:
+    if key not in throughputs[obs_type][inst][mode]:
         return None
 
     if mode == 'lrsslitless':
@@ -919,7 +919,7 @@ def throughput_config(input, evaluate=False):
         filter = f'{disperser}/{filter}'
 
     if evaluate:
-        return filter_throughputs[obs_type][inst][mode][key][filter]
+        return throughputs[obs_type][inst][mode][key][filter]
     return obs_type, inst, mode, key, filter
 
 
@@ -1655,7 +1655,7 @@ def server(input, output, session):
 
         # TSO plot popover menu
         if tso['is_tso']:
-            min_wl, max_wl = jwst.get_tso_wl_range(tso)
+            min_wl, max_wl = jwst._get_tso_wl_range(tso)
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
 
@@ -1664,7 +1664,7 @@ def server(input, output, session):
             tso_draw.set(draw(tso['tso'], resolution, n_obs))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
-            min_depth, max_depth, step = jwst.get_tso_depth_range(
+            min_depth, max_depth, step = jwst._get_tso_depth_range(
                 tso, resolution, units,
             )
             ui.update_numeric('tso_depth_min', value=min_depth, step=step)
@@ -2823,10 +2823,8 @@ def server(input, output, session):
             return
 
         obs_type, inst, mode, key, filter = config
-        throughputs = filter_throughputs[obs_type]
-
         fig = plots.plotly_filters(
-            throughputs, inst, mode, key, filter, show_all,
+            throughputs[obs_type], inst, mode, key, filter, show_all,
         )
         return fig
 
@@ -2956,7 +2954,7 @@ def server(input, output, session):
         resolution = input.tso_resolution.get()
         units = input.plot_tso_units.get()
 
-        min_depth, max_depth, step = jwst.get_tso_depth_range(
+        min_depth, max_depth, step = jwst._get_tso_depth_range(
             tso, resolution, units,
         )
         ui.update_numeric('tso_depth_min', value=min_depth, step=step)
