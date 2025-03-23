@@ -2,6 +2,8 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'get_instruments',
+    'get_modes',
     'default_aperture_strategy',
     'get_configs',
     'filter_throughputs',
@@ -27,6 +29,65 @@ inst_names = {
     'nirspec': 'NIRSpec',
 }
 
+SPEC_MODES = {
+    'miri': ['lrsslitless', 'mrs_ts'],
+    'nircam': ['lw_tsgrism', 'sw_tsgrism'],
+    'niriss': ['soss'],
+    'nirspec': ['bots'],
+}
+
+PHOTO_MODES = {
+    'miri': ['imaging_ts'],
+    'nircam': ['lw_ts', 'sw_ts'],
+}
+
+ACQ_MODES = ['target_acq']
+
+def get_instruments():
+    """
+    Get the list of JWST instruments.
+
+    Returns
+    -------
+    instruments: 1D list of strings
+        JWST instruments
+    """
+    return list(inst_names)
+
+
+def get_modes(instrument, type=None):
+    """
+    Get the list of available TSO modes for a given instrument.
+
+    Parameters
+    ----------
+    instrument: String
+        A JWST instrument.
+    type: String
+        If set, get only the modes of the specified type:
+        spectroscopy, photometry, or acquisition
+
+    Returns
+    -------
+    modes: 1D list of strings
+        JWST TSO modes for instrument
+    """
+    modes = []
+    if type is None:
+        types = ['spectroscopy', 'photometry', 'acquisition']
+    else:
+        types = [type]
+
+    if 'spectroscopy' in types:
+        modes += SPEC_MODES[instrument]
+    if 'photometry' in types and instrument in PHOTO_MODES:
+        modes += PHOTO_MODES[instrument]
+    if 'acquisition' in types:
+        modes += ACQ_MODES
+
+    return modes
+
+
 spec_modes = [
     'lrsslitless',
     'mrs_ts',
@@ -35,11 +96,13 @@ spec_modes = [
     'soss',
     'bots',
 ]
+
 photo_modes = [
     'imaging_ts',
     'lw_ts',
     'sw_ts',
 ]
+
 acq_modes = [
     'target_acq',
 ]
@@ -582,36 +645,79 @@ class Detector:
         return label
 
 
-def filter_throughputs():
+def filter_throughputs(type=None, inst=None, mode=None):
     """
     Collect the throughput response curves for each instrument configuration
+
+    Parameters
+    ----------
+    type: String
+        If set, get only the modes of the specified type:
+        spectroscopy, photometry, or acquisition
+    instrument: String
+        If set, get only throughputs for the specified instrument.
+    mode: String
+        If set, get only throughputs for the specified mode and instrument.
+
+    Returns
+    -------
+    throughputs: Dictionary
+        Nested dictionary of shape throughputs[type][inst][mode][key][filter]
+        containing the wavelength (um) and response throughputs.
+        'key' refers to the apertures for photometry modes, and subarrays
+        for others.
 
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # All available throughputs
     >>> filter_throughputs = jwst.filter_throughputs()
+    >>> # All throughputs for NIRSpec
+    >>> filter_throughputs = jwst.filter_throughputs('nirspec')
     """
-    detectors = generate_all_instruments()
-    throughputs = {}
-    for detector in detectors:
-        inst = detector.instrument.lower()
-        mode = detector.mode
-        obs_type = detector.obs_type
-        if obs_type not in throughputs:
-            throughputs[obs_type] = {}
-        if inst not in throughputs[obs_type]:
-            throughputs[obs_type][inst] = {}
-        if mode not in throughputs[obs_type][inst]:
-            throughputs[obs_type][inst][mode] = {}
-
+    if mode is not None:
+        if inst is None:
+            msg = 'Also need to specify an instrument when requesting a specific mode'
+            raise ValueError(msg)
         t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
-            data = pickle.load(handle)
+            throughputs = pickle.load(handle)
+        return throughputs
 
-        # keys is subarray for spectro and acq, aperture for photo:
-        for key in list(data.keys()):
-            throughputs[obs_type][inst][mode][key] = data[key]
+    if inst is not None:
+        modes = get_modes(inst)
+        throughputs = {}
+        for mode in modes:
+            t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
+            with open(t_file, 'rb') as handle:
+                data = pickle.load(handle)
+            throughputs[mode] = data
+        return throughputs
 
+    if type is None:
+        types = ['spectroscopy', 'photometry', 'acquisition']
+    else:
+        types = [type]
+    instruments = get_instruments()
+
+    throughputs = {}
+    for obs_type,inst in product(types, instruments):
+        modes = get_modes(inst, obs_type)
+        if obs_type not in types or len(modes) == 0:
+            continue
+        if obs_type not in throughputs:
+            throughputs[obs_type] = {}
+        throughputs[obs_type][inst] = {}
+
+        for mode in modes:
+            t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
+            with open(t_file, 'rb') as handle:
+                data = pickle.load(handle)
+            throughputs[obs_type][inst][mode] = data
+
+    if type is not None:
+        return throughputs[type]
     return throughputs
 
 
