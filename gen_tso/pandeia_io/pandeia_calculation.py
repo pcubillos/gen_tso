@@ -886,12 +886,13 @@ class PandeiaCalculation():
         configs = product(
             aperture, disperser, filter, subarray, readout, order, ngroup,
         )
-        tso = [
-            self._tso_calculation(
+        tso = []
+        for config in configs:
+            tso_run = self._tso_calculation(
                 config, scene_in, scene_out, transit_dur, obs_dur,
             )
-            for config in configs
-        ]
+            tso_run['input_depth'] = depth_model
+            tso.append(tso_run)
         if len(tso) == 1:
              tso = tso[0]
         self.tso = tso
