@@ -1158,13 +1158,14 @@ def draw(tso_list, resolution, n_obs):
 
     sims = []
     for tso in tso_list:
-        bin_wl, bin_spec, bin_err, widths = jwst.simulate_tso(
+        bin_wl, bin_spec, bin_err, wl_widths = jwst.simulate_tso(
            tso, n_obs=n_obs, resolution=resolution, noiseless=False,
         )
         sims.append({
             'wl': bin_wl,
             'depth': bin_spec,
             'uncert': bin_err,
+            'wl_widths': wl_widths,
         })
     return sims
 
@@ -1535,7 +1536,7 @@ def server(input, output, session):
         ui.update_select(
             'filter',
             label=detector.filter_label,
-            choices=detector.filters,
+            choices=choices,
             selected=filter,
         )
 
@@ -2922,9 +2923,9 @@ def server(input, output, session):
             planet = tso_run['depth_label']
             fig = plots.plotly_tso_spectra(
                 tso_run['tso'], sim_depths,
+                resolution=input.tso_resolution.get(),
                 model_label=planet,
                 instrument_label=tso_run['inst_label'],
-                bin_widths=None,
                 units=units, wl_range=wl_range, wl_scale=wl_scale,
                 depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
             )
