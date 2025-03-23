@@ -12,6 +12,7 @@ __all__ = [
     'extract_sed',
     'make_scene',
     'set_depth_scene',
+    'get_bandwidths',
     'simulate_tso',
     'get_tso_wl_range',
     'get_tso_depth_range',
@@ -32,7 +33,7 @@ import scipy.interpolate as si
 import pandeia.engine.sed as sed
 from pandeia.engine.calc_utils import get_instrument_config
 from pandeia.engine.normalization import NormalizationFactory
-from pyratbay.spectrum import constant_resolution_spectrum
+from pyratbay.spectrum import constant_resolution_spectrum, bin_spectrum
 from pyratbay.tools import u
 import prompt_toolkit
 
@@ -774,6 +775,49 @@ def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
     return star_scene, depth_scene
 
 
+def get_bandwidths(inst, mode, aperture, filter):
+    """
+    Calculate passband bandwidth properties.
+    See https://jwst-docs.stsci.edu/jwst-near-infrared-camera/nircam-instrumentation/nircam-filters
+
+    Returns
+    -------
+    wl0: Float
+        Pivot wavelength (Tokunaga & Vacca 2005)
+    band_width: Float
+        See (Rieke et al. 2008)
+    min_wl: Float
+        Min wavelvelgth where the response is > 0.25 max(response)
+    max_wl: Float
+        Max wavelvelgth where the response is > 0.25 max(response)
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> inst = 'miri'
+    >>> mode = 'imaging_ts'
+    >>> aper = 'imager'
+    >>> filter = 'f560w'
+    >>> pando = jwst.PandeiaCalculation(inst, mode)
+    >>> wl0, bw, min_wl, max_wl = jwst.get_bandwidths(inst, mode, aper, filter)
+    """
+    throughputs = filter_throughputs(inst=inst, mode=mode)
+    passband = throughputs[aperture][filter]
+    band_wl = passband['wl']
+    response = passband['response']
+
+    wl0 = np.sqrt(
+        np.trapezoid(response*band_wl, band_wl) /
+        np.trapezoid(response/band_wl, band_wl)
+    )
+    band_width = np.trapezoid(response, band_wl) / np.amax(response)
+
+    response_mask = response > 0.25*np.amax(response)
+    min_wl = np.amin(band_wl[response_mask])
+    max_wl = np.amax(band_wl[response_mask])
+    return wl0, band_width, min_wl, max_wl
+
+
 def simulate_tso(
         tso, n_obs=1, resolution=None, bins=None, noiseless=False,
     ):
@@ -858,21 +902,15 @@ def simulate_tso(
         bin_out = flux_out
         bin_vin = var_in
         bin_vout = var_out
-        # get throughput
+        # get throughput's bandwidth
         config = tso['report_in']['input']['configuration']['instrument']
         inst = config['instrument']
         mode = config['mode']
         aperture = config['aperture']
         filter = config['filter']
-        throughputs = filter_throughputs()['photometry']
-        passband = throughputs[inst][mode][aperture][filter]
-        # Bandwidth (see NIRCam filters jdocs, Rieke+2008, Eq 1):
-        band_wl = passband['wl']
-        response = passband['response']
+        wl0, bw, min_wl, max_wl = get_bandwidths(inst, mode, aperture, filter)
         bin_wl = wl
-        bin_widths = np.array([
-            np.trapezoid(response, band_wl) / np.amax(response)
-        ])
+        bin_widths = np.array([wl-min_wl, max_wl-wl]).T
 
     # Spectroscopy binning
     else:
@@ -947,8 +985,31 @@ def get_tso_wl_range(tso_run):
     if not isinstance(runs, list):
         runs = [runs]
 
-    min_wl = np.amin([np.amin(run['wl']) for run in runs])
-    max_wl = np.amax([np.amax(run['wl']) for run in runs])
+    min_wl = np.zeros(len(runs))
+    max_wl = np.zeros(len(runs))
+    for i,tso in enumerate(runs):
+        config = tso['report_in']['input']['configuration']['instrument']
+        inst = config['instrument']
+        mode = config['mode']
+        aper = config['aperture']
+        filter = config['filter']
+        if mode in ['sw_ts', 'lw_ts', 'imaging_ts']:
+            wl0, bw, wl_min, wl_max = get_bandwidths(inst, mode, aper, filter)
+            dwl_lo = wl0 - wl_min
+            dwl_hi = wl_max - wl0
+            if inst == 'nircam' and 'w' in filter:
+                ndw = 3
+            else:
+                ndw = 4
+            min_wl[i] = wl0 - ndw*dwl_lo
+            max_wl[i] = wl0 + ndw*dwl_hi
+        else:
+            min_wl[i] = np.amin(tso['wl'])
+            max_wl[i] = np.amax(tso['wl'])
+
+    min_wl = np.amin(min_wl)
+    max_wl = np.amax(max_wl)
+
     # 5% margin
     d_wl = 0.025 * (max_wl-min_wl)
     min_wl = np.round(min_wl-d_wl, decimals=2)
@@ -982,6 +1043,7 @@ def get_tso_depth_range(tso_run, resolution, units):
     if not isinstance(runs, list):
         runs = [runs]
 
+    min_wl, max_wl = get_tso_wl_range(tso_run)
     max_depth = []
     min_depth = []
     for tso in runs:
@@ -989,10 +1051,24 @@ def get_tso_depth_range(tso_run, resolution, units):
             tso, resolution=resolution, noiseless=True,
         )
         err_median = np.median(bin_err)
-        d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
         d_min1 = np.amin(tso['depth_spectrum'] - 3*err_median)
-        max_depth.append(d_max1)
-        min_depth.append(d_min1)
+        d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
+
+        mode = tso['report_in']['input']['configuration']['instrument']['mode']
+        if mode in ['sw_ts', 'lw_ts', 'imaging_ts']:
+            input_wl, input_depth = tso['input_depth']
+            wl_min = np.amax([min_wl, np.amin(input_wl)])
+            wl_max = np.amin([max_wl, np.amax(input_wl)])
+            wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
+            depth = bin_spectrum(wl, input_wl, input_depth, gaps='interpolate')
+            d_min2 = np.amin(depth)
+            d_max2 = np.amax(depth)
+        else:
+            d_min2 = np.inf
+            d_max2 = 0.0
+
+        min_depth.append(np.amin([d_min1, d_min2]))
+        max_depth.append(np.amax([d_max1, d_max2]))
 
     min_depth = np.amin(min_depth) / u(units)
     max_depth = np.amax(max_depth) / u(units)
