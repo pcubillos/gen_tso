@@ -48,7 +48,7 @@ from gen_tso.utils import KNOWN_PROGRAMS
 
 
 # Path to APT executable:
-apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
+apt_command = '/Applications/APT\\ 2025.1/bin/apt'
 
 # Fetch all TSO programs:
 programs = KNOWN_PROGRAMS
@@ -61,7 +61,7 @@ After you installed APT on Linux, search for the folder where it was
 installed.  The path to the executable should be something like this:
 
 ```bash
-/home/user/ast/apt/APT_2024.5.2/APT
+/home/user/ast/apt/APT_2025.1/APT
 ```
 
 The following script shows how to fetch the APT and status for the programs:
@@ -85,7 +85,7 @@ Either on a Linux or OSX machine, if you create an environmental variable
 in your bash, e.g.:
 
 ```bash
-export APT='/home/user/ast/apt/APT_2024.5.2/APT'
+export APT='/Applications/APT\ 2025.1/bin/apt'
 ```
 then you can directly use that environmental variable.
 The following script shows how to fetch the APT and status for the programs:

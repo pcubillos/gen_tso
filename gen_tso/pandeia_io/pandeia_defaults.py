@@ -1012,7 +1012,7 @@ def make_saturation_label(
     elif mode == 'sw_tsgrism':
         sat_label = f'{sat_label}_{aperture}_{subarray}'
     elif mode == 'sw_ts':
-        sat_label = f'{sat_label}_{aperture}_{subarray}'
+        sat_label = f'{sat_label}_{aperture}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
     elif mode == 'target_acq' and inst == 'niriss':
@@ -1091,6 +1091,8 @@ def _load_flux_rate_splines(obs_label=None):
         mag = rates.pop('magnitude')
         flux_rate_data[inst] = rates
 
+    aper_modes = _photo_modes + ['sw_tsgrism', 'mrs_ts']
+
     flux_rates = {}
     full_wells = {}
     for inst, mode_rates in flux_rate_data.items():
@@ -1100,7 +1102,7 @@ def _load_flux_rate_splines(obs_label=None):
                 for filter, sub_rates in filter_rates.items():
                     for subarray, sed_rates in sub_rates.items():
                         for order in orders:
-                            if mode in ['sw_tsgrism', 'mrs_ts']:
+                            if mode in aper_modes:
                                 aperture = disperser
                             else:
                                 aperture = ''
