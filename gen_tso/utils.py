@@ -3,9 +3,12 @@
 
 __all__ = [
     'ROOT',
+    'KNOWN_PROGRAMS',
     'check_latest_version',
+    'get_latest_pandeia_release',
     'get_latest_pandeia_versions',
     'get_version_advice',
+    'get_pandeia_advice',
     'read_spectrum_file',
     'collect_spectra',
     'format_text',
@@ -15,12 +18,31 @@ __all__ = [
 import os
 from packaging.version import parse
 
+from bs4 import BeautifulSoup
 import numpy as np
 import requests
 from shiny import ui
 
 ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 from .catalogs.utils import as_str
+
+# Guessed from load_trexolists()['program']
+KNOWN_PROGRAMS = [
+    1033, 1118, 1177, 1185, 1201, 1224, 1274, 1279, 1280, 1281, 1312,
+    1331, 1353, 1366, 1442, 1541, 1633, 1729, 1743, 1803, 1846, 1935,
+    1952, 1981, 2001, 2008, 2021, 2055, 2062, 2084, 2113, 2149, 2158,
+    2159, 2304, 2319, 2334, 2347, 2358, 2372, 2420, 2437, 2454, 2488,
+    2498, 2507, 2508, 2512, 2571, 2589, 2594, 2667, 2708, 2722, 2734,
+    2759, 2765, 2783, 2950, 2961, 3077, 3154, 3171, 3231, 3235, 3263,
+    3279, 3315, 3385, 3557, 3615, 3712, 3730, 3731, 3784, 3818, 3838,
+    3860, 3942, 3969, 4008, 4082, 4098, 4102, 4105, 4126, 4195, 4227,
+    4536, 4711, 4818, 4931, 5022, 5177, 5268, 5311, 5531, 5634, 5687,
+    5799, 5844, 5863, 5866, 5882, 5894, 5924, 5959, 5967, 6193, 6284,
+    6456, 6457, 6491, 6543,
+    6932, 6978, 7073, 7188, 7251, 7255, 7407, 7675, 7683, 7686, 7849,
+    7875, 7953, 7982, 8004, 8017, 8233, 8309, 8597, 8696, 8739, 8864,
+    8877, 9025, 9033, 9095, 9101
+]
 
 
 def check_latest_version(package):
@@ -29,33 +51,29 @@ def check_latest_version(package):
     return latest_version
 
 
-def get_latest_pandeia_versions(package_name='pandeia.engine'):
+def get_latest_pandeia_release():
     """
-    Get latest pandeia.engine version for JWST and Roman branches.
-    To be checked how new JWST pandeia.engine versions are named.
+    Fetch latest pandeia.engine version for JWST from their website
     """
-    url = f"https://pypi.org/pypi/{package_name}/json"
+    url = 'https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+News'
     try:
         response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        versions = sorted([
-            parse(version) for version in data['releases'].keys()
-        ])
-        # split JWST and Roman versions (>2024.X)
-        jwst_versions = [
-            version for version in versions
-            if version.major<2024
-        ]
-        roman_versions = [
-            version for version in versions
-            if version.major>=2024
-        ]
-        return str(jwst_versions[-1]), str(roman_versions[-1])
-    except requests.exceptions.RequestException:
-        # Hardcoded value, need to be manually updated
-        return '4.0', '2024.9.1'
-
+        status_code = response.status_code
+    except:
+        status_code = 0
+    if status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        for a in soup.find_all('a', href=True):
+            link = 'pypi.org/project/pandeia.engine/'
+            if link in a['href']:
+                href = a['href']
+                ini = href.index(link) + len(link)
+                version = href[ini:]
+                if '/' in version:
+                    version = version[0:version.index('/')]
+                return version.strip()
+    # hard-coded default, need to be kept up to date manually:
+    return '2025.3'
 
 
 def get_version_advice(package, latest_version=None):
@@ -86,6 +104,30 @@ def get_version_advice(package, latest_version=None):
     status_advice = ui.HTML(
         f'<br><p><span style="color:{color}">You have {name} '
         f'version {my_version}, the latest version is '
+        f'{latest_version}</span>{advice}</p>'
+    )
+    return status_advice
+
+
+def get_pandeia_advice(package, latest_version):
+    name = package.__name__
+    my_version = parse(package.__version__)
+    latest_version = parse(latest_version)
+    my_major_minor = parse(f'{my_version.major}.{my_version.minor}')
+    latest_major_minor = parse(f'{latest_version.major}.{latest_version.minor}')
+    if my_version >= latest_version:
+        color = '#0B980D'
+        advice = ''
+    else:
+        color = 'red'
+        advice = (
+            f'.<br>You should upgrade {name} with:<br>'
+            f'<span style="font-weight:bold;">pip install --upgrade {name}</span>'
+        )
+
+    status_advice = ui.HTML(
+        f'<br><p><span style="color:{color}">You have {name} '
+        f'version {my_version}, the latest JWST version is '
         f'{latest_version}</span>{advice}</p>'
     )
     return status_advice
@@ -305,29 +347,35 @@ def pretty_print_target(target):
     else:
         aliases = ''
 
+    color = '#15B01A' if target.is_jwst_planet else 'black'
+    jwst_planet = f'<span style="color:{color}">{target.is_jwst_planet}</span>'
+    color = '#15B01A' if target.is_jwst_host else 'black'
+    jwst_host = f'<span style="color:{color}">{target.is_jwst_host}</span>'
+
     planet_info = ui.HTML(
-        f'planet = {target.planet} <br>'
+        f'planet = {repr(target.planet)}<br>'
+        f'is_jwst_planet = {jwst_planet}<br>'
         f'is_transiting = {target.is_transiting}<br>'
-        f'status = {status} planet<br><br>'
+        f"status = '{status} planet'<br><br>"
         f"rplanet = {rplanet} r_earth<br>"
         f"{mplanet_label} = {mplanet} m_earth<br>"
-        f"semi-major axis = {sma} AU<br>"
+        f"semi_major_axis = {sma} AU<br>"
         f"period = {period} d<br>"
-        f"equilibrium temp = {eq_temp} K<br>"
-        f"transit_dur (T14) = {t_dur} h<br>"
+        f"equilibrium_temp = {eq_temp} K<br>"
+        f"transit_duration = {t_dur} h<br>"
         f"rplanet/rstar = {rprs}<br>"
         f"a/rstar = {ars}<br>"
     )
 
     star_info = ui.HTML(
-        f'host = {target.host}<br>'
-        f'is JWST host = {target.is_jwst}<br>'
-        f'<br><br>'
+        f'host = {repr(target.host)}<br>'
+        f'is_jwst_host = {jwst_host}<br>'
+        f'<br><br><br>'
         f"rstar = {rstar} r_sun<br>"
         f"mstar = {mstar} m_sun<br>"
         f"log_g = {logg}<br>"
         f"metallicity = {metal}<br>"
-        f"effective temp = {teff} K<br>"
+        f"effective_temp = {teff} K<br>"
         f"Ks_mag = {ks_mag}<br>"
         f"RA = {target.ra:.3f} deg<br>"
         f"dec = {target.dec:.3f} deg<br>"

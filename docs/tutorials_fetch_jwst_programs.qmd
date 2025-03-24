@@ -1,0 +1,592 @@
+---
+title: Fetch JWST TSO programs from STScI
+page-navigation: true
+---
+
+This Python script shows how to fetch and parse the entire catalog of JWST TSO
+prgrams from the STScI website.
+
+This tutorial is split into three sections:
+
+- [Fetch TSO files](#fetch-tso-files)
+- [Parse to database](#parse-files-to-database)
+<!--  - [Playground](#playground) -->
+
+<br>
+
+## Fetch TSO files
+
+STScI [provides](https://www.stsci.edu/jwst-program-info/search) the
+information for each JWST program in two files:
+
+- the Astronomers Proposal Tool (APT) file (in .aptx format)
+- the status file (in .xml format)
+
+The APT files have to be then converted .xml format to be further parsed.
+This can be done using the STScI's [APT
+software](https://www.stsci.edu/scientific-community/software/astronomers-proposal-tool-apt).
+This will be done under the hood by ``Gen TSO``, all we need to set is the
+path to the APT executable:
+
+::: {.panel-tabset}
+
+## APT on OSX
+
+After you installed APT, search in your Application folders.
+The executable will be located inside the `bin` subfolder. We will need to
+get the absolute path to it, It should be something like:
+
+```bash
+/Applications/APT\\ 2024.7.1/bin/apt
+```
+
+The following script shows how to fetch the APT and status for the programs:
+
+```python
+import gen_tso.catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
+
+# Path to APT executable:
+apt_command = '/Applications/APT\\ 2025.1/bin/apt'
+
+# Fetch all TSO programs:
+programs = KNOWN_PROGRAMS
+cat.fetch_jwst_programs(programs, apt_command)
+```
+
+## APT on Linux
+
+After you installed APT on Linux, search for the folder where it was
+installed.  The path to the executable should be something like this:
+
+```bash
+/home/user/ast/apt/APT_2025.1/APT
+```
+
+The following script shows how to fetch the APT and status for the programs:
+
+```python
+import gen_tso.catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
+
+# Path to APT executable:
+apt_command = '/home/user/ast/apt/APT_2024.5.2/APT'
+
+# Fetch all TSO programs:
+programs = KNOWN_PROGRAMS
+cat.fetch_jwst_programs(programs, apt_command)
+```
+
+## Environmental variable
+
+Either on a Linux or OSX machine, if you create an environmental variable
+in your bash, e.g.:
+
+```bash
+export APT='/Applications/APT\ 2025.1/bin/apt'
+```
+then you can directly use that environmental variable.
+The following script shows how to fetch the APT and status for the programs:
+
+```python
+import gen_tso.catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
+
+# APT's environmental variable:
+apt_command = 'APT'
+
+# Fetch all TSO programs:
+programs = KNOWN_PROGRAMS
+cat.fetch_jwst_programs(programs, apt_command)
+```
+
+:::
+
+To process one program takes a few seconds. Thus, to process the entire
+catalog will take some ~10 min.
+
+If you want to only fetch specific programs, you can use the `programs`
+argument with the desired PID(s):
+
+```python
+import gen_tso.catalogs as cat
+
+
+# Fetch a single program
+apt_command = 'APT'
+programs = 3712
+cat.fetch_jwst_programs(programs, apt_command)
+
+# Fetch a set of programs
+programs = [2759, 3557, 3730, 4098]
+cat.fetch_jwst_programs(programs, apt_command)
+```
+
+::: {.callout-note}
+By default, the `cat.fetch_jwst_programs()` function will store the
+files into a default folder inside the `Gen TSO` package, you can find
+that folder with this script:
+
+```python
+from gen_tso import ROOT
+print(f'{ROOT}data/programs/')
+```
+
+To place them to a custom folder, use the `output_folder` argument.
+:::
+
+
+
+## Parse files to database
+
+Once we have downloaded the .xml files for the JWST TSO programs,
+we can parse them to a human readable format.  Here's how:
+
+```python
+import pickle
+from gen_tso import catalogs as cat
+from gen_tso.utils import KNOWN_PROGRAMS
+
+
+# Parse and collect the observations from all known programs
+observations = []
+for program in KNOWN_PROGRAMS:
+    observations += cat.parse_program(program)
+```
+
+That's all.  Now we can take a look at the content, save to file, etc. For example:
+
+```python
+# Save to pickle file
+with open('JWST_TSO_programs.pickle', 'wb') as handle:
+    pickle.dump(observations, handle, protocol=4)
+
+# Print the content of one observation:
+for key, val in observations[98].items():
+    print(f'{key} = {repr(val)}')
+```
+::: {.cell-output-stdout}
+```
+category = 'ERS'
+pi = 'Batalha'
+pid = '1366'
+proprietary = '0'
+special_reqs = ['OrientRange', 'PeriodZeroPhase', 'TimeSeriesObservation']
+observation = '3'
+visit = '1'
+status = 'Executed'
+hours = 10.56
+start = datetime.datetime(2022, 7, 30, 20, 46, 32)
+end = datetime.datetime(2022, 7, 31, 6, 21, 30)
+label = 'Transmission - WASP-39b : nirspec g395h'
+target = 'WASP-39'
+RA = '14:29:18.3955'
+dec = '-03:26:40.20'
+instrument = 'NIRSPEC'
+mode = 'BOTS'
+disperser = 'G395H'
+filter = 'F290LP'
+subarray = 'SUB2048'
+readout = 'NRSRAPID'
+groups = '70'
+integrations = '465'
+reqs_phase = {'ZeroPhase': '2457792.356338', 'Period': '4.05527999 Days', 'PhaseStart': '0.95248', 'PhaseEnd': '0.96275'}
+period = 4.05527999
+phase_start = 0.957615
+phase_duration = 0.10850052304279982
+event = 'transit'
+```
+:::
+
+---
+
+### List phase-curve progams
+
+Here's another example to show all phase-curve programs
+
+```python
+import gen_tso.catalogs as cat
+import pickle
+
+
+# Pick up the picle file saved in the previous step
+with open('JWST_TSO_programs.pickle', 'rb') as handle:
+    observations = pickle.load(handle)
+
+# Cross check only with transiting planets
+catalog = cat.Catalog()
+targets = [
+    target for target in catalog.targets
+    if target.is_transiting
+]
+
+# List all phase curve programs
+ntotal = 0
+print(' N      Program  Obs  Target        Status')
+print('---------------  -------------------------')
+for obs in observations:
+    event = obs['event']
+    host = cat.get_observation_host(obs, targets)
+    if event == 'phase curve':
+        ntotal += 1
+        category = obs['category']
+        pid = obs['pid']
+        oid = obs['observation']
+        target = obs['target']
+        status = obs['status']
+        print(f"{ntotal:2}  {category:>6} {pid}  {oid:>3}  {host:12s}  {status}")
+
+```
+::: {.cell-output-stdout}
+```
+ N      Program  Obs  Target        Status
+--  -----------  -------------------------
+ 1     GTO 1201    1  WASP-121      Executed
+ 2     GTO 1201    2  LTT 9779      Executed
+ 3     GTO 1224    2  WASP-43       Executed
+ 4     ERS 1366   11  WASP-43       Executed
+ 5      GO 1729    1  WASP-121      Executed
+ 6      GO 1803    1  GJ 1214       Executed
+ 7      GO 2008    1  HD 80606      Implementation
+ 8      GO 2158    1  NGTS-10       Executed
+ 9      GO 2159    1  K2-141        Executed
+10      GO 2347    1  K2-141        Executed
+11      GO 2488    1  HD 80606      Executed
+12      GO 2508    1  GJ 367        Executed
+13  SURVEY 2765    1  TOI-849       Withdrawn
+14  SURVEY 2765    2  TOI-849       Withdrawn
+15  SURVEY 2765    3  TOI-849       Withdrawn
+16  SURVEY 2765    4  TOI-2109      Withdrawn
+17  SURVEY 2765    5  TOI-2109      Withdrawn
+18  SURVEY 2765    6  TOI-2109      Withdrawn
+19      GO 3077    1  TRAPPIST-1    Executed
+20      GO 3077    2  TRAPPIST-1    Executed
+21      GO 3231    1  LTT 9779      Executed
+22      GO 3263    1  TOI-1685      Executed
+23      GO 3315    3  K2-22         Executed
+24      GO 3784    1  TOI-2445      Executed
+25      GO 3860    1  TOI-561       Executed
+26      GO 4008    1  LHS 3844      Executed
+27      GO 5022    1  WASP-103      Implementation
+28      GO 5268    1  WASP-76       Executed
+```
+:::
+
+
+---
+
+### Get targetted planet(s)
+
+Now that we have the JWST programs information, we can cross-check
+with the catalog of exoplanet to find out which planet(s) are targeted
+by each observation:
+
+```python
+import gen_tso.catalogs as cat
+import pickle
+
+
+# Pick up the picle file saved in the previous step
+with open('JWST_TSO_programs.pickle', 'rb') as handle:
+    observations = pickle.load(handle)
+
+# Cross check only with transiting planets
+catalog = cat.Catalog()
+targets = [
+    target for target in catalog.targets
+    if target.is_transiting
+]
+
+# Find the planet (by host name, labels, or phase constraints)
+for obs in observations:
+    obs['planets'] = cat.get_planet_letters(obs, targets)
+
+
+# Show planets in multi-planet systems
+print('PID   Obs  Target        Planets     Event type')
+print('-----------------------------------------------')
+for obs in observations:
+    host = cat.get_observation_host(obs, targets)
+    all_planets = [
+         target.planet
+         for target in targets
+         if target.host == host
+    ]
+    if len(all_planets) == 0:
+        print('Failed!!')
+    if len(all_planets) > 1:
+        pid = obs['pid']
+        oid = obs['observation']
+        target = obs['target']
+        event = obs['event']
+        planets = obs['planets']
+        print(f"{pid}  {oid:>3}  {host:12s}  {repr(planets):10}  {event}")
+```
+
+::: {.cell-output-stdout}
+```
+PID   Obs  Target        Planets     Event type
+-----------------------------------------------
+1177    7  TRAPPIST-1    ['b']       eclipse
+1177    8  TRAPPIST-1    ['b']       eclipse
+1177    9  TRAPPIST-1    ['b']       eclipse
+1177   10  TRAPPIST-1    ['b']       eclipse
+1177   11  TRAPPIST-1    ['b']       eclipse
+1201  101  TRAPPIST-1    ['f']       transit
+1201  102  TRAPPIST-1    ['f']       transit
+1201  103  TRAPPIST-1    ['f']       transit
+1201  104  TRAPPIST-1    ['f']       transit
+1201  105  TRAPPIST-1    ['f']       transit
+1201  111  TRAPPIST-1    ['d']       transit
+1201  112  TRAPPIST-1    ['d']       transit
+1201  301  L 98-59       ['c']       transit
+1201  302  L 98-59       ['c']       transit
+1201  311  L 98-59       ['d']       transit
+1201  401  LP 791-18     ['c']       transit
+1224    1  L 98-59       ['d']       transit
+...
+6193    1  TOI-700       ['d']       transit
+6193    2  TOI-700       ['e']       transit
+6456    1  TRAPPIST-1    ['b', 'e']  transit
+6456    2  TRAPPIST-1    ['b', 'e']  transit
+6456    3  TRAPPIST-1    ['b', 'e']  transit
+6456    4  TRAPPIST-1    ['b', 'e']  transit
+6456    5  TRAPPIST-1    ['b', 'e']  transit
+6456   15  TRAPPIST-1    ['b', 'e']  transit
+6457    1  LP 791-18     ['d']       eclipse
+6457    2  LP 791-18     ['d']       eclipse
+6457    3  LP 791-18     ['d']       eclipse
+6457    4  LP 791-18     ['d']       eclipse
+6457    5  LP 791-18     ['d']       eclipse
+6491    1  Kepler-167    ['e']       transit
+6543    1  LHS 1140      ['b']       transit
+6543    2  LHS 1140      ['b']       transit
+```
+:::
+
+---
+
+### Plot phase coverage
+
+This script uses the phase constraints data from the JWST programs
+to plot the orbital phase coverage by each observation. Here's the setup:
+
+::: {.callout-note}
+Note that only observations with phase constraints are shown because
+that's where the phase data comes from (some programs use date
+constraints instead).
+:::
+
+
+```python
+import gen_tso.catalogs as cat
+import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+plt.ion()
+
+
+# Pick up the picle file saved in the previous step
+with open('JWST_TSO_programs.pickle', 'rb') as handle:
+    observations = pickle.load(handle)
+nobs = len(observations)
+
+# Cross check only with transiting planets
+catalog = cat.Catalog()
+targets = [
+    target for target in catalog.targets
+    if target.is_transiting
+]
+
+# Get the planet (by host name, labels, or phase constraints)
+for obs in observations:
+    host = cat.get_observation_host(obs, targets)
+    letters = cat.get_planet_letters(obs, targets)
+    planets = ','.join(letters)
+    obs['planets'] = host + ' ' + planets
+
+    period, phase, obs_duration = cat.get_phase_info(obs)
+    if period is not None:
+        obs['period'] = period
+        obs['phase_start'] = phase
+        obs['phase_duration'] = obs_duration
+
+
+labels = np.array([obs['planets'] for obs in observations])
+isort = np.argsort(labels)
+unique_planets = np.unique(labels)
+
+# Plot orbital phase coverage
+periods = [
+    obs['period'] if 'phase_duration' in obs else 0
+    for obs in observations
+]
+
+# We will use the period for color-coding
+log_period = np.log10(periods)
+max_period = np.amax(log_period)
+max_period = 1.5
+```
+
+Now make some plots:
+```python
+# Plot the transits
+fig = plt.figure(0)
+plt.clf()
+plt.subplots_adjust(0.01, 0.05, 0.99, 0.97, wspace=0.03)
+fig.set_size_inches(8,9)
+axes = [
+    plt.axes(131),
+    plt.axes(132),
+    plt.axes(133),
+]
+panel = 0
+counts = 0
+ax = axes[panel]
+ax.set_title('JWST TSO transits', fontsize=12, weight='bold')
+for planet in unique_planets:
+    indices = np.where(labels == planet)[0]
+    is_new = True
+    if counts > 88:
+        ax.set_ylim(-counts, 0)
+        counts = 0
+        panel += 1
+        ax = axes[panel]
+    for i in indices:
+        planet = observations[i]['planets']
+        event = observations[i]['event']
+        status = observations[i]['status']
+        failed = status in ['Skipped', 'Failed', 'Withdrawn']
+        if event != 'transit' or 'phase_duration' not in observations[i]:
+            continue
+        if failed:
+            continue
+        counts += 1
+        y = -counts
+        phase = observations[i]['phase_start']
+        duration = observations[i]['phase_duration']
+        color = plt.cm.viridis_r(log_period[i]/max_period)
+        ax.broken_barh([(phase, duration)], (y, 1), color=color)
+        if is_new:
+            ax.axhline(y+1, color='0.9', lw=0.75, zorder=-10)
+            ax.text(
+                phase, y+1, planet, fontsize=7.5,
+                color='xkcd:blue', ha='right', va='top',
+            )
+            is_new = False
+
+ax.set_ylim(-counts, 0)
+for ax in axes:
+    ax.set_xlim(0.73, 1.35)
+    ax.set_xticks([0.75, 1.0, 1.25])
+    ax.tick_params(which='both', direction='in', labelsize=11)
+    ax.set_yticks([])
+    ax.set_xlabel('Orbital phase', fontsize=12)
+    plt.savefig('JWST_TSO_transits.png', dpi=300)
+```
+![](images/JWST_TSO_transits.png){width=600px}
+
+::: {.callout-note}
+Beware that the phase values from the programs (T0 or periods) may
+not correspond to the true physical orbital-phase properties
+(for sake of simplifying the observing constraints).  I did my best to
+make corrections when I noticed, but I might not have caught all of them.
+:::
+
+And now the eclipses and phase curves:
+
+```python
+# Plot the phase curves and eclipses
+fig = plt.figure(1)
+plt.clf()
+plt.subplots_adjust(0.01, 0.05, 0.99, 0.97, wspace=0.03, hspace=0.25)
+gs = GridSpec(ncols=2, nrows=3)
+fig.set_size_inches(8,9)
+ax = fig.add_subplot(gs[0,0:2])
+counts = 0
+ax.set_title('JWST TSO phase curves', fontsize=12, weight='bold')
+for planet in unique_planets:
+    indices = np.where(labels == planet)[0]
+    is_new = True
+    for i in indices:
+        planet = observations[i]['planets']
+        event = observations[i]['event']
+        status = observations[i]['status']
+        failed = status in ['Skipped', 'Failed', 'Withdrawn']
+        if event != 'phase curve' or 'phase_duration' not in observations[i]:
+            continue
+        if failed:
+            continue
+        counts += 1
+        y = -counts
+        phase = observations[i]['phase_start']
+        duration = observations[i]['phase_duration']
+        color = plt.cm.viridis_r(log_period[i]/max_period)
+        ax.broken_barh([(phase, duration)], (y, 1), color=color)
+        if is_new:
+            ax.axhline(y+1, color='0.9', lw=0.75, zorder=-10)
+            ax.text(
+                phase, y+1, planet, fontsize=7.5,
+                color='xkcd:blue', ha='right', va='top',
+            )
+            is_new = False
+
+ax.set_ylim(-counts, 0)
+ax.set_xlim(-0.2, 4.4)
+ax.tick_params(which='both', direction='in', labelsize=11)
+ax.set_yticks([])
+ax.set_xlabel('Orbital phase', fontsize=12)
+
+axes = [
+    fig.add_subplot(gs[1:3,0]),
+    fig.add_subplot(gs[1:3,1]),
+]
+ax = axes[0]
+counts = 0
+ax.set_title('JWST TSO eclipses', fontsize=12, weight='bold')
+for planet in unique_planets:
+    indices = np.where(labels == planet)[0]
+    is_new = True
+    if counts > 55:
+        ax.set_ylim(-counts, 0)
+        counts = 0
+        ax = axes[1]
+    for i in indices:
+        planet = observations[i]['planets']
+        event = observations[i]['event']
+        status = observations[i]['status']
+        failed = status in ['Skipped', 'Failed', 'Withdrawn']
+        if event != 'eclipse' or 'phase_duration' not in observations[i]:
+            continue
+        if failed:
+            continue
+        counts += 1
+        y = -counts
+        phase = observations[i]['phase_start']
+        duration = observations[i]['phase_duration']
+        color = plt.cm.viridis_r(log_period[i]/max_period)
+        ax.broken_barh([(phase, duration)], (y, 1), color=color)
+        if is_new:
+            ax.axhline(y+1, color='0.9', lw=0.75, zorder=-10)
+            ax.text(
+                phase, y+1, planet, fontsize=7.5,
+                color='xkcd:blue', ha='right', va='top',
+            )
+            is_new = False
+
+ax.set_ylim(-counts, 0)
+for ax in axes:
+    ax.set_xlim(0.21, 0.85)
+    ax.set_xticks([0.25, 0.5, 0.75])
+    ax.tick_params(which='both', direction='in', labelsize=11)
+    ax.set_yticks([])
+    ax.set_xlabel('Orbital phase', fontsize=12)
+    plt.savefig('JWST_TSO_eclipses.png', dpi=300)
+```
+
+![](images/JWST_TSO_eclipses.png){width=600px}
+
+

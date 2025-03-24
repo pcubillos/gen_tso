@@ -1,6 +1,10 @@
 # Copyright (c) 2025 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
+# Suppress synphot warnings that no longer apply
+import warnings
+warnings.filterwarnings("ignore", message=".*Failed to load Vega spectrum.*")
+
 from .pandeia_interface import *
 from .pandeia_calculation import *
 from .pandeia_defaults import *

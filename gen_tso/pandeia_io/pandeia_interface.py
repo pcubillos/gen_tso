@@ -7,14 +7,15 @@ __all__ = [
     'bin_search_exposure_time',
     'integration_time',
     'saturation_level',
-    'load_sed_list',
+    'get_sed_list',
     'find_closest_sed',
     'extract_sed',
     'make_scene',
     'set_depth_scene',
+    'get_bandwidths',
     'simulate_tso',
-    'get_tso_wl_range',
-    'get_tso_depth_range',
+    '_get_tso_wl_range',
+    '_get_tso_depth_range',
     '_print_pandeia_exposure',
     '_print_pandeia_saturation',
     '_print_pandeia_stats',
@@ -32,11 +33,12 @@ import scipy.interpolate as si
 import pandeia.engine.sed as sed
 from pandeia.engine.calc_utils import get_instrument_config
 from pandeia.engine.normalization import NormalizationFactory
-from pyratbay.spectrum import constant_resolution_spectrum
+from pyratbay.spectrum import constant_resolution_spectrum, bin_spectrum
 from pyratbay.tools import u
 import prompt_toolkit
 
 from ..utils import format_text
+from .pandeia_defaults import get_throughputs, _photo_modes
 
 
 def read_noise_variance(report, ins_config):
@@ -56,16 +58,17 @@ def read_noise_variance(report, ins_config):
         The instrumental read noise (electrons per pixel?)
     """
     report_config = report['input']['configuration']['instrument']
-    if report_config['mode'] == 'mrs_ts':
-        aperture = report_config['aperture']
-        aperture = ins_config['aperture_config'][aperture]['detector']
-    elif report_config['mode'] == 'sw_tsgrism':
+    if report_config['mode'] in ['sw_tsgrism', 'sw_ts']:
         aperture = report_config['aperture']
         noise = ins_config['detector_config']['sw']['rn']
         if aperture not in noise:
             aperture = 'default'
         read_noise = noise[aperture]
         return read_noise
+
+    if report_config['mode'] == 'mrs_ts':
+        aperture = report_config['aperture']
+        aperture = ins_config['aperture_config'][aperture]['detector']
     else:
         aperture = report_config['aperture']
 
@@ -105,30 +108,53 @@ def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
-        ins_config = get_instrument_config(telescope, instrument)
+        config = get_instrument_config(telescope, instrument)
     else:
-        ins_config = instrument.ins_config
+        config = instrument.ins_config
 
     # When switching instrument, subarray and readout updates are not atomic
-    if subarray not in ins_config['subarray_config']['default']:
+    if subarray not in config['subarray_config']['default']:
         return None
-    if readout not in ins_config['readout_pattern_config']:
+    if readout not in config['readout_pattern_config']:
         return None
 
-    subarray_config = ins_config['subarray_config']['default'][subarray]
-    readout_config = ins_config['readout_pattern_config'][readout]
-    tfffr = subarray_config['tfffr']
-    tframe = subarray_config['tframe']
+    subarray_config = config['subarray_config']
+    readout_config = config['readout_pattern_config'][readout]
+
     nframe = readout_config['nframe']
     ndrop2 = readout_config['ndrop2']
+    tfffr = subarray_config['default'][subarray]['tfffr']
+    tframe = subarray_config['default'][subarray]['tframe']
+    has_tframe = (
+        readout in subarray_config and
+        subarray in subarray_config[readout]
+    )
+    if has_tframe:
+        tframe = subarray_config[readout][subarray]["tframe"]
+        tfffr = subarray_config[readout][subarray]["tfffr"]
+
     ndrop1 = ndrop3 = 0
+    if "ndrop1" in readout_config:
+        ndrop1 = readout_config["ndrop1"]
+    if "ndrop3" in readout_config:
+        ndrop3 = readout_config["ndrop3"]
+
     nreset1 = nreset2 = 1
-    if 'nreset1' in readout_config:
-        nreset1 = readout_config['nreset1']
-    elif 'nreset1' in subarray_config:
-        nreset1 = subarray_config['nreset1']
-    if 'nreset2' in readout_config:
-        nreset2 = readout_config['nreset2']
+    if "nreset1" in subarray_config["default"][subarray]:
+        nreset1 = subarray_config["default"][subarray]["nreset1"]
+        nreset2 = subarray_config["default"][subarray]["nreset2"]
+    has_nreset = (
+        readout in subarray_config and
+        subarray in subarray_config[readout] and
+        "nreset1" in subarray_config[readout][subarray]
+    )
+    if has_nreset:
+        nreset1 = subarray_config[readout][subarray]["nreset1"]
+        nreset2 = subarray_config[readout][subarray]["nreset2"]
+
+    if "nreset1" in readout_config:
+        nreset1 = readout_config["nreset1"]
+        nreset2 = readout_config["nreset2"]
 
     def exp_time(nint):
         time = nexp * (
@@ -261,7 +287,7 @@ def bin_search_exposure_time(
 def integration_time(instrument, subarray, readout, ngroup):
     """
     Compute JWST's integration time for a given instrument configuration.
-    Based on pandeia.engine.exposure.
+    Based on pandeia.engine.exposure.get_times()
 
     Examples
     --------
@@ -278,20 +304,29 @@ def integration_time(instrument, subarray, readout, ngroup):
     """
     if isinstance(instrument, str):
         telescope = 'jwst'
-        ins_config = get_instrument_config(telescope, instrument)
+        config = get_instrument_config(telescope, instrument)
     else:
-        ins_config = instrument.ins_config
+        config = instrument.ins_config
 
     # When switching instrument, subarray and readout updates are not atomic
-    if subarray not in ins_config['subarray_config']['default']:
+    if subarray not in config['subarray_config']['default']:
         return 0.0
-    if readout not in ins_config['readout_pattern_config']:
+    if readout not in config['readout_pattern_config']:
         return 0.0
 
-    tframe = ins_config['subarray_config']['default'][subarray]['tframe']
-    nframe = ins_config['readout_pattern_config'][readout]['nframe']
-    ndrop2 = ins_config['readout_pattern_config'][readout]['ndrop2']
+    nframe = config['readout_pattern_config'][readout]['nframe']
+    ndrop2 = config['readout_pattern_config'][readout]['ndrop2']
+    tframe = config['subarray_config']['default'][subarray]['tframe']
+    has_tframe = (
+        readout in config['subarray_config'] and
+        subarray in config['subarray_config'][readout]
+    )
+    if has_tframe:
+        tframe = config['subarray_config'][readout][subarray]["tframe"]
+
     ndrop1 = 0
+    if "ndrop1" in config['readout_pattern_config'][readout]:
+        ndrop1 = config['readout_pattern_config'][readout]["ndrop1"]
 
     integration_time = tframe * (
         ndrop1 + (ngroup - 1) * (nframe + ndrop2) + nframe
@@ -373,7 +408,7 @@ def saturation_level(reports, get_max=False):
     return brightest_pixel_rate, full_well
 
 
-def load_sed_list(source):
+def get_sed_list(source):
     """
     Load list of available PHOENIX or Kurucz stellar SED models
 
@@ -397,16 +432,20 @@ def load_sed_list(source):
     --------
     >>> import gen_tso.pandeia_io as jwst
     >>> # PHOENIX models
-    >>> keys, names, teff, log_g = jwst.load_sed_list('phoenix')
+    >>> keys, names, teff, log_g = jwst.get_sed_list('phoenix')
     >>> # Kurucz models
-    >>> keys, names, teff, log_g = jwst.load_sed_list('k93models')
+    >>> keys, names, teff, log_g = jwst.get_sed_list('k93models')
     """
     sed_path = sed.default_refdata_directory
     with open(f'{sed_path}/sed/{source}/spectra.json', 'r') as f:
         info = json.load(f)
-    teff = np.array([model['teff'] for model in info.values()])
-    log_g = np.array([model['log_g'] for model in info.values()])
     names = np.array([model['display_string'] for model in info.values()])
+    if source == 'bt_settl':
+        teff = np.array([model.split()[1] for model in names], dtype=float)
+        log_g = np.array([model.split()[2] for model in names], dtype=float)
+    else:
+        teff = np.array([model['teff'] for model in info.values()])
+        log_g = np.array([model['log_g'] for model in info.values()])
     keys = np.array(list(info.keys()))
     tsort = np.argsort(teff)[::-1]
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
@@ -455,7 +494,7 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
     SED: 'k7v'
     >>>
     >>> # PHOENIX models when I already have the list of models:
-    >>> keys, names, p_teff, p_logg = jwst.load_sed_list('phoenix')
+    >>> keys, names, p_teff, p_logg = jwst.get_sed_list('phoenix')
     >>> teff = 4143.0
     >>> logg = 4.66
     >>> idx = jwst.find_closest_sed(teff, logg, p_teff, p_logg)
@@ -464,7 +503,7 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
     """
     return_key = False
     if models_teff is None or models_logg is None:
-        keys, names, models_teff, models_logg = load_sed_list(sed_type)
+        keys, names, models_teff, models_logg = get_sed_list(sed_type)
         return_key = True
     cost = (
         np.abs(np.log10(teff/models_teff)) +
@@ -486,7 +525,7 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
         Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
     sed_model:
         The SED model required for each sed_type:
-        - phoenix or k93models: the model key (see load_sed_list)
+        - phoenix or k93models: the model key (see get_sed_list)
         - blackbody: the effective temperature (K)
         - flat: the unit ('flam' or 'fnu')
     norm_band: String
@@ -528,7 +567,7 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
 
     if sed_type == 'flat':
         sed['unit'] = sed_model
-    elif sed_type in ['phoenix', 'k93models']:
+    elif sed_type in ['phoenix', 'k93models', 'bt_settl']:
         sed['key'] = sed_model
     elif sed_type == 'blackbody':
         sed['temp'] = sed_model
@@ -618,7 +657,7 @@ def extract_sed(scene, wl_range=None):
     )
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
     if normalization.type == 'none':
-        if sed_model.sed_type in ['phoenix', 'k93models']:
+        if sed_model.sed_type in ['phoenix', 'k93models', 'bt_settl']:
             # Convert wavelengths from A to um:
             wave *= 1e-4  # pc.A / pc.um
         if sed_model.sed_type == 'blackbody':
@@ -736,6 +775,49 @@ def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
     return star_scene, depth_scene
 
 
+def get_bandwidths(inst, mode, aperture, filter):
+    """
+    Calculate passband bandwidth properties.
+    See https://jwst-docs.stsci.edu/jwst-near-infrared-camera/nircam-instrumentation/nircam-filters
+
+    Returns
+    -------
+    wl0: Float
+        Pivot wavelength (Tokunaga & Vacca 2005)
+    band_width: Float
+        See (Rieke et al. 2008)
+    min_wl: Float
+        Min wavelvelgth where the response is > 0.25 max(response)
+    max_wl: Float
+        Max wavelvelgth where the response is > 0.25 max(response)
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>> inst = 'miri'
+    >>> mode = 'imaging_ts'
+    >>> aper = 'imager'
+    >>> filter = 'f560w'
+    >>> pando = jwst.PandeiaCalculation(inst, mode)
+    >>> wl0, bw, min_wl, max_wl = jwst.get_bandwidths(inst, mode, aper, filter)
+    """
+    throughputs = get_throughputs(inst=inst, mode=mode)
+    passband = throughputs[aperture][filter]
+    band_wl = passband['wl']
+    response = passband['response']
+
+    wl0 = np.sqrt(
+        np.trapezoid(response*band_wl, band_wl) /
+        np.trapezoid(response/band_wl, band_wl)
+    )
+    band_width = np.trapezoid(response, band_wl) / np.amax(response)
+
+    response_mask = response > 0.25*np.amax(response)
+    min_wl = np.amin(band_wl[response_mask])
+    max_wl = np.amax(band_wl[response_mask])
+    return wl0, band_width, min_wl, max_wl
+
+
 def simulate_tso(
         tso, n_obs=1, resolution=None, bins=None, noiseless=False,
     ):
@@ -760,9 +842,15 @@ def simulate_tso(
     Returns
     -------
     bin_wl: 1D array
+        Wavelengths of binned transit/eclipse spectrum.
     bin_spec: 1D array
+        Binned simulated transit/eclipse spectrum.
     bin_err: 1D array
-    bin_widths: 1D array
+        Uncertainties of bin_spec.
+    bin_widths: 1D or 2D array
+        For spectra, the 1D bin widths of bin_wl.
+        For photometry, an array of shape [1,2] with the (lower,upper)
+        widths of the passband relative to bin_wl.
 
     Examples
     --------
@@ -771,10 +859,10 @@ def simulate_tso(
 
     >>> scene = jwst.make_scene(
     >>>     sed_type='phoenix', sed_model='k5v',
-    >>>     norm_band='2mass,ks', norm_magnitude=8.637,
+    >>>     norm_band='2mass,ks', norm_magnitude=8.351,
     >>> )
 
-    >>> # With NIRSpec
+    >>> # NIRSpec BOTS spectra
     >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
     >>> pando.calc['scene'] = [scene]
     >>> disperser='g395h'
@@ -786,9 +874,7 @@ def simulate_tso(
     >>> transit_dur = 2.71
     >>> obs_dur = 6.0
     >>> obs_type = 'transit'
-
-    >>> depth_model = np.loadtxt(
-    >>>     '../planet_spectra/WASP80b_transit.dat', unpack=True)
+    >>> depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
 
     >>> tso = pando.tso_calculation(
     >>>     obs_type, transit_dur, obs_dur, depth_model,
@@ -814,38 +900,55 @@ def simulate_tso(
     var_out = tso['var_out'] * n_obs
     wl = tso['wl']
 
-    # Binning
-    wl_min = np.amin(wl)
-    wl_max = np.amax(wl)
-    if resolution is not None:
-        bin_edges = constant_resolution_spectrum(wl_min, wl_max, resolution)
-        bin_edges = np.append(bin_edges, wl_max)
-    elif bins is not None:
-        bin_edges = np.copy(bins)
-        if bins[0] > wl_min:
-            bin_edges = np.append(wl_min, bin_edges)
-        else:
-            bin_edges[0] = wl_min
-        if bins[-1] < wl_max:
-            bin_edges = np.append(bin_edges, wl_max)
-        else:
-            bin_edges[-1] = wl_max
-    else:
-        bin_edges = 0.5* (wl[1:] + wl[:-1])
+    # Photometry
+    if len(wl) == 1:
+        bin_in = flux_in
+        bin_out = flux_out
+        bin_vin = var_in
+        bin_vout = var_out
+        # get throughput's bandwidth
+        config = tso['report_in']['input']['configuration']['instrument']
+        inst = config['instrument']
+        mode = config['mode']
+        aperture = config['aperture']
+        filter = config['filter']
+        wl0, bw, min_wl, max_wl = get_bandwidths(inst, mode, aperture, filter)
+        bin_wl = wl
+        bin_widths = np.array([wl-min_wl, max_wl-wl]).T
 
-    bin_wl = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-    bin_widths = bin_wl - bin_edges[:-1]
-    nbins = len(bin_wl)
-    bin_out = np.zeros(nbins)
-    bin_in = np.zeros(nbins)
-    bin_vout = np.zeros(nbins)
-    bin_vin = np.zeros(nbins)
-    for i in range(nbins):
-        bin_mask = (wl>=bin_edges[i]) & (wl<bin_edges[i+1])
-        bin_out[i] = np.sum(flux_out[bin_mask])
-        bin_in[i] = np.sum(flux_in[bin_mask])
-        bin_vout[i] = np.sum(var_out[bin_mask])
-        bin_vin[i] = np.sum(var_in[bin_mask])
+    # Spectroscopy binning
+    else:
+        wl_min = np.amin(wl)
+        wl_max = np.amax(wl)
+        if resolution is not None:
+            bin_edges = constant_resolution_spectrum(wl_min, wl_max, resolution)
+            bin_edges = np.append(bin_edges, wl_max)
+        elif bins is not None:
+            bin_edges = np.copy(bins)
+            if bins[0] > wl_min:
+                bin_edges = np.append(wl_min, bin_edges)
+            else:
+                bin_edges[0] = wl_min
+            if bins[-1] < wl_max:
+                bin_edges = np.append(bin_edges, wl_max)
+            else:
+                bin_edges[-1] = wl_max
+        else:
+            bin_edges = 0.5* (wl[1:] + wl[:-1])
+
+        bin_wl = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        bin_widths = bin_wl - bin_edges[:-1]
+        nbins = len(bin_wl)
+        bin_out = np.zeros(nbins)
+        bin_in = np.zeros(nbins)
+        bin_vout = np.zeros(nbins)
+        bin_vin = np.zeros(nbins)
+        for i in range(nbins):
+            bin_mask = (wl>=bin_edges[i]) & (wl<bin_edges[i+1])
+            bin_out[i] = np.sum(flux_out[bin_mask])
+            bin_in[i] = np.sum(flux_in[bin_mask])
+            bin_vout[i] = np.sum(var_out[bin_mask])
+            bin_vin[i] = np.sum(var_in[bin_mask])
 
     bin_err = np.sqrt(
         (dt_out/dt_in/bin_out)**2.0 * bin_vin +
@@ -864,7 +967,7 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
-def get_tso_wl_range(tso_run):
+def _get_tso_wl_range(tso_run):
     """
     Get the wavelength range covered by a TSO calculation
 
@@ -886,8 +989,31 @@ def get_tso_wl_range(tso_run):
     if not isinstance(runs, list):
         runs = [runs]
 
-    min_wl = np.amin([np.amin(run['wl']) for run in runs])
-    max_wl = np.amax([np.amax(run['wl']) for run in runs])
+    min_wl = np.zeros(len(runs))
+    max_wl = np.zeros(len(runs))
+    for i,tso in enumerate(runs):
+        config = tso['report_in']['input']['configuration']['instrument']
+        inst = config['instrument']
+        mode = config['mode']
+        aper = config['aperture']
+        filter = config['filter']
+        if mode in _photo_modes:
+            wl0, bw, wl_min, wl_max = get_bandwidths(inst, mode, aper, filter)
+            dwl_lo = wl0 - wl_min
+            dwl_hi = wl_max - wl0
+            if inst == 'nircam' and 'w' in filter:
+                ndw = 3
+            else:
+                ndw = 4
+            min_wl[i] = wl0 - ndw*dwl_lo
+            max_wl[i] = wl0 + ndw*dwl_hi
+        else:
+            min_wl[i] = np.amin(tso['wl'])
+            max_wl[i] = np.amax(tso['wl'])
+
+    min_wl = np.amin(min_wl)
+    max_wl = np.amax(max_wl)
+
     # 5% margin
     d_wl = 0.025 * (max_wl-min_wl)
     min_wl = np.round(min_wl-d_wl, decimals=2)
@@ -895,7 +1021,7 @@ def get_tso_wl_range(tso_run):
     return min_wl, max_wl
 
 
-def get_tso_depth_range(tso_run, resolution, units):
+def _get_tso_depth_range(tso_run, resolution, units):
     """
     Get the transit/eclipse depth range covered by a TSO calculation
 
@@ -921,6 +1047,7 @@ def get_tso_depth_range(tso_run, resolution, units):
     if not isinstance(runs, list):
         runs = [runs]
 
+    min_wl, max_wl = _get_tso_wl_range(tso_run)
     max_depth = []
     min_depth = []
     for tso in runs:
@@ -928,10 +1055,24 @@ def get_tso_depth_range(tso_run, resolution, units):
             tso, resolution=resolution, noiseless=True,
         )
         err_median = np.median(bin_err)
-        d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
         d_min1 = np.amin(tso['depth_spectrum'] - 3*err_median)
-        max_depth.append(d_max1)
-        min_depth.append(d_min1)
+        d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
+
+        mode = tso['report_in']['input']['configuration']['instrument']['mode']
+        if mode in _photo_modes:
+            input_wl, input_depth = tso['input_depth']
+            wl_min = np.amax([min_wl, np.amin(input_wl)])
+            wl_max = np.amin([max_wl, np.amax(input_wl)])
+            wl = constant_resolution_spectrum(wl_min, wl_max, resolution)
+            depth = bin_spectrum(wl, input_wl, input_depth, gaps='interpolate')
+            d_min2 = np.amin(depth)
+            d_max2 = np.amax(depth)
+        else:
+            d_min2 = np.inf
+            d_max2 = 0.0
+
+        min_depth.append(np.amin([d_min1, d_min2]))
+        max_depth.append(np.amax([d_max1, d_max2]))
 
     min_depth = np.amin(min_depth) / u(units)
     max_depth = np.amax(max_depth) / u(units)

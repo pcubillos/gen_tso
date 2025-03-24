@@ -67,40 +67,114 @@ First, we need to know what are the available options.  These are the
 instruments and their respective modes:
 
 ```{=html}
-<table>
 
-  <thead>
+<table style="background-color: #f5f5f5; border-collapse: collapse; width: 100%;">
+
+  <colgroup>
+    <col style="width: 30%;">
+    <col style="width: 30%;">
+    <col style="width: 40%;">
+  </colgroup>
+
+  <thead style="background-color: #e0e0e0;">
     <tr>
       <th><span data-qmd="Instrument"></span></th>
       <th><span data-qmd="Spectroscopy modes"></span></th>
-      <th><span data-qmd="Acquisition modes"></span></th>
+      <th><span data-qmd="Wavelength range (&mu;m)"></span></th>
     </tr>
   </thead>
+
   <tbody>
     <tr>
-        <td rowspan="2"><span data-qmd="__miri__"></span></td> <td>lrsslitless</td> <td>target_acq</td>
+        <td rowspan="2"><span data-qmd="__miri__"></span></td>
+        <td>lrsslitless</td> <td>5.0 &#8211; 12</td>
     </tr>
     <tr>
-        <td>miri_ts</td> <td></td>
+        <td>mrs_ts</td> <td>5.0 &#8211; 28</td>
+    </tr>
+    <tr>
+        <td rowspan="2"><span data-qmd="__nircam__"></span></td>
+        <td>lw_tsgrism</td> <td>2.4 &#8211; 5.0</td>
+    </tr>
+    <tr>
+        <td>sw_tsgrism</td> <td>0.6 &#8211; 2.2</td>
+    </tr>
+    <tr>
+        <td><span data-qmd="__niriss__"></span></td> <td>soss</td> <td>0.6 &#8211; 2.8</td>
     </tr>
 
     <tr>
-        <td rowspan="2"><span data-qmd="__nircam__"></span></td> <td>lw_tsgrism</td><td>target_acq</td>
-    </tr>
-    <tr>
-        <td>sw_tsgrism</td> <td></td>
-    </tr>
-    <tr>
-        <td><span data-qmd="__niriss__"></span></td> <td>soss</td> <td>target_acq</td>
-    </tr>
-
-    <tr>
-        <td><span data-qmd="__nirspec__"></span></td> <td>bots</td> <td>target_acq</td>
+        <td><span data-qmd="__nirspec__"></span></td> <td>bots</td> <td>0.6 &#8211; 5.2</td>
     </tr>
   </tbody>
 </table>
-
 ```
+
+```{=html}
+<table style="background-color: #f5f5f5; border-collapse: collapse;">
+
+  <colgroup>
+    <col style="width: 30%;">
+    <col style="width: 30%;">
+    <col style="width: 40%;">
+  </colgroup>
+
+  <thead style="background-color: #e0e0e0;">
+    <tr>
+      <th><span data-qmd="Instrument"></span></th>
+      <th><span data-qmd="Photometry modes"></span></th>
+      <th><span data-qmd="Wavelength range (&mu;m)"></span></th>
+    </tr>
+  </thead>
+
+  <tbody style="background-color: #fafafa;">
+    <tr>
+        <td><span data-qmd="__miri__"></span></td> <td>imaging_ts</td> <td>5.0 &#8211; 30</td>
+    </tr>
+    <tr>
+        <td rowspan="2"><span data-qmd="__nircam__"></span></td>
+        <td>lw_ts</td> <td>2.4 &#8211; 5.2</td>
+    </tr>
+    <tr>
+        <td>sw_ts</td> <td>0.6 &#8211; 2.4</td>
+    </tr>
+  </tbody>
+</table>
+```
+
+```{=html}
+<table style="background-color: #f5f5f5; border-collapse: collapse;">
+
+  <colgroup>
+    <col style="width: 30%;">
+    <col style="width: 70%;">
+  </colgroup>
+
+  <thead style="background-color: #e0e0e0;">
+    <tr>
+      <th><span data-qmd="Instrument"></span></th>
+      <th><span data-qmd="Acquisition modes"></span></th>
+    </tr>
+  </thead>
+
+  <tbody style="background-color: #fafafa;">
+    <tr>
+        <td><span data-qmd="__miri__"></span></td> <td>target_acq</td>
+    </tr>
+    <tr>
+        <td><span data-qmd="__nircam__"></span></td><td>target_acq</td>
+    </tr>
+    <tr>
+        <td><span data-qmd="__niriss__"></span></td> <td>target_acq</td>
+    </tr>
+
+    <tr>
+        <td><span data-qmd="__nirspec__"></span></td> <td>target_acq</td>
+    </tr>
+  </tbody>
+</table>
+```
+
 
 Lets move on then:
 

@@ -1,0 +1,78 @@
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+
+name: Render
+
+# you need these permissions to publish to GitHub pages
+permissions:
+    contents: write
+    pages: write
+    id-token: write
+
+
+# Allow one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  render-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Jupyter
+        run: |
+          python -m pip install --upgrade pip
+          pip install jupyter
+          pip install ipykernel
+          python -m ipykernel install --user --name=python3
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install quartodoc
+          pip install -r requirements.txt
+          pip install -r docs/requirements.txt
+
+      - name: Install package
+        run: |
+          python -m pip install -e .
+
+
+      - name: Download Vega file
+        run: |
+          mkdir -p pandeia_dir/sed/hst_calspec
+          wget -O pandeia_dir/sed/hst_calspec/alpha_lyr_stis_010.fits https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits
+
+      - name: Set environment variable
+        run: echo "pandeia_refdata=$(pwd)/pandeia_dir" >> $GITHUB_ENV
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Compile docstrings with quartodoc
+        shell: bash
+        run: |
+          pushd docs; make doc; popd
+
+      - name: Render
+        uses: quarto-dev/quarto-actions/render@v2
+        with:
+          path: 'docs'
+
+      # add software dependencies here and any libraries
+
+      # See more at https://github.com/quarto-dev/quarto-actions/blob/main/examples/example-03-dependencies.md
+

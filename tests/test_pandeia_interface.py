@@ -73,24 +73,52 @@ def test_saturation_level_tso_calculation_get_max():
     pass
 
 
-def test_exposure_time_nircam():
+@pytest.mark.parametrize('nint', [1, 10, 100])
+def test_exposure_time_nircam(nint):
     inst = 'nircam'
     subarray = 'subgrism64'
     readout = 'rapid'
     ngroup = 90
-    nint = 1
     exp_time = jwst.exposure_time(inst, subarray, readout, ngroup, nint)
-    np.testing.assert_allclose(exp_time, 31.00063)
+    if nint == 1:
+        expected_exposure = 31.00063
+    elif nint == 10:
+        expected_exposure = 310.0063
+    elif nint == 100:
+        expected_exposure = 3100.063
+    np.testing.assert_allclose(exp_time, expected_exposure)
 
 
-def test_exposure_time_miri():
+@pytest.mark.parametrize('nint', [1, 10, 100])
+def test_exposure_time_miri_fastr1(nint):
     inst = 'miri'
     subarray = 'slitlessprism'
     readout = 'fastr1'
     ngroup = 30
-    nint = 1
     exp_time = jwst.exposure_time(inst, subarray, readout, ngroup, nint)
-    np.testing.assert_allclose(exp_time, 4.7712)
+    if nint == 1:
+        expected_exposure = 4.7712
+    elif nint == 10:
+        expected_exposure = 49.14336
+    elif nint == 100:
+        expected_exposure = 492.86496
+    np.testing.assert_allclose(exp_time, expected_exposure)
+
+
+@pytest.mark.parametrize('nint', [1, 10, 100])
+def test_exposure_time_miri_slowr1(nint):
+    inst = 'miri'
+    subarray = 'full'
+    readout = 'slowr1'
+    ngroup = 30
+    exp_time = jwst.exposure_time(inst, subarray, readout, ngroup, nint)
+    if nint == 1:
+        expected_exposure = 716.6976
+    elif nint == 10:
+        expected_exposure = 7381.98528
+    elif nint == 100:
+        expected_exposure = 74034.86208
+    np.testing.assert_allclose(exp_time, expected_exposure)
 
 
 def test_exposure_time_bad_subarray():

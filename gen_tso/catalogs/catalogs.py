@@ -5,18 +5,25 @@ __all__ = [
     'find_target',
     'Catalog',
     'load_trexolists',
+    'load_programs',
     'load_targets',
     'load_aliases',
 ]
 
 from datetime import datetime
+import os
+
 from astropy.io import ascii
 import numpy as np
 import prompt_toolkit as ptk
 
-from ..utils import ROOT
+from astropy.coordinates import Angle, SkyCoord
+from astropy.units import hourangle, deg
+
+from ..utils import ROOT, KNOWN_PROGRAMS
 from . import utils as u
 from .target import Target
+from .fetch_programs import parse_program
 
 
 def find_target(targets=None):
@@ -97,18 +104,23 @@ class Catalog():
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
-            target.is_jwst = target.host in jwst_hosts and target.is_transiting
-            if target.is_jwst:
+            target.is_jwst_host = target.host in jwst_hosts and target.is_transiting
+            if target.is_jwst_host:
                 for j in range(njwst):
                     if target.host in trexo_data[j]['nea_hosts']:
                         break
                 target.trexo_data = trexo_data[j]
+                planets = np.unique(np.concatenate(trexo_data[j]['planets']))
+                letter = u.get_letter(target.planet).strip()
+                target.is_jwst_planet = letter in planets
+            else:
+                target.is_jwst_planet = False
 
             if target.planet in planets_aka:
                 target.aliases = planets_aka[target.planet]
 
         self._transit_mask = [target.is_transiting for target in self.targets]
-        self._jwst_mask = [target.is_jwst for target in self.targets]
+        self._jwst_mask = [target.is_jwst_host for target in self.targets]
         self._confirmed_mask = [target.is_confirmed for target in self.targets]
 
 
@@ -250,7 +262,7 @@ def load_trexolists(grouped=False, trexo_file=None):
     ['L 168-9' 'HAT-P-14' 'WASP-80' 'WASP-80' 'WASP-69' 'GJ 436' ...]
     >>>
     >>> print(list(trexo))
-    ['target', 'trexo_name', 'program', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
+    ['target', 'trexo_name', 'program', 'observation', 'visit', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
 
     >>> # Get data as lists of (host) targets:
     >>> trexo = cat.load_trexolists(grouped=True)
@@ -258,6 +270,8 @@ def load_trexolists(grouped=False, trexo_file=None):
     {'target': array(['WASP-43', 'WASP-43'], dtype='<U23'),
     'trexo_name': array(['WASP-43', 'WASP-43'], dtype='<U23'),
     'program': array(['GTO 1224 Birkmann', 'ERS 1366 Batalha'], dtype='<U22'),
+    'observation': array([ 2, 11]),
+    'visit': array([1, 1]),
     'ra': array(['10:19:37.9634', '10:19:37.9649'], dtype='<U13'),
     'dec': array(['-09:48:23.21', '-09:48:23.19'], dtype='<U12'),
     'event': array(['phase', 'phase'], dtype='<U9'),
@@ -301,14 +315,30 @@ def load_trexolists(grouped=False, trexo_file=None):
         for categ,prog,name in zip(category, programs, pi)
     ])
 
+    trexo_data['observation'] = np.array(trexolist_data['Observation'])
+    trexo_data['visit'] = np.array(trexolist_data['Visit'])
     trexo_data['ra'] = np.array(trexolist_data['R.A. 2000'])
     trexo_data['dec'] = np.array(trexolist_data['Dec. 2000'])
+
+    planets_file = f'{ROOT}data/planets_per_program.txt'
+    if os.path.exists(planets_file):
+        trexo_planets = []
+        planet_data = np.loadtxt(planets_file, dtype=str)
+        for i in range(len(programs)):
+            program = programs[i]
+            obs = trexo_data['observation'][i]
+            for p, o, planets in planet_data:
+                if program==int(p) and obs==int(o):
+                    trexo_planets.append(planets.split(','))
+                    break
+        else:
+            trexo_planets.append([])
+        trexo_data['planets'] = trexo_planets
 
     trexo_data['event'] = np.array([
         event.lower().replace('phasec', 'phase')
         for event in trexolist_data['Event']
     ])
-    # see_phase?
 
     trexo_data['mode'] = np.array([
         obs.replace('.', ' ')
@@ -366,37 +396,101 @@ def load_trexolists(grouped=False, trexo_file=None):
     if not grouped:
         return trexo_data
 
+
     # Use RA and dec to detect aliases for a same object
-    truncated_ra = np.array([ra[0:5] for ra in trexo_data['ra']])
-    truncated_dec = np.array([dec[0:6] for dec in trexo_data['dec']])
+    ra = [Angle(ra, unit=hourangle).deg for ra in trexo_data['ra']]
+    dec = [Angle(dec, unit=deg).deg for dec in trexo_data['dec']]
+    coords = SkyCoord(ra, dec, unit='deg', frame='icrs')
 
     ntargets = len(trexo_data['target'])
     taken = np.zeros(ntargets, bool)
-    target_sets = []
-    trexo_ra = []
-    trexo_dec = []
+    group_indices = []
     for i in range(ntargets):
         if taken[i]:
             continue
-        group_indices = [i]
-        ra = truncated_ra[i]
-        dec = truncated_dec[i]
-        trexo_ra.append(ra)
-        trexo_dec.append(dec)
-        taken[i] = True
-        for j in range(i,ntargets):
-            if truncated_ra[j]==ra and truncated_dec[j]==dec and not taken[j]:
-                group_indices.append(j)
-                taken[j] = True
-        target_sets.append(group_indices)
+        seps = coords[i].separation(coords).to('arcsec').value
+        indices = np.where(seps < 50)[0]
+        taken[indices] = True
+        group_indices.append(indices)
 
     grouped_data = []
-    for i,indices in enumerate(target_sets):
+    for i,indices in enumerate(group_indices):
         target = {}
         for key in trexo_data.keys():
-            target[key] = trexo_data[key][indices]
-        target['truncated_ra'] = np.array(trexo_ra[i])
-        target['truncated_dec'] = np.array(trexo_dec[i])
+            if isinstance(trexo_data[key], list):
+                target[key] = [trexo_data[key][idx] for idx in indices]
+            else:
+                target[key] = trexo_data[key][indices]
+        grouped_data.append(target)
+
+    return grouped_data
+
+
+def load_programs(grouped=False, verbose=False):
+    """
+    Get the data from the downloaded JWST programs (xml files)
+    Note that the programs know targets by host star, not by
+    individual planets in a given system.
+
+    Parameters
+    ----------
+    grouped: Bool
+        - If False, return a 1D list of all observations
+        - If True, return a nested list of observations grouped by
+          host target.
+    verbose: Bool
+        If True and there were program files not found, show a
+        warning in the screen outputs and tell how to fetch the files.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> programs = cat.load_programs()
+    """
+    observations = []
+    for pid in KNOWN_PROGRAMS:
+        not_found = []
+        try:
+            obs = parse_program(pid)
+            observations += obs
+        except FileNotFoundError:
+            not_found.append(pid)
+
+    if len(not_found) > 0 and verbose:
+        print(
+            f'There are missing JWST-program files.  '
+            f'Fetch from the command line with:\n  tso --update_programs'
+            f'\n\nMissing programs:\n{not_found}'
+        )
+
+    for obs in observations:
+        target = obs['target']
+        norm_target = u.normalize_name(target)
+        obs['target'] = norm_target
+        obs['target_in_program'] = target
+
+    if not grouped:
+        return observations
+
+    # Use RA and dec to detect aliases for a same object
+    ra = [Angle(obs['ra'], unit=hourangle).deg for obs in observations]
+    dec = [Angle(obs['dec'], unit=deg).deg for obs in observations]
+    coords = SkyCoord(ra, dec, unit='deg', frame='icrs')
+
+    nobs = len(observations)
+    taken = np.zeros(nobs, bool)
+    group_indices = []
+    for i in range(nobs):
+        if taken[i]:
+            continue
+        seps = coords[i].separation(coords).to('arcsec').value
+        indices = np.where(seps < 50)[0]
+        taken[indices] = True
+        group_indices.append(indices)
+
+    grouped_data = []
+    for i,indices in enumerate(group_indices):
+        target = [observations[j] for j in indices]
         grouped_data.append(target)
 
     return grouped_data

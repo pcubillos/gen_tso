@@ -2,9 +2,13 @@
 *.swp
 *.DS_Store
 *~
-gen_tso/data/last_updated*
 gen_tso/data/target_search_history
 gen_tso/data/tess_candidates_tmp.txt
+gen_tso/data/nea_aliases.pickle
+gen_tso/data/tess_aliases.pickle
+docs/_freeze/
+docs/README
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

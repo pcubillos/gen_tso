@@ -2,11 +2,16 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
-    'default_aperture_strategy',
-    'get_configs',
-    'filter_throughputs',
+    'get_instruments',
+    'get_modes',
+    '_spec_modes',
+    '_photo_modes',
+    '_acq_modes',
+    '_default_aperture_strategy',
+    '_get_configs',
+    'get_throughputs',
     'generate_all_instruments',
-    'load_flux_rate_splines',
+    '_load_flux_rate_splines',
     'Detector',
 ]
 
@@ -20,6 +25,7 @@ from pandeia.engine.calc_utils import get_instrument_config
 from ..utils import ROOT
 
 
+# Dictionaries
 inst_names = {
     'miri': 'MIRI',
     'nircam': 'NIRCam',
@@ -27,22 +33,75 @@ inst_names = {
     'nirspec': 'NIRSpec',
 }
 
-spec_modes = [
-   'lrsslitless',
-   'mrs_ts',
-   'lw_tsgrism',
-   'sw_tsgrism',
-   'soss',
-   'bots',
-]
-photo_modes = [
-    'imaging_ts',
-    'lw_ts',
-    'sw_ts',
-]
-acq_modes = [
+spec_dict = {
+    'miri': ['lrsslitless', 'mrs_ts'],
+    'nircam': ['lw_tsgrism', 'sw_tsgrism'],
+    'niriss': ['soss'],
+    'nirspec': ['bots'],
+}
+
+photo_dict = {
+    'miri': ['imaging_ts'],
+    'nircam': ['lw_ts', 'sw_ts'],
+}
+
+# Lists
+_spec_modes = []
+for modes in spec_dict.values():
+    _spec_modes += modes
+
+_photo_modes = []
+for modes in photo_dict.values():
+    _photo_modes += modes
+
+_acq_modes = [
     'target_acq',
 ]
+
+def get_instruments():
+    """
+    Get the list of JWST instruments.
+
+    Returns
+    -------
+    instruments: 1D list of strings
+        JWST instruments
+    """
+    return list(inst_names)
+
+
+def get_modes(instrument, type=None):
+    """
+    Get the list of available TSO modes for a given instrument.
+
+    Parameters
+    ----------
+    instrument: String
+        A JWST instrument.
+    type: String
+        If set, get only the modes of the specified type:
+        spectroscopy, photometry, or acquisition
+
+    Returns
+    -------
+    modes: 1D list of strings
+        JWST TSO modes for instrument
+    """
+    modes = []
+    if type is None:
+        types = ['spectroscopy', 'photometry', 'acquisition']
+    else:
+        types = [type]
+
+    if 'spectroscopy' in types:
+        modes += spec_dict[instrument]
+    if 'photometry' in types and instrument in photo_dict:
+        modes += photo_dict[instrument]
+    if 'acquisition' in types:
+        modes += _acq_modes
+
+    return modes
+
 
 
 # Spectra extraction apertures (arcsec) based on values reported in:
@@ -50,7 +109,7 @@ acq_modes = [
 # Alderson et al. (2023) NIRSpec/G395H
 # Bouwman et al. (2024)  MIRI/LRS
 # Bell et al. (2024)     MIRI/LRS
-default_aperture_strategy = {
+_default_aperture_strategy = {
     'lrsslitless': dict(
         aperture_size = 0.6,
         sky_annulus = [1.0, 2.5],
@@ -74,39 +133,45 @@ default_aperture_strategy = {
 }
 
 
-def get_constrained_values(inst_config, aper, inst_property, mode):
+def get_constraints(config, inst_property, mode, **prop_constraints):
     """
     Extract instrument properties that might be constrained or not.
 
     Parameters
     ----------
-    inst_config: Dict
+    config: Dict
         Instrument config dict.
-    aper: String
-        Instrument's aperture.
     inst_property: String
         The property to extract. Select from: dispersers, filters,
         subarrays, or readout_patterns.
     mode: String
         Observing mode.
+    **prop_constraints: String
+        Constraining property and value.
     """
-    constraints = inst_config['config_constraints']['apertures']
-    is_constrained = (
-        aper in constraints and
-        inst_property in constraints[aper] and
-        mode in constraints[aper][inst_property]
-    )
+    prop_key = list(prop_constraints)[0]
+    constraint = prop_constraints[prop_key]
 
-    if mode == 'sw_ts' and inst_property == 'filters':
-        values = constraints[aper][inst_property]
-        values = values[mode] if isinstance(values, dict) else values
-    elif is_constrained:
-        values = constraints[aper][inst_property][mode]
-    elif inst_property in inst_config['mode_config'][mode]:
-        values = inst_config['mode_config'][mode][inst_property]
-    else:
-        values = inst_config[inst_property]
-    return values
+    constraints = {}
+    if prop_key in config['config_constraints']:
+        constraints = config['config_constraints'][prop_key]
+    is_constrained = (
+        constraint is not None and
+        constraint in constraints and
+        inst_property in constraints[constraint]
+    )
+    if is_constrained:
+        constraint_val = constraints[constraint][inst_property]
+        if isinstance(constraint_val, list):
+            return constraint_val
+        if mode in constraint_val:
+            return constraint_val[mode]
+        if constraint_val['default'] is None:
+            return config['mode_config'][mode][inst_property]
+        return constraint_val['default']
+    if inst_property in config['mode_config'][mode]:
+        return config['mode_config'][mode][inst_property]
+    return config[inst_property]
 
 
 def str_or_dict(info_dict, selected, mode):
@@ -131,7 +196,7 @@ def str_or_dict(info_dict, selected, mode):
     return info_dict[selected]['display_string']['default']
 
 
-def get_configs(instrument=None, obs_type=None):
+def _get_configs(instrument=None, obs_type=None):
     """
     Collect the information from the available observing modes
     (Names, modes, dispersers, readout patterns, subarrays, slits).
@@ -158,14 +223,14 @@ def get_configs(instrument=None, obs_type=None):
 
     Examples
     --------
-    >>> from gen_tso.pandeia_io import get_configs
+    >>> from gen_tso.pandeia_io import _get_configs
 
-    >>> insts = get_configs(obs_type='spectroscopy')
-    >>> insts = get_configs(obs_type='photometry')
-    >>> insts = get_configs(obs_type='acquisition')
+    >>> insts = _get_configs(obs_type='spectroscopy')
+    >>> insts = _get_configs(obs_type='photometry')
+    >>> insts = _get_configs(obs_type='acquisition')
 
-    >>> insts = get_configs(instrument='miri')
-    >>> insts = get_configs(instrument='nircam', obs_type='spectroscopy')
+    >>> insts = _get_configs(instrument='miri')
+    >>> insts = _get_configs(instrument='nircam', obs_type='spectroscopy')
     """
     ta_apertures = {
         'miri': ['imager'],
@@ -185,42 +250,45 @@ def get_configs(instrument=None, obs_type=None):
 
     modes = []
     if 'spectroscopy' in obs_type:
-        modes += spec_modes
-    if 'acquisition' in obs_type:
-        modes += acq_modes
+        modes += _spec_modes
     if 'photometry' in obs_type:
-        modes += photo_modes
+        modes += _photo_modes
+    if 'acquisition' in obs_type:
+        modes += _acq_modes
 
     telescope = 'jwst'
     outputs = []
     for mode, inst in product(modes, instrument):
-        inst_config = get_instrument_config(telescope, inst)
-        if mode not in inst_config['modes']:
+        config = get_instrument_config(telescope, inst)
+        if mode not in config['modes']:
             continue
 
-        disperser_names = inst_config['disperser_config']
-        filter_names = inst_config['filter_config']
-        readout_names = inst_config['readout_pattern_config']
-        subarray_names = inst_config['subarray_config']['default']
-        aperture_names = inst_config['aperture_config']
-        if 'slit_config' in inst_config:
-            slit_names = inst_config['slit_config']
+        names = {
+            'dispersers': config['disperser_config'],
+            'filters': config['filter_config'],
+            'readout_patterns': config['readout_pattern_config'],
+            'subarrays': config['subarray_config']['default'],
+        }
+        if 'slit_config' in config:
+            names['slits'] = config['slit_config']
+        props = list(names)
 
-        if mode in spec_modes:
+        if mode in _spec_modes:
             obs_type = 'spectroscopy'
-        elif mode in acq_modes:
+        elif mode in _acq_modes:
             obs_type = 'acquisition'
-        elif mode in photo_modes:
+        elif mode in _photo_modes:
             obs_type = 'photometry'
 
         inst_dict = {}
         inst_dict['instrument'] = inst_names[inst]
         inst_dict['obs_type'] = obs_type
-        mode_name = inst_config['mode_config'][mode]['display_string']
+        mode_name = config['mode_config'][mode]['display_string']
         inst_dict['mode'] = mode
         inst_dict['mode_label'] = mode_name
 
-        apertures = inst_config['mode_config'][mode]['apertures']
+        aperture_names = config['aperture_config']
+        apertures = config['mode_config'][mode]['apertures']
         if obs_type == 'acquisition':
             apertures = [
                 aper for aper in apertures
@@ -230,41 +298,15 @@ def get_configs(instrument=None, obs_type=None):
             aperture: str_or_dict(aperture_names, aperture, mode)
             for aperture in apertures
         }
-        aper = apertures[0]
+        aper = apertures[0] if mode=='target_acq' else None
 
-        dispersers = get_constrained_values(
-            inst_config, aper, 'dispersers', mode,
-        )
-        inst_dict['dispersers'] = {
-            disperser: str_or_dict(disperser_names, disperser, mode)
-            for disperser in dispersers
-        }
-
-        filters = get_constrained_values(inst_config, aper, 'filters', mode)
-        inst_dict['filters'] = {
-            filter: str_or_dict(filter_names, filter, mode)
-            for filter in filters
-        }
-
-        readouts = get_constrained_values(
-            inst_config, aper, 'readout_patterns', mode,
-        )
-        inst_dict['readouts'] = {
-            readout: str_or_dict(readout_names, readout, mode)
-            for readout in readouts
-        }
-
-        subarrays = get_constrained_values(inst_config, aper, 'subarrays', mode)
-        inst_dict['subarrays'] = {
-            subarray: str_or_dict(subarray_names, subarray, mode)
-            for subarray in subarrays
-        }
-
-        slits = get_constrained_values(inst_config, aper, 'slits', mode)
-        inst_dict['slits'] = {
-            slit: str_or_dict(slit_names, slit, mode)
-            for slit in slits
-        }
+        for prop in props:
+            vals = get_constraints(config, prop, mode, apertures=aper)
+            prop_name = 'readouts' if prop=='readout_patterns' else prop
+            inst_dict[prop_name] = {
+                value: str_or_dict(names[prop], value, mode)
+                for value in vals
+            }
 
         if inst_dict['mode'] == 'soss':
             inst_dict['orders'] = {
@@ -276,40 +318,108 @@ def get_configs(instrument=None, obs_type=None):
             inst_dict['orders'] = None
 
         if obs_type == 'acquisition':
-            groups = inst_config['mode_config'][mode]['enum_ngroups']
+            groups = config['mode_config'][mode]['enum_ngroups']
             if not isinstance(groups, list):
                 groups = groups['default']
             inst_dict['groups'] = groups
             # Integrations and exposures are always one (so far)
-            #print(inst_config['mode_config'][mode]['enum_nexps'])
-            #print(inst_config['mode_config'][mode]['enum_nints'])
+            #print(config['mode_config'][mode]['enum_nexps'])
+            #print(config['mode_config'][mode]['enum_nints'])
 
 
         # Special constraints
         inst_dict['constraints'] = {}
+        # MIRI
+        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
+            group_constraints = config['mode_config'][mode]['enum_ngroups']
+            constraints = {}
+            for subarray in inst_dict['subarrays']:
+                key = subarray if subarray in group_constraints else 'default'
+                constraints[subarray] = group_constraints[key]
+            inst_dict['constraints']['groups'] = {'subarrays': constraints}
+
+        # NIRCam
         if mode == 'sw_tsgrism':
-            aper_constraints = inst_config['config_constraints']['apertures']
             constraints = {
-                aperture: aper_constraints[aperture]['subarrays']['default']
-                for aperture in apertures
+                aper: get_constraints(config, 'subarrays', mode, apertures=aper)
+                for aper in apertures
             }
             inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
-        if mode == 'bots':
-            disp_constraints = inst_config['config_constraints']['dispersers']
+        if mode == 'lw_tsgrism':
             constraints = {
-                disperser: disp_constraints[disperser]['filters']
-                for disperser in dispersers
+                subarray: get_constraints(
+                    config, 'readout_patterns', mode, subarrays=subarray,
+                )
+                for subarray in inst_dict['subarrays']
+            }
+            inst_dict['constraints']['readouts'] = {'subarrays': constraints}
+
+        if inst == 'nircam' and obs_type == 'photometry':
+            constraints = {
+                aper: get_constraints(
+                    config, 'filters', mode, apertures=aper,
+                )
+                for aper in apertures
+            }
+            double_filters = config['double_filters']
+
+            pupil_to_aperture = {}
+            pupils = {}
+            filters = {}
+            for aper, a_label in inst_dict['apertures'].items():
+                pupils[aper] = a_label
+                filters[aper] = []
+                for filter in constraints[aper]:
+                    if filter in double_filters:
+                        filters[filter] = [filter]
+                        pupils[filter] = filter.upper()
+                        pupil_to_aperture[filter] = aper
+                    else:
+                        filters[aper] += [filter]
+                pupil_to_aperture[aper] = aper
+            inst_dict['constraints']['filters'] = {'pupils': filters}
+            inst_dict['pupils'] = pupils
+            inst_dict['pupil_to_aperture'] = pupil_to_aperture
+
+        if mode == 'sw_ts':
+            inst_dict['constraints']['filters']['apertures'] = constraints
+            constraints = {
+                aper: get_constraints(
+                    config, 'subarrays', mode, apertures=aper,
+                )
+                for aper in apertures
+            }
+            inst_dict['constraints']['subarrays'] = {'apertures': constraints}
+            pairings = {
+                'imaging': 'LW Imaging Time Series',
+                'grism': 'LW Grism Time Series',
+            }
+            constraints = {pairing: [] for pairing in pairings}
+            for pupil in inst_dict['pupils']:
+                if inst_dict['pupil_to_aperture'][pupil] in ['sw', 'wlp8__ts']:
+                    constraints['imaging'].append(pupil)
+                else:
+                    constraints['grism'].append(pupil)
+            inst_dict['pairings'] = pairings
+            inst_dict['constraints']['pupils'] = {'pairings': constraints}
+
+        # NIRSpec
+        if mode == 'bots':
+            constraints = {
+                disp: get_constraints(config, 'filters', mode, dispersers=disp)
+                for disp in inst_dict['dispersers']
             }
             inst_dict['constraints']['filters'] = {'dispersers': constraints}
             constraints = {}
-            for disperser in dispersers:
-                subs = subarrays.copy()
+            for disperser in inst_dict['dispersers']:
+                subs = list(inst_dict['subarrays'])
                 if disperser == 'prism':
                     subs.remove('sub1024a')
                 constraints[disperser] = subs
             inst_dict['constraints']['subarrays'] = {'dispersers': constraints}
 
+        # NIRISS
         if mode == 'soss':
             constraints = {
                 'substrip96': ['1'],
@@ -320,45 +430,18 @@ def get_configs(instrument=None, obs_type=None):
             constraints = {
                 'substrip96': ['nisrapid'],
                 'substrip256': ['nisrapid'],
-                'sossfull': readouts,
+                'sossfull': inst_dict['readouts'],
             }
             inst_dict['constraints']['readouts'] = {'subarrays': constraints}
 
-        if inst_dict['instrument']=='MIRI' and mode=='target_acq':
-            group_constraints = inst_config['mode_config'][mode]['enum_ngroups']
-            constraints = {}
-            for subarray in subarrays:
-                key = subarray if subarray in group_constraints else 'default'
-                constraints[subarray] = group_constraints[key]
-            inst_dict['constraints']['groups'] = {'subarrays': constraints}
-
         if inst_dict['instrument']=='NIRISS' and mode=='target_acq':
             constraints = {
-                aperture: get_constrained_values(
-                    inst_config, aperture, 'readout_patterns', mode,
+                aper: get_constraints(
+                    config, 'readout_patterns', mode, apertures=aper,
                 )
-                for aperture in apertures
+                for aper in inst_dict['apertures']
             }
             inst_dict['constraints']['readouts'] = {'apertures': constraints}
-
-        if mode == 'lw_ts' or mode == 'sw_ts':
-            # NIRCam is so special
-            inst_dict['double_filter_constraints']  = inst_config['double_filters']
-        if mode == 'sw_ts':
-            constraints = {
-                aperture: get_constrained_values(
-                    inst_config, aperture, 'filters', mode,
-                )
-                for aperture in apertures
-            }
-            inst_dict['constraints']['filters'] = {'apertures': constraints}
-            constraints = {
-                aperture: get_constrained_values(
-                    inst_config, aperture, 'subarrays', mode,
-                )
-                for aperture in apertures
-            }
-            inst_dict['constraints']['subarrays'] = {'apertures': constraints}
 
         outputs.append(inst_dict)
     return outputs
@@ -413,8 +496,10 @@ def print_configs(instrument, mode, output):
 class Detector:
     def __init__(
             self, mode, label, instrument, obs_type,
-            disperser_label, dispersers, filter_label, filters,
-            subarrays, readouts, apertures, orders=None,
+            aperture_label, apertures,
+            disperser_label, dispersers,
+            filter_label, filters,
+            subarrays, readouts, orders=None,
             groups=None, default_indices=None,
             constraints={},
         ):
@@ -434,13 +519,14 @@ class Detector:
         self.mode_label = label
         self.instrument = instrument
         self.obs_type = obs_type
+        self.aperture_label = aperture_label
+        self.apertures = apertures
         self.disperser_label = disperser_label
         self.dispersers = dispersers
         self.filter_label = filter_label
         self.filters = filters
         self.subarrays = subarrays
         self.readouts = readouts
-        self.apertures = apertures
         self.groups = groups
         self.constraints = constraints
         if self.mode == 'soss':
@@ -450,10 +536,14 @@ class Detector:
         self.ins_config = get_instrument_config(telescope, instrument.lower())
 
         if default_indices is None:
-            idx_d = idx_f = idx_s = idx_r = 0
+            idx_a = idx_d = idx_f = idx_s = idx_r = 0
         else:
-            idx_d, idx_f, idx_s, idx_r = default_indices
-        self.default_disperser = list(dispersers)[idx_d]
+            idx_a, idx_d, idx_f, idx_s, idx_r = default_indices
+        self.default_aperture = list(apertures)[idx_a]
+        if self.mode == 'target_acq':
+            self.default_disperser = None
+        else:
+            self.default_disperser = list(dispersers)[idx_d]
         self.default_filter = list(filters)[idx_f]
         self.default_subarray = list(subarrays)[idx_s]
         self.default_readout = list(readouts)[idx_r]
@@ -461,7 +551,7 @@ class Detector:
     def get_constrained_val(
             self, var,
             disperser=None, filter=None, subarray=None, readout=None,
-            aperture=None,
+            aperture=None, pupil=None, pairing=None,
         ):
         """
         det = generate_all_instruments()[5]
@@ -478,6 +568,8 @@ class Detector:
             'subarrays': subarray,
             'readouts': readout,
             'apertures': aperture,
+            'pupils': pupil,
+            'pairings': pairing,
         }
 
         default_vals = getattr(self, var)
@@ -521,54 +613,107 @@ class Detector:
             label = f'{inst} / MRS / {disperser_label}'
         elif mode == 'lrsslitless':
             label = f'{inst} / LRS'
+        elif mode == 'imaging_ts':
+            filter_label = self.filters[filter]
+            label = f'{inst} / {filter_label}'
+
         elif mode == 'soss':
             label = f'{inst} / SOSS'
+
         elif mode == 'lw_tsgrism':
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
         elif mode == 'sw_tsgrism':
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
+        elif mode == 'lw_ts' or mode == 'sw_ts':
+            filter_label = self.filters[filter]
+            label = f'{inst} / {filter_label}'
+
         elif mode == 'bots':
             label = self.filters[f'{disperser}/{filter}']
             disperser_label = label[:label.index('/')]
             label = f'{inst} / {disperser_label}'
+
         elif mode == 'target_acq':
             label = f'{inst} / acquisition'
 
         return label
 
 
-def filter_throughputs():
+def get_throughputs(type=None, inst=None, mode=None):
     """
     Collect the throughput response curves for each instrument configuration
+
+    Parameters
+    ----------
+    type: String
+        If set, get only the modes of the specified type:
+        spectroscopy, photometry, or acquisition
+    instrument: String
+        If set, get only throughputs for the specified instrument.
+    mode: String
+        If set, get only throughputs for the specified mode and instrument.
+
+    Returns
+    -------
+    throughputs: Dictionary
+        Nested dictionary of shape throughputs[type][inst][mode][key][filter]
+        containing the wavelength (um) and response throughputs.
+        'key' refers to the apertures for photometry modes, and subarrays
+        for others.
 
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
-    >>> filter_throughputs = jwst.filter_throughputs()
+    >>>
+    >>> # All available throughputs
+    >>> throughputs = jwst.get_throughputs()
+    >>> # All throughputs for NIRSpec
+    >>> throughputs = jwst.get_throughputs('nirspec')
     """
-    detectors = generate_all_instruments()
-    throughputs = {}
-    for detector in detectors:
-        inst = detector.instrument.lower()
-        mode = detector.mode
-        obs_type = detector.obs_type
-        #print(inst, mode, obs_type)
-        if obs_type not in throughputs:
-            throughputs[obs_type] = {}
-        if inst not in throughputs[obs_type]:
-            throughputs[obs_type][inst] = {}
-        if mode not in throughputs[obs_type][inst]:
-            throughputs[obs_type][inst][mode] = {}
-
+    if mode is not None:
+        if inst is None:
+            msg = 'Also need to specify an instrument when requesting a specific mode'
+            raise ValueError(msg)
         t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
         with open(t_file, 'rb') as handle:
-            data = pickle.load(handle)
+            throughputs = pickle.load(handle)
+        return throughputs
 
-        for subarray in list(data.keys()):
-            throughputs[obs_type][inst][mode][subarray] = data[subarray]
+    if inst is not None:
+        modes = get_modes(inst)
+        throughputs = {}
+        for mode in modes:
+            t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
+            with open(t_file, 'rb') as handle:
+                data = pickle.load(handle)
+            throughputs[mode] = data
+        return throughputs
 
+    if type is None:
+        types = ['spectroscopy', 'photometry', 'acquisition']
+    else:
+        types = [type]
+    instruments = get_instruments()
+
+    throughputs = {}
+    for obs_type,inst in product(types, instruments):
+        modes = get_modes(inst, obs_type)
+        if obs_type not in types or len(modes) == 0:
+            continue
+        if obs_type not in throughputs:
+            throughputs[obs_type] = {}
+        throughputs[obs_type][inst] = {}
+
+        for mode in modes:
+            t_file = f'{ROOT}data/throughputs/throughputs_{inst}_{mode}.pickle'
+            with open(t_file, 'rb') as handle:
+                data = pickle.load(handle)
+            throughputs[obs_type][inst][mode] = data
+
+    if type is not None:
+        return throughputs[type]
     return throughputs
 
 
@@ -577,24 +722,18 @@ def generate_all_instruments():
     A list of Detector() objects to keep the instrument observing mode
     configurations.
 
-    TBD
-    ---
-    Imaging
-        'imaging_ts': 'Imaging Time Series'
-        'sw_ts': 'SW Time Series'
-        'lw_ts': 'LW Time Series'
-
     Examples
     --------
-    >>> from gen_tso.pandeia_io import get_configs, generate_all_instruments
-    >>> spec_insts = get_configs(obs_type='spectroscopy')
-    >>> acq_insts = get_configs(obs_type='acquisition')
+    >>> from gen_tso.pandeia_io import _get_configs, generate_all_instruments
+    >>> spec_insts = _get_configs(obs_type='spectroscopy')
+    >>> photo_insts = _get_configs(obs_type='photometry')
+    >>> acq_insts = _get_configs(obs_type='acquisition')
     >>> dets = generate_all_instruments()
     >>> det = dets[5]
     """
     detectors = []
     # Spectroscopic observing modes
-    spec_insts = get_configs(obs_type='spectroscopy')
+    spec_insts = _get_configs(obs_type='spectroscopy')
     for inst in spec_insts:
         mode = inst['mode']
         dispersers = inst['dispersers']
@@ -605,28 +744,29 @@ def generate_all_instruments():
         orders = inst['orders']
         constraints = inst['constraints']
 
+        aperture_label = 'Aperture'
         if mode == 'lrsslitless':
             disperser_label = 'Disperser'
             filter_label = ''
             filters = {'': ''}
-            default_indices = 0, 0, 0, 0
+            default_indices = 0, 0, 0, 0, 0
         if mode == 'mrs_ts':
             disperser_label = 'Wavelength Range'
             filter_label = ''
             filters = {'': ''}
-            default_indices = 0, 0, 0, 0
+            default_indices = 0, 0, 0, 0, 0
         if mode == 'lw_tsgrism':
             disperser_label = 'Grism'
             filter_label = 'Filter'
-            default_indices = 0, 3, 3, 0
+            default_indices = 0, 0, 3, 3, 0
         if mode == 'sw_tsgrism':
-            # TBD: a hack, in the future, better have an 'aperture' show/hide
-            disperser_label = 'PSF Type'
-            dispersers = apertures
+            aperture_label = 'PSF Type'
+            disperser_label = 'Grism'
             filter_label = 'Filter'
-            default_indices = 3, 4, 0, 0
+            default_indices = 3, 0, 4, 0, 0
         if mode == 'bots':
-            disperser_label = 'Slit'
+            aperture_label = 'Slit'
+            disperser_label = 'Grating'
             filter_label = 'Grating/Filter'
             inst['mode_label'] = 'Bright Object Time Series (BOTS)'
             filter_constraints = constraints['filters']['dispersers']
@@ -637,26 +777,26 @@ def generate_all_instruments():
                         label = f"{dispersers[disperser]}/{filters[filter]}"
                         gratings[f'{disperser}/{filter}'] = label
             filters = gratings
-            dispersers = inst['slits']
-            default_indices = 0, 7, 4, 1
+            default_indices = 0, 0, 7, 4, 1
         if mode == 'soss':
             disperser_label = 'Disperser'
             filter_label = 'Filter'
             inst['mode_label'] = 'Single Object Slitless Spectroscopy (SOSS)'
-            default_indices = 0, 0, 0, 1
+            default_indices = 0, 0, 0, 0, 1
 
         det = Detector(
             mode,
             inst['mode_label'],
             inst['instrument'],
             inst['obs_type'],
+            aperture_label,
+            apertures,
             disperser_label,
             dispersers,
             filter_label,
             filters,
             subarrays,
             readouts,
-            apertures,
             orders=orders,
             default_indices=default_indices,
             constraints=constraints,
@@ -664,86 +804,88 @@ def generate_all_instruments():
         detectors.append(det)
 
     # Photometry observing modes
-    # TBD: enable when the front-end app is ready to take these in
-    if False:
-        photo_insts = get_configs(obs_type='photometry')
-        for inst in photo_insts:
-            mode = inst['mode']
-            # Use pupil in place of 'disperser'
-            dispersers = inst['apertures']
-            filters = inst['filters']
-            subarrays = inst['subarrays']
-            readouts = inst['readouts']
-            apertures = inst['apertures']
-
-            disperser_label = 'Pupil'
-            filter_label = 'Filter'
-            default_indices = 0, 0, 0, 0
-            constraints = {}
-
-            if mode == 'lw_ts':
-                # Constraints for filter depends on pupil
-                pupil_constraints = {'lw': []}
-                for filter,filter_name in inst['filters'].items():
-                    if filter in inst['filter_constraints']:
-                        dispersers[filter] = filter_name
-                        pupil_constraints[filter] = [inst['filter_constraints'][filter]]
-                    else:
-                        pupil_constraints['lw'].append(filter)
-                constraints['filters'] = {'dispersers': pupil_constraints}
-            if mode == 'sw_ts':
-                # Constraints for filter depends on pupil
-                pupil_constraints = {'sw': []}
-                for filter,filter_name in inst['filters'].items():
-                    print(filter, filter_name)
-                    if filter in inst['filter_constraints']:
-                        dispersers[filter] = filter_name
-                        pupil_constraints[filter] = [inst['filter_constraints'][filter]]
-                    else:
-                        pupil_constraints['sw'].append(filter)
-                constraints['filters'] = {'dispersers': pupil_constraints}
-            if mode == 'imaging_ts':
-                disperser_label = ''
-                dispersers = {'':''}
-
-    # Acquisition observing modes
-    acq_insts = get_configs(obs_type='acquisition')
-    for inst in acq_insts:
+    photo_insts = _get_configs(obs_type='photometry')
+    for inst in photo_insts:
         mode = inst['mode']
-        # Use apertures in place of 'disperser'
-        dispersers = inst['apertures']
+        apertures = inst['apertures']
+        dispersers = inst['dispersers']
         filters = inst['filters']
         subarrays = inst['subarrays']
         readouts = inst['readouts']
-        apertures = inst['apertures']
-        disperser_label = 'Acquisition mode'
-        filter_label = 'Filter'
         constraints = inst['constraints']
 
-        if inst['instrument'] == 'MIRI':
-            default_indices = 0, 0, 5, 0
-        if inst['instrument'] == 'NIRCam':
-            default_indices = 0, 0, 0, 0
-        if inst['instrument'] == 'NIRISS':
-            default_indices = 0, 0, 0, 1
-            # Re-label constraint for front-end (aperture-->disperser)
-            r_constraint = constraints['readouts'].pop('apertures')
-            constraints['readouts']['dispersers'] = r_constraint
-        if inst['instrument'] == 'NIRSpec':
-            default_indices = 0, 0, 1, 0
+        filter_label = 'Filter'
+        if mode == 'lw_ts':
+            aperture_label = 'LW Pupil'
+            filter_label = 'LW Filter'
+        elif mode == 'sw_ts':
+            aperture_label = 'SW Pupil'
+            filter_label = 'SW Filter'
+        disperser_label = 'Disperser'
+        dispersers = {'':''}
+        default_indices = 0, 0, 0, 0, 0
 
         det = Detector(
             mode,
             inst['mode_label'],
             inst['instrument'],
             inst['obs_type'],
+            aperture_label,
+            apertures,
             disperser_label,
             dispersers,
             filter_label,
             filters,
             subarrays,
             readouts,
+            default_indices=default_indices,
+            constraints=constraints,
+        )
+        detectors.append(det)
+
+        if mode in ['lw_ts', 'sw_ts']:
+            det.pupils = inst['pupils']
+            det.pupil_to_aperture = inst['pupil_to_aperture']
+        if mode == 'sw_ts':
+            det.pairings = inst['pairings']
+
+    # Acquisition observing modes
+    acq_insts = _get_configs(obs_type='acquisition')
+    for inst in acq_insts:
+        mode = inst['mode']
+        aperture_label = 'Acquisition mode'
+        apertures = inst['apertures']
+        disperser_label = 'Disperser'
+        dispersers = inst['dispersers']
+        dispersers = {'':''}
+        filter_label = 'Filter'
+        filters = inst['filters']
+        subarrays = inst['subarrays']
+        readouts = inst['readouts']
+        constraints = inst['constraints']
+
+        if inst['instrument'] == 'MIRI':
+            default_indices = 0, 0, 0, 5, 0
+        if inst['instrument'] == 'NIRCam':
+            default_indices = 0, 0, 0, 0, 0
+        if inst['instrument'] == 'NIRISS':
+            default_indices = 0, 0, 0, 0, 1
+        if inst['instrument'] == 'NIRSpec':
+            default_indices = 0, 0, 0, 1, 0
+
+        det = Detector(
+            mode,
+            inst['mode_label'],
+            inst['instrument'],
+            inst['obs_type'],
+            aperture_label,
             apertures,
+            disperser_label,
+            dispersers,
+            filter_label,
+            filters,
+            subarrays,
+            readouts,
             groups=inst['groups'],
             default_indices=default_indices,
             constraints=constraints,
@@ -785,20 +927,26 @@ def make_save_label(
     """
     if target is not None:
         target = '_' + target.replace(' ', '')
+
     if mode == 'target_acq':
         return f'tso{target}_{inst}_{mode}.pickle'
     # Shorter miri and nircam mode names:
     mode = mode.replace('lrsslitless', 'lrs').replace('mrs_ts', 'mrs')
-    mode = mode.replace('w_tsgrism', 'w')
+    mode = mode.replace('w_tsgrism', 'w_grism')
+    mode = mode.replace('w_ts', 'w_imaging')
 
-    if inst in ['miri', 'niriss']:
-        return f'tso{target}_{inst}_{mode}.pickle'
-    elif inst == 'nirspec':
-        return f'tso{target}_{inst}_{mode}_{disperser}.pickle'
-    elif mode == 'lw':
+    if mode == 'mrs':
+        return f'tso{target}_{inst}_{mode}_{aperture}.pickle'
+    elif mode == 'imaging_ts':
         return f'tso{target}_{inst}_{mode}_{filter}.pickle'
-    elif mode == 'sw':
-        return f'tso{target}_{inst}_{mode}_{filter}_{aperture}.pickle'
+    elif mode in ['lrs', 'soss']:
+        return f'tso{target}_{inst}_{mode}.pickle'
+    elif mode == 'bots':
+        return f'tso{target}_{inst}_{mode}_{disperser}.pickle'
+    elif mode == 'lw_grism':
+        return f'tso{target}_{inst}_{mode}_{filter}.pickle'
+    elif mode == 'sw_grism':
+        return f'tso{target}_{inst}_{mode}_{subarray}_{filter}.pickle'
 
 
 def make_detector_label(
@@ -824,14 +972,24 @@ def make_detector_label(
         return f'MIRI MRS {disperser.upper()}'
     if mode == 'lrsslitless':
         return 'MIRI LRS'
+    if mode == 'imaging_ts':
+        return f'MIRI {filter.upper()}'
+
     if mode == 'soss':
         order = f' O{order[0]}' if len(order)==1 else ''
         return f'NIRISS {mode.upper()} {subarray}{order}'
+
     if mode == 'lw_tsgrism':
         subarray = subarray.replace('grism', '').replace('_dhs', '')
         return f'NIRCam {filter.upper()} {subarray} {readout}'
     if mode == 'sw_tsgrism':
         return f'NIRCam {filter.upper()} {subarray} {readout}'
+    if mode == 'lw_ts':
+        subarray = subarray.replace('grism', '').replace('_dhs', '')
+        return f'NIRCam imaging {filter.upper()} {subarray} {readout}'
+    if mode == 'sw_ts':
+        return f'NIRCam imaging {aperture} {filter.upper()} {subarray} {readout}'
+
     if mode == 'bots':
         if filter == 'f070lp':
             disperser = f'{disperser}/{filter}'
@@ -853,6 +1011,8 @@ def make_saturation_label(
         sat_label = f'{sat_label}{order}'
     elif mode == 'sw_tsgrism':
         sat_label = f'{sat_label}_{aperture}_{subarray}'
+    elif mode == 'sw_ts':
+        sat_label = f'{sat_label}_{aperture}'
     elif mode == 'mrs_ts':
         sat_label = f'{sat_label}_{disperser}'
     elif mode == 'target_acq' and inst == 'niriss':
@@ -874,13 +1034,14 @@ def make_obs_label(
         depth_label = 'acquisition'
     else:
         group_ints = f'({ngroup} G, {nint} I)'
+
     label = (
         f'{detector_label} {group_ints} / {sed_label} / {depth_label}'
     )
     return label
 
 
-def load_flux_rate_splines(obs_label=None):
+def _load_flux_rate_splines(obs_label=None):
     """
     Get dictionary of cubic spline functions for pre-calculated
     brightest pixel flux rates at given instrumental and SED config
@@ -904,19 +1065,18 @@ def load_flux_rate_splines(obs_label=None):
     --------
     >>> import gen_tso.pandeia_io as jwst
     >>>
-    >>> # Extract all splines:
-    >>> flux_rate_splines, full_wells = jwst.load_flux_rate_splines()
-    >>> # Evaluate for one config:
+    >>> # Extract all splines, evaluate for one config:
+    >>> flux_rate_splines, full_wells = jwst._load_flux_rate_splines()
     >>> obs_label = 'lw_tsgrism_f444w_phoenix_k5v'
     >>> spline = flux_rate_splines[obs_label]
     >>> print(spline(8.351), full_wells[obs_label])
-    3.1140133020415353 58100.001867429375
+    3.1140479065012263 58100.0
     >>>
     >>> # Extract a single config:
     >>> obs_label = 'lw_tsgrism_f444w_phoenix_k5v'
-    >>> flux_rate_spline, full_well = jwst.load_flux_rate_splines(obs_label)
+    >>> flux_rate_spline, full_well = jwst._load_flux_rate_splines(obs_label)
     >>> print(flux_rate_spline(8.351), full_well)
-    3.1140133020415353 58100.001867429375
+    3.1140479065012263 58100.0
     """
     if obs_label is not None:
         tokens = obs_label.split('_')
@@ -931,6 +1091,8 @@ def load_flux_rate_splines(obs_label=None):
         mag = rates.pop('magnitude')
         flux_rate_data[inst] = rates
 
+    aper_modes = _photo_modes + ['sw_tsgrism', 'mrs_ts']
+
     flux_rates = {}
     full_wells = {}
     for inst, mode_rates in flux_rate_data.items():
@@ -940,7 +1102,7 @@ def load_flux_rate_splines(obs_label=None):
                 for filter, sub_rates in filter_rates.items():
                     for subarray, sed_rates in sub_rates.items():
                         for order in orders:
-                            if mode in ['sw_tsgrism', 'mrs_ts']:
+                            if mode in aper_modes:
                                 aperture = disperser
                             else:
                                 aperture = ''

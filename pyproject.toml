@@ -19,8 +19,9 @@ authors = [
 ]
 dependencies = [
     'shiny>=1.0.0',
-    'pandeia.engine>=4.0.0,<2024',
-    'scipy',
+    'pandeia.engine>=2025.3',
+    # scipy version limited by pandeia.engine 2025.3
+    'scipy<1.15',
     'numpy>=1.17',
     'requests>=2.19.1',
     'astropy>=5.3.0',

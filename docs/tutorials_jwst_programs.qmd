@@ -7,7 +7,7 @@ format:
 jupyter: python3
 ---
 
-Lets use `Gen TSO` to show the list existing JWST programs:
+Lets use `Gen TSO` to show the list of existing JWST transit programs:
 
 1. parsed by target
 2. excluding failed runs
@@ -22,20 +22,21 @@ info = {}
 nplanets = len(catalog.targets)
 for target in catalog.targets:
     has_transits = (
-        target.is_jwst and
-        target.is_transiting and
+        target.is_jwst_planet and
         'transit' in target.trexo_data['event']
     )
 
     if has_transits:
         obs = target.trexo_data
         programs = obs['program']
+        obs_id = obs['observation']
         events = obs['event']
+        planets = [','.join(planets) for planets in obs['planets']]
         status = obs['status']
         mode = obs['mode']
         nobs = len(events)
         info[target.host] = [
-            f"    {programs[i]:24}  {mode[i]:20}  {status[i]}"
+            f"    {programs[i]:20} {obs_id[i]:>3}  {planets[i]:3}  {mode[i]:20}  {status[i]}"
             for i in range(nobs)
             if events[i] == 'transit'
             if status[i] not in ['Skipped', 'Failed', 'Withdrawn']

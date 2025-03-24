@@ -6,7 +6,6 @@ __all__ = [
     'check_pandeia_ref_data',
     'check_pysynphot',
     'update_synphot_files',
-    'fetch_vega',
     'fetch_synphot_files',
 ]
 
@@ -72,7 +71,7 @@ def check_pandeia_ref_data(latest_version):
     return ui.span(
         ui.HTML(
             f'<span style="color:red">{output}.</span> '
-            'Please follow the instructions in section 2.1 of '
+            'Please follow the instructions in section 3.1 of '
         ),
         ui.tags.a(pandeia_url, href=pandeia_url, target="_blank"),
     )
@@ -96,12 +95,10 @@ def check_pysynphot():
         return f'"PYSYN_CDBS" path does not exist:<br>{cdbs_path}'
 
     # check files
-    vega_path = f'{cdbs_path}/calspec/alpha_lyr_stis_010.fits'
     atlases = {
         'throughput': os.path.exists(f'{cdbs_path}/comp'),
         'Kurucz SED': os.path.exists(f'{cdbs_path}/grid/k93models/'),
         'PHOENIX SED': os.path.exists(f'{cdbs_path}/grid/phoenix/'),
-        'Vega SED': os.path.exists(vega_path),
     }
 
     lost = []
@@ -201,17 +198,13 @@ def update_synphot_files(force_update=False):
             )
 
     # Check files to update
-    vega_path = f'{synphot_path}/calspec/alpha_lyr_stis_010.fits'
     atlases = {
         'throughput': os.path.exists(f'{synphot_path}/comp'),
         'Kurucz SED': os.path.exists(f'{synphot_path}/grid/k93models/'),
         'PHOENIX SED': os.path.exists(f'{synphot_path}/grid/phoenix/'),
-        'Vega SED': os.path.exists(vega_path),
     }
 
     warnings = []
-    if not atlases['Vega SED'] or force_update:
-        warnings.append(fetch_vega(synphot_path))
     if not atlases['Kurucz SED'] or force_update:
         warnings.append(fetch_synphot_files('k93models', synphot_path))
     if not atlases['PHOENIX SED'] or force_update:
@@ -221,41 +214,6 @@ def update_synphot_files(force_update=False):
 
     warnings = [warn for warn in warnings if warn is not None]
     return warnings
-
-
-def fetch_vega(synphot_path=None):
-    """
-    Fetch Vega reference spectrum and place it in the rigth folder.
-
-    Returns
-    -------
-    On success, returns None.
-    If there was an error, return a string describing the error.
-    """
-    if synphot_path is None:
-        if "PYSYN_CDBS" not in os.environ:
-            return '$PYSYN_CDBS environment variable is not defined'
-        synphot_path = os.environ['PYSYN_CDBS']
-
-    vega_url = 'https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_010.fits'
-    path_idx = vega_url.find('calspec')
-    vega_path = f'{synphot_path}/{vega_url[path_idx:]}'
-
-    query_parameters = {}
-    response = requests.get(vega_url, params=query_parameters)
-    if not response.ok:
-        error = (
-            'Could not download Vega reference spectrum\n'
-            f'You may try downloading it manually from:\n   {vega_url}\n'
-            f'And put the file in:\n    {vega_path}'
-        )
-        print('\n' + error)
-        return error.replace('\n','<br>')
-
-    if not os.path.exists(os.path.dirname(vega_path)):
-        os.mkdir(os.path.dirname(vega_path))
-    with open(vega_path, mode="wb") as file:
-        file.write(response.content)
 
 
 def fetch_synphot_files(synphot_file, synphot_path=None):

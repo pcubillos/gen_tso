@@ -7,6 +7,7 @@ __all__ = [
     'fetch_nasa_confirmed_targets',
     'fetch_gaia_targets',
     'fetch_nea_aliases',
+    '_load_jwst_names',
 ]
 
 
@@ -33,8 +34,9 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import requests
 
-from ..utils import ROOT
-from .catalogs import load_targets, load_trexolists, load_aliases
+from ..utils import ROOT, KNOWN_PROGRAMS
+from .catalogs import load_targets, load_trexolists, load_programs, load_aliases
+from .fetch_programs import parse_program
 from . import utils as u
 from . import target as tar
 from .target import Target
@@ -196,6 +198,37 @@ def update_exoplanet_archive(from_scratch=False):
     print('Exoplanet data is up to date')
 
 
+def _load_jwst_names(grouped=False):
+    """
+    from gen_tso.catalogs import load_trexolists, load_programs
+    """
+    trexo_data = load_trexolists(grouped=grouped)
+    observations = load_programs(grouped=grouped)
+    if not grouped:
+        jwst_names = np.unique(trexo_data['target'])
+        known_targets = np.unique([obs['target'] for obs in observations])
+        jwst_names = np.union1d(jwst_names, known_targets).tolist()
+        return jwst_names
+
+    # Keep track of JWST target aliases from programs to cross-check:
+    jwst_aliases = [
+        np.unique(jwst_target['target']).tolist()
+        for jwst_target in trexo_data
+    ]
+
+    # Match against my own program list:
+    for obs_group in observations:
+        names = np.unique([obs['target'] for obs in obs_group]).tolist()
+        for i,aliases in enumerate(jwst_aliases):
+            if np.any(np.isin(names, aliases)):
+                jwst_aliases[i] = np.unique(names + aliases).tolist()
+                break
+        else:
+            jwst_aliases.append(names)
+
+    return jwst_aliases
+
+
 def curate_aliases():
     """
     Thin down all_aliases.pickle file to the essentials.
@@ -207,8 +240,8 @@ def curate_aliases():
         tess_aliases = pickle.load(handle)
     aliases.update(tess_aliases)
 
-    jwst_names = list(load_trexolists()['target'])
     # Ensure to match against NEA host names for jwst targets
+    jwst_names = _load_jwst_names()
     for host,system in aliases.items():
         is_in = np.isin(system['host_aliases'], jwst_names)
         if np.any(is_in) and system['host'] not in jwst_names:
@@ -756,17 +789,15 @@ def fetch_aliases(hosts, output_file=None, known_aliases=None):
 
     host_aliases, planet_aliases = fetch_nea_aliases(hosts)
 
-    # Keep track of trexolists aliases to cross-check:
-    trexo_data = load_trexolists(grouped=True)
-    jwst_aliases = [
-        list(np.unique(jwst_target['target']))
-        for jwst_target in trexo_data
-    ]
-    jwst_names = np.unique(np.concatenate(jwst_aliases))
+    # Ensure to match against JWST program target names
+    jwst_aliases = _load_jwst_names(grouped=True)
+    jwst_names = np.concatenate(jwst_aliases)
 
     aliases = {}
     nhosts = len(hosts)
     for i in range(nhosts):
+        if len(host_aliases[i]) == 0:
+            continue
         # Isolate host-planet(s) aliases
         stars = np.unique(list(host_aliases[i].values()))
         hosts_aka = u.invert_aliases(host_aliases[i])

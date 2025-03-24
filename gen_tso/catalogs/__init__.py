@@ -3,11 +3,13 @@
 
 from .catalogs import *
 from .fetch_catalogs import *
+from .fetch_programs import *
 from .target import *
 
 __all__ = (
     catalogs.__all__
     + fetch_catalogs.__all__
+    + fetch_programs.__all__
     + target.__all__
 )
 

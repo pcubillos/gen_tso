@@ -8,14 +8,10 @@ __all__ = [
 ]
 
 from typing import Optional
-from htmltools import (
-    Tag,
-    TagChild,
-)
+from htmltools import Tag
 from shiny.ui._navs import (
     NavSet,
     NavSetCard,
-    navset_title,
 )
 from shiny.ui._card import card_body
 from shiny._namespaces import resolve_id_or_none
@@ -91,60 +87,64 @@ class NavSetCardJWST(NavSet):
     """
     A NavSet look alike, but it doesn't really has multiple tab contents.
     """
-    title: Optional[TagChild]
-
     def __init__(
         self,
         *args,
         ul_class: str,
         id: Optional[str],
         selected: Optional[str],
-        title: Optional[TagChild] = None,
-        header: TagChild = None,
-        footer: TagChild = None,
     ) -> None:
         super().__init__(
             *args,
             ul_class=ul_class,
             id=id,
             selected=selected,
-            header=header,
-            footer=footer,
         )
-        self.title = title
-        self.header = header
 
     def layout(self, nav: Tag, content: Tag) -> Tag:
-        nav_items = [*navset_title(self.title), nav]
-
-        return ui.card(
-            ui.card_header(self.header),
-            *nav_items,
-            self.footer,
+        #print(nav)
+        nav_style = ui.tags.style("""
+            .navset-container {
+                display: flex;
+                width: 100%;
+                flex-wrap: nowrap;
+            }
+            .navset-container .nav-item {
+                flex-grow: 1;
+                text-align: center;
+                border-radius: 5px;
+                margin: 1px;
+                box-sizing: border-box;
+                transition: border 0.3s ease;
+                border: 1px solid transparent;
+            }
+            .navset-container .nav-item:hover {
+                border: 1px solid #006cd4;
+            }
+        """)
+        # Wrap nav items in a div with a specific class for styling
+        return ui.TagList(
+            nav_style,
+            ui.div(nav, class_="navset-container"),
         )
+
 
 def navset_card_tab_jwst(
         nav_panel_labels,
         id: Optional[str] = None,
         selected: Optional[str] = None,
-        header: TagChild = None,
-        footer: TagChild = None,
     ) -> NavSetCard:
     """
-    Render nav items as a tabset inside a card container.
+    Render nav items as a pillset (buttons) but without the tabs-content.
 
     Parameters
     ----------
-    *args
-        A collection of nav items (e.g., :func:`shiny.ui.nav_panel`).
-    id
+    nav_labels: List of string
+        Labels to display for the nav buttons
+    id: String
         input value that holds the currently selected nav item.
-    selected
+    selected: String
         Choose a particular nav item to select by default value
-    header
-        UI to display above the selected content.
-    footer
-        UI to display below the selected content.
     """
     nav_panels = [
         ui.nav_panel(label, '')
@@ -155,7 +155,4 @@ def navset_card_tab_jwst(
         ul_class="nav nav-pills",
         id=resolve_id_or_none(id),
         selected=selected,
-        header=header,
-        footer=footer,
     )
-

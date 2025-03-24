@@ -28,17 +28,18 @@ from .pandeia_interface import (
     tso_print,
 )
 from .pandeia_defaults import (
-    default_aperture_strategy,
+    _spec_modes,
+    _default_aperture_strategy,
+    _load_flux_rate_splines,
     generate_all_instruments,
-    filter_throughputs,
+    get_throughputs,
     get_detector,
-    load_flux_rate_splines,
     make_saturation_label,
 )
 
 try:
     detectors = generate_all_instruments()
-    bots_throughputs = filter_throughputs()['spectroscopy']['nirspec']['bots']
+    bots_throughputs = get_throughputs(inst='nirspec', mode='bots')
 except:
     print(
         "\n~~~  WARNING  ~~~"
@@ -61,25 +62,26 @@ class PandeiaCalculation():
         Observing mode. If not set, default to the first item for
         each instrument from this list below:
 
-          instrument   mode          comments
-          ----------   ----          --------
-          nircam:      lw_tsgrism    spectroscopy
-                       sw_tsgrism    spectroscopy
-                       target_acq    aquisition
-          niriss:      soss          spectroscopy
-                       target_acq    aquisition
-          nirspec:     bots          spectroscopy
-                       target_acq    aquisition
-          miri:        lrsslitless   spectroscopy
-                       mrs_ts        spectroscopy
-                       target_acq    aquisition
+        Spectroscopy: instrument  mode
+                      miri        lrsslitless
+                      miri        mrs_ts
+                      nircam      lw_tsgrism
+                      nircam      sw_tsgrism
+                      niriss      soss
+                      nirspec     bots
+        Acquisition:
+                      miri        target_acq
+                      nircam      target_acq
+                      niriss      target_acq
+                      nirspec     target_acq
 
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
 
-    >>> pando = jwst.PandeiaCalculation('nircam')
     >>> pando = jwst.PandeiaCalculation('nirspec')
+    >>> pando = jwst.PandeiaCalculation('nircam')
+    >>> pando = jwst.PandeiaCalculation('nircam', 'sw_tsgrism')
     >>> pando = jwst.PandeiaCalculation('nircam', 'target_acq')
     """
     def __init__(self, instrument, mode=None):
@@ -100,6 +102,8 @@ class PandeiaCalculation():
         )
         # Set default config for TSO:
         detector = get_detector(self.instrument, self.mode, detectors)
+        self._detector = detector
+        aperture = detector.default_aperture
         disperser = detector.default_disperser
         filter = detector.default_filter
         subarray = detector.default_subarray
@@ -108,7 +112,7 @@ class PandeiaCalculation():
             disperser, filter = filter.split('/')
 
         if self.mode == 'target_acq':
-            self.calc['configuration']['instrument']['aperture'] = disperser
+            self.calc['configuration']['instrument']['aperture'] = aperture
         else:
             self.calc['configuration']['instrument']['disperser'] = disperser
         self.calc['configuration']['instrument']['filter'] = filter
@@ -116,13 +120,17 @@ class PandeiaCalculation():
         self.calc['configuration']['detector']['readout_pattern'] = readout
         self._ensure_wl_reference_in_range()
         # Default aperture/sky annuli:
-        if self.mode in default_aperture_strategy:
-            strat = default_aperture_strategy[self.mode]
+        if self.mode in _default_aperture_strategy:
+            strat = _default_aperture_strategy[self.mode]
             self.calc['strategy']['aperture_size'] = strat['aperture_size']
             self.calc['strategy']['sky_annulus'] = strat['sky_annulus']
 
 
-    def get_configs(self, output=None):
+    def get_configs(
+        self, output=None,
+        # *, aperture=None, disperser=None,
+        # filter=None, subarray=None, readout=None,
+    ):
         """
         Print out or return the list of available configurations.
 
@@ -130,41 +138,47 @@ class PandeiaCalculation():
         ----------
         output: String
             The configuration variable to list. Select from:
-            readouts, subarrays, filters, or dispersers.
+            apertures, readouts, subarrays, filters, or dispersers.
 
         Returns
         -------
             outputs: 1D list of strings
             The list of available inputs for the requested variable.
         """
-        ins_config = get_instrument_config(self.telescope, self.instrument)
-        config = ins_config['mode_config'][self.mode]
+        detector = self._detector
+
+        # TBD: collect constraints:
+        #if output in detector.constraints:
+        #    if constraint in detector.constraints[output]
+        #        TBD
 
         screen_output = ''
-        if self.instrument == 'nirspec':
-            gratings_dict = ins_config['config_constraints']['dispersers']
+        apertures = list(detector.apertures)
+        screen_output += f'apertures: {apertures}\n'
+
+        if self.mode == 'bots':
+            gratings_dict = detector.constraints['filters']['dispersers']
             gratings = filters = dispersers = []
             for grating, filter_list in gratings_dict.items():
-                for filter in filter_list['filters']:
+                for filter in filter_list:
                     gratings.append(f'{grating}/{filter}')
-            screen_output += f'grating/filter pairs: {gratings}\n'
+            screen_output += f'grating/filter pairs: {sorted(gratings)}\n'
         else:
-            dispersers = [disperser for disperser in config['dispersers']]
-            filters = config['filters']
+            dispersers = list(detector.dispersers)
+            filters = list(detector.filters)
             screen_output += f'dispersers: {dispersers}\n'
             screen_output += f'filters: {filters}\n'
 
-        subarrays = config['subarrays']
+        subarrays = list(detector.subarrays)
         screen_output += f'subarrays: {subarrays}\n'
 
-        if self.instrument == 'niriss':
-            readouts = ins_config['readout_patterns']
-        else:
-            readouts = config['readout_patterns']
+        readouts = list(detector.readouts)
         screen_output += f'readout patterns: {readouts}\n'
 
         if output is None:
             print(screen_output)
+        elif output == 'apertures':
+            return apertures
         elif output == 'readouts':
             return readouts
         elif output == 'subarrays':
@@ -199,14 +213,16 @@ class PandeiaCalculation():
                 bounds = bounds[0]
             return bounds
 
-        if self.mode in ['lw_tsgrism', 'target_acq']:
+        if self.mode in ['lw_tsgrism', 'target_acq', 'lw_ts', 'sw_ts']:
             config = conf['range'][aperture][filter]
-        if self.mode in ['sw_tsgrism']:
+        elif self.mode in ['sw_tsgrism']:
             ranges = conf['range'][aperture]['dhs0_2']
             ranges.update(conf['range'][aperture]['dhs0_1'])
             config = ranges[filter]
         elif self.mode in ['lrsslitless', 'mrs_ts']:
             config = conf['range'][aperture][disperser]
+        elif self.mode in ['imaging_ts']:
+            config = conf['range'][aperture][filter]
         elif self.mode == 'soss':
             order = 1
             disperser = f'{disperser}_{order}'
@@ -220,7 +236,7 @@ class PandeiaCalculation():
         """
         Make sure that reference wavelength is in the range of the detector
         """
-        if self.mode == 'target_acq':
+        if self.mode not in _spec_modes:
             return
         if 'reference_wavelength' not in self.calc['strategy']:
             self.calc['strategy']['reference_wavelength'] = -1.0
@@ -257,7 +273,7 @@ class PandeiaCalculation():
             Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
         sed_model:
             The SED model required for each sed_type:
-            - phoenix or k93models: the model key (see load_sed_list)
+            - phoenix or k93models: the model key (see get_sed_list)
             - blackbody: the effective temperature (K)
             - flat: the unit ('flam' or 'fnu')
         norm_band: String
@@ -456,7 +472,7 @@ class PandeiaCalculation():
                 sed_label,
             )
 
-            flux_rate_func, full_well = load_flux_rate_splines(sat_guess_label)
+            flux_rate_func, full_well = _load_flux_rate_splines(sat_guess_label)
             if flux_rate_func is None:
                 print(
                     'Error, no flux_rate spline for configuration '
@@ -594,29 +610,39 @@ class PandeiaCalculation():
         """
         # Unpack configuration parameters
         aperture, disperser, filter, subarray, readout, order, nint, ngroup = params
+        config = self.calc['configuration']
         if aperture is not None:
-            self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser is not None:
-            self.calc['configuration']['instrument']['disperser'] = disperser
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
+            config['instrument']['aperture'] = aperture
+        if disperser == '':
+            config['instrument']['disperser'] = None
+        elif disperser is not None:
+            config['instrument']['disperser'] = disperser
+        if config['instrument']['disperser'] == '':
+            config['instrument']['disperser'] = None
+        if filter == '':
+            config['instrument']['filter'] = None
+        elif filter is not None:
+            config['instrument']['filter'] = filter
+        if config['instrument']['filter'] == '':
+            config['instrument']['filter'] = None
         if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
+            config['detector']['subarray'] = subarray
+        if readout is not None:
+            config['detector']['readout_pattern'] = readout
         if order is not None and self.mode == 'soss':
             self.calc['strategy']['order'] = order
-        if filter == '':
-            self.calc['configuration']['instrument']['filter'] = None
-        elif filter is not None:
-            self.calc['configuration']['instrument']['filter'] = filter
 
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
         self.calc['configuration']['detector']['ngroup'] = ngroup
         self._ensure_wl_reference_in_range()
 
-        report = perform_calculation(self.calc)
-        self.report = report
-        return report
+        self.report = perform_calculation(self.calc)
+        # In pandeia ver 2024.9+, NIRISS/SOSS returns float32 for wl arrays
+        # need to convert to double for safety
+        wl = np.array(self.report['1d']['extracted_flux'][0], dtype=float)
+        self.report['1d']['extracted_flux'][0] = wl
+        return self.report
 
     def calc_noise(
             self, obs_dur=None, ngroup=None,
@@ -660,12 +686,12 @@ class PandeiaCalculation():
             aperture = self.calc['configuration']['instrument']['aperture']
         if disperser is None:
             disperser = self.calc['configuration']['instrument']['disperser']
-        if readout is None:
-            readout = self.calc['configuration']['detector']['readout_pattern']
-        if subarray is None:
-            subarray = self.calc['configuration']['detector']['subarray']
         if filter is None:
             filter = self.calc['configuration']['instrument']['filter']
+        if subarray is None:
+            subarray = self.calc['configuration']['detector']['subarray']
+        if readout is None:
+            readout = self.calc['configuration']['detector']['readout_pattern']
 
         if ngroup is None:
             raise TypeError("Missing required argument: 'ngroup'")
@@ -843,8 +869,8 @@ class PandeiaCalculation():
             scene_in = depth_scene
             scene_out = star_scene
 
-        if not isinstance(ngroup, Iterable):
-            ngroup = [ngroup]
+        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
+            aperture = [aperture]
         if not isinstance(disperser, Iterable) or isinstance(disperser, str):
             disperser = [disperser]
         if not isinstance(filter, Iterable) or isinstance(filter, str):
@@ -853,20 +879,21 @@ class PandeiaCalculation():
             subarray = [subarray]
         if not isinstance(readout, Iterable) or isinstance(readout, str):
             readout = [readout]
-        if not isinstance(aperture, Iterable) or isinstance(aperture, str):
-            aperture = [aperture]
         if not isinstance(order, Iterable) or isinstance(order, str):
             order = [order]
+        if not isinstance(ngroup, Iterable):
+            ngroup = [ngroup]
 
         configs = product(
             aperture, disperser, filter, subarray, readout, order, ngroup,
         )
-        tso = [
-            self._tso_calculation(
+        tso = []
+        for config in configs:
+            tso_run = self._tso_calculation(
                 config, scene_in, scene_out, transit_dur, obs_dur,
             )
-            for config in configs
-        ]
+            tso_run['input_depth'] = depth_model
+            tso.append(tso_run)
         if len(tso) == 1:
              tso = tso[0]
         self.tso = tso
@@ -884,18 +911,20 @@ class PandeiaCalculation():
         aperture, disperser, filter, subarray, readout, order, ngroup = config
         if aperture is not None:
             self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser is not None:
+        if disperser == '':
+            self.calc['configuration']['instrument']['disperser'] = None
+        elif disperser is not None:
             self.calc['configuration']['instrument']['disperser'] = disperser
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-        if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
-        if order is not None and self.mode == 'soss':
-            self.calc['strategy']['order'] = order
         if filter == '':
             self.calc['configuration']['instrument']['filter'] = None
         elif filter is not None:
             self.calc['configuration']['instrument']['filter'] = filter
+        if subarray is not None:
+            self.calc['configuration']['detector']['subarray'] = subarray
+        if readout is not None:
+            self.calc['configuration']['detector']['readout_pattern'] = readout
+        if order is not None and self.mode == 'soss':
+            self.calc['strategy']['order'] = order
 
         # Now that everything is defined I can turn durations into integs:
         inst = self.instrument
