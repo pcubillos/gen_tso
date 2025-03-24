@@ -157,12 +157,12 @@ def fetch_jwst_programs(programs, apt_command=None, output_path=None):
     --------
     >>> import gen_tso.catalogs as cat
     >>> from gen_tso.utils import KNOWN_PROGRAMS
-
+    >>>
     >>> # Fetch all known TSO programs
     >>> apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
     >>> programs = KNOWN_PROGRAMS
     >>> cat.fetch_jwst_programs(programs, apt_command)
-
+    >>>
     >>> # Fetch a specific TSO program
     >>> programs = 1366
     >>> cat.fetch_jwst_programs(programs, apt_command)

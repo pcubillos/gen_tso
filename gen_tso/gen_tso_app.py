@@ -303,10 +303,13 @@ app_ui = ui.page_fluid(
                     gap='1px',
                     class_="p-0 m-0",
                 ),
-                ui.input_action_button(
-                    id="export_button",
-                    label="Export to notebook",
-                    class_="btn btn-outline-success btn-sm",
+                ui.panel_conditional(
+                    'false',
+                    ui.input_action_button(
+                        id="export_button",
+                        label="Export to notebook",
+                        class_="btn btn-outline-success btn-sm",
+                    ),
                 ),
                 col_widths=(9,3),
                 fill=True,
