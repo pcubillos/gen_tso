@@ -114,6 +114,25 @@ tso --update_exo
 
 <br>
 
+
+## 4 JWST TSO programs (optional)
+
+`Gen TSO` can also download the current set of JWST TSO programs from
+STScI into a convenient database.  For this you need to have installed
+the APT and save its executable to an eviromental variable called
+`APT` (see [this tutorial](tutorials_fetch_jwst_programs.qmd)).  This
+can be done with the you can run this prompt command:
+
+
+```bash
+tso --update_programs
+```
+
+Check out [this tutorial](tutorials_fetch_jwst_programs.qmd) to see
+how to handle the programs database after fetching it.
+
+<br>
+
 ## Live status check
 
 While you are running the `Gen TSO` application, click on this gear icon
