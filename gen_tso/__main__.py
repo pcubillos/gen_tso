@@ -46,7 +46,7 @@ def main():
 
     if '--update_programs' in sys.argv:
         import gen_tso.catalogs as cat
-        from gen_tso.utils import as KNOWN_PROGRAMS as programs
+        from gen_tso.utils import KNOWN_PROGRAMS as programs
         cat.fetch_jwst_programs(programs, 'APT')
 
     if (
