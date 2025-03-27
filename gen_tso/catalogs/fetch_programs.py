@@ -215,11 +215,17 @@ def _extract_instrument_template(element):
         template['disperser'] = 'None'
 
     if template['mode'] == 'GRISMR TS':
-        filter = element.find(f".//{xmlns}LongPupilFilter").text
-        template['disperser'] = filter[:filter.index('+')]
-        template['filter'] = filter[filter.index('+')+1:]
+        sw_filter = element.find(f".//{xmlns}ShortPupilFilter").text
+        sw_disperser, sw_filter = sw_filter.split('+')
+        sw_disperser = sw_disperser.replace('GDHS0', 'DHS0')
+        lw_filter = element.find(f".//{xmlns}LongPupilFilter").text
+        lw_disperser, lw_filter = lw_filter.split('+')
+        template['disperser'] = f'{sw_disperser},{lw_disperser}'
+        template['filter'] = f'{sw_filter},{lw_filter}'
     elif template['mode'] in ['Imaging TS', 'BOTS']:
         template['filter'] = element.find(f".//{xmlns}Filter").text
+    elif template['mode'] in ['SOSS']:
+        template['filter'] = 'CLEAR'
     else:
         template['filter'] = 'None'
 
@@ -233,8 +239,8 @@ def _extract_instrument_template(element):
         groups = element.find(f".//{xmlns}Groups").text
         integs = element.find(f".//{xmlns}Integrations").text
     template['readout'] = readout
-    template['groups'] = groups
-    template['integrations'] = integs
+    template['groups'] = int(groups)
+    template['integrations'] = int(integs)
 
     return template
 
@@ -308,7 +314,7 @@ def get_phase_info(obs):
     per_unit = unit.lower().rstrip('s')
     period = float(value) * getattr(pc, per_unit) / pc.day
 
-    duration = obs['hours']
+    duration = obs['duration']
     phase_duration = (duration*pc.hour) / (period*pc.day)
 
     # The mid-point of the starting phase range:
@@ -405,7 +411,7 @@ def parse_status(pid, path=None):
     for visit in status.findall('.//visit'):
         state = visit.attrib
         state['status'] = visit.find('status').text
-        state['hours'] = float(visit.find('hours').text)
+        state['duration'] = float(visit.find('hours').text)
         target = visit.find('target')
         if target is None:
             target = 'None'
@@ -415,12 +421,15 @@ def parse_status(pid, path=None):
         end = visit.find('endTime')
         window = visit.find('planWindow')
 
+        state['date_start'] = None
+        state['date_end'] = None
+        state['plan_window'] = None
         if start is not None:
-            state['start'] = _parse_date(start.text)
+            state['date_start'] = _parse_date(start.text)
         if end is not None:
-            state['end'] = _parse_date(end.text)
+            state['date_end'] = _parse_date(end.text)
         if window is not None:
-            state['window'] = _parse_window(window.text)
+            state['plan_window'] = _parse_window(window.text)
         visit_status.append(state)
     return visit_status
 
@@ -502,13 +511,12 @@ def parse_program(pid, path=None):
                 'pi': pi_lastname,
                 'pid': str(pid),
                 'cycle': int(cycle),
-                'proprietary': proprietary_period,
+                'proprietary_period': int(proprietary_period),
             }
             reqs = np.unique([
                 child.tag[child.tag.rindex('}')+1:]
                 for child in obs.find(".//apt:SpecialRequirements", ns)
             ]).tolist()
-            observation['special_reqs'] = reqs
             phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
             between_reqs = obs.find(".//apt:Between", ns)
             time_series_reqs = obs.find(".//apt:TimeSeriesObservation", ns)
@@ -521,8 +529,20 @@ def parse_program(pid, path=None):
                 if state['observation'] == observ and state['visit'] == visit:
                     observation.update(state)
             # Short observations are background:
-            if observation['hours'] < 1.5:
+            if observation['duration'] < 1.5:
                 continue
+
+            target_id = obs.find('apt:TargetID', ns).text
+            target_name = targets[target_id]['name']
+            norm_target = normalize_name(target_name)
+            observation['target'] = norm_target
+            observation['target_in_program'] = target_name
+
+            observation['ra'] = targets[target_id]['ra']
+            observation['dec'] = targets[target_id]['dec']
+            observation['instrument'] = obs.find('apt:Instrument', ns).text
+            template = obs.find('apt:Template', ns)[0]
+            observation.update(_extract_instrument_template(template))
 
             label = obs.find('apt:Label', ns)
             observation['label'] = group_label
@@ -530,14 +550,7 @@ def parse_program(pid, path=None):
                 label = label.text.lower()
                 observation['label'] = " : ".join([group_label, label])
 
-            target_id = obs.find('apt:TargetID', ns).text
-            observation['target'] = targets[target_id]['name']
-            observation['ra'] = targets[target_id]['ra']
-            observation['dec'] = targets[target_id]['dec']
-            observation['instrument'] = obs.find('apt:Instrument', ns).text
-
-            template = obs.find('apt:Template', ns)[0]
-            observation.update(_extract_instrument_template(template))
+            observation['special_reqs'] = reqs
             if phase_reqs is not None:
                 observation['reqs_phase'] = phase_reqs.attrib
             if between_reqs is not None:
