@@ -79,25 +79,31 @@ class Catalog():
     >>> import gen_tso.catalogs as cat
     >>> catalog = cat.Catalog()
     """
-    def __init__(self):
+    def __init__(self, custom_targets=None):
         # Confirmed planets and TESS candidates
         nea_targets = load_targets('nea_data.txt', is_confirmed=True)
         tess_targets = load_targets('tess_data.txt', is_confirmed=False)
         self.targets = nea_targets + tess_targets
+        if custom_targets is not None:
+            custom = load_targets(custom_targets, is_confirmed=True)
+            self.targets += custom
 
-        # JWST targets
-        trexo_data = load_trexolists(grouped=True)
-        njwst = len(trexo_data)
+        # JWST targets (TBD select source by date)
+        #programs = load_trexolists(grouped=True)
+        programs = load_programs(grouped=True)
+        njwst = len(programs)
         host_aliases = load_aliases('host')
 
         jwst_hosts = []
-        for jwst_target in trexo_data:
-            hosts = np.unique([
+        for jwst_target in programs:
+            host_names = [obs['target'] for obs in jwst_target]
+            nea_host = np.unique([
                 host_aliases[host] if host in host_aliases else host
-                for host in jwst_target['target']
+                for host in host_names
             ])
-            jwst_target['nea_hosts'] = hosts
-            jwst_hosts += list(hosts)
+            jwst_hosts += list(nea_host)
+            for obs in jwst_target:
+                obs['nea_host'] = nea_host
         jwst_hosts = np.unique(jwst_hosts)
 
         planet_aliases = load_aliases('planet')
@@ -107,10 +113,13 @@ class Catalog():
             target.is_jwst_host = target.host in jwst_hosts and target.is_transiting
             if target.is_jwst_host:
                 for j in range(njwst):
-                    if target.host in trexo_data[j]['nea_hosts']:
+                    if target.host == programs[j][0]['nea_host']:
                         break
-                target.trexo_data = trexo_data[j]
-                planets = np.unique(np.concatenate(trexo_data[j]['planets']))
+                target.programs = programs[j]
+                planets = []
+                for obs in programs[j]:
+                    planets += obs['planets']
+                planets = np.unique(planets)
                 letter = u.get_letter(target.planet).strip()
                 target.is_jwst_planet = letter in planets
             else:
@@ -235,177 +244,36 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
     return targets
 
 
-def load_trexolists(grouped=False, trexo_file=None):
+def _add_planet_info(observations):
     """
-    Get the data from the trexolists.csv file.
-    Note that trexolists know targets by their host star, not by
-    individual planets in a given system.
-
-    Parameters
-    ----------
-    grouped: Bool
-        - If False, return the a dictionary where each item contains
-          a 1D list for each individual program.
-        - If True, return list for each individual host, where each entry
-          contains a dictionary of 1D lists of all programs for the target.
-    trexo_file: String
-        If None, extract data from default Gen TSO location.
-        Otherwise, a path to a trexolists.csv file.
-
-    Examples
-    --------
-    >>> import gen_tso.catalogs as cat
-    >>>
-    >>> # Get data as lists of individual programs:
-    >>> trexo = cat.load_trexolists()
-    >>> print(trexo['target'])
-    ['L 168-9' 'HAT-P-14' 'WASP-80' 'WASP-80' 'WASP-69' 'GJ 436' ...]
-    >>>
-    >>> print(list(trexo))
-    ['target', 'trexo_name', 'program', 'observation', 'visit', 'ra', 'dec', 'event', 'mode', 'subarray', 'readout', 'groups', 'phase_start', 'phase_end', 'duration', 'date_start', 'plan_window', 'proprietary_period', 'status']
-
-    >>> # Get data as lists of (host) targets:
-    >>> trexo = cat.load_trexolists(grouped=True)
-    >>> trexo[19]
-    {'target': array(['WASP-43', 'WASP-43'], dtype='<U23'),
-    'trexo_name': array(['WASP-43', 'WASP-43'], dtype='<U23'),
-    'program': array(['GTO 1224 Birkmann', 'ERS 1366 Batalha'], dtype='<U22'),
-    'observation': array([ 2, 11]),
-    'visit': array([1, 1]),
-    'ra': array(['10:19:37.9634', '10:19:37.9649'], dtype='<U13'),
-    'dec': array(['-09:48:23.21', '-09:48:23.19'], dtype='<U12'),
-    'event': array(['phase', 'phase'], dtype='<U9'),
-    'mode': array(['NIRSPEC BOTS+G395H', 'MIRI LRS'], dtype='<U20'),
-    'subarray': array(['SUB2048', 'SLITLESSPRISM'], dtype='<U13'),
-    'readout': array(['NRSRAPID', 'FASTR1'], dtype='<U8'),
-    'groups': array([20, 64]),
-    'phase_start': array([0.18394, 0.13912]),
-    'phase_end': array([0.20955, 0.16473]),
-    'duration': array([28.57, 31.82]),
-    'date_start': array([datetime.datetime(2023, 5, 14, 9, 3, 30),
-           datetime.datetime(2022, 11, 30, 23, 36, 1)], dtype=object),
-    'plan_window': array(['X', 'X'], dtype='<U21'),
-    'proprietary_period': array([12,  0]),
-    'status': array(['Archived', 'Archived'], dtype='<U14'),
-    'truncated_ra': array('10:19', dtype='<U5'),
-    'truncated_dec': array('-09:48', dtype='<U6')}
+    If data exists, add planet letter info to a list of observations
     """
-    if trexo_file is None:
-        trexo_file = f'{ROOT}data/trexolists.csv'
-
-    trexolist_data = ascii.read(
-        trexo_file,
-        format='csv', guess=False, fast_reader=False, comment='#',
-    )
-
-    norm_targets = np.array([
-        u.normalize_name(target)
-        for target in trexolist_data['Target']
-    ])
-    trexo_data = {
-        'target': norm_targets,
-        'trexo_name': np.array(trexolist_data['Target'])
-    }
-
-    category = trexolist_data['Category']
-    programs = trexolist_data['Program']
-    pi = trexolist_data['PI name']
-    trexo_data['program'] = np.array([
-        f"{categ} {prog} {name}"
-        for categ,prog,name in zip(category, programs, pi)
-    ])
-
-    trexo_data['observation'] = np.array(trexolist_data['Observation'])
-    trexo_data['visit'] = np.array(trexolist_data['Visit'])
-    trexo_data['ra'] = np.array(trexolist_data['R.A. 2000'])
-    trexo_data['dec'] = np.array(trexolist_data['Dec. 2000'])
-
     planets_file = f'{ROOT}data/planets_per_program.txt'
     if os.path.exists(planets_file):
-        trexo_planets = []
         planet_data = np.loadtxt(planets_file, dtype=str)
-        for i in range(len(programs)):
-            program = programs[i]
-            obs = trexo_data['observation'][i]
+        for obs in observations:
+            pid = obs['pid']
+            obs_id = obs['observation']
+            obs['planets'] = []
             for p, o, planets in planet_data:
-                if program==int(p) and obs==int(o):
-                    trexo_planets.append(planets.split(','))
+                if pid==p and obs_id==o:
+                    obs['planets'] = planets.split(',')
                     break
-        else:
-            trexo_planets.append([])
-        trexo_data['planets'] = trexo_planets
-
-    trexo_data['event'] = np.array([
-        event.lower().replace('phasec', 'phase')
-        for event in trexolist_data['Event']
-    ])
-
-    trexo_data['mode'] = np.array([
-        obs.replace('.', ' ')
-        for obs in trexolist_data['Mode']
-    ])
-    trexo_data['subarray'] = np.array(trexolist_data['Subarray'])
-    trexo_data['readout'] = np.array(trexolist_data['Readout pattern'])
-    trexo_data['groups'] = np.array(trexolist_data['Groups'])
-
-    trexo_data['phase_start'] = np.array([
-        np.nan if phase=='N/A' else float(phase)
-        for phase in trexolist_data['Start.Phase']
-    ])
-    trexo_data['phase_end'] = np.array([
-        np.nan if phase=='N/A' else float(phase)
-        for phase in trexolist_data['End.Phase']
-    ])
-    trexo_data['duration'] = np.array(trexolist_data['Hours'])
-
-    trexo_data['date_start'] = np.array([
-        np.nan if date=='X' else datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
-        for date in trexolist_data['Start date']
-    ])
-
-    date_start = []
-    date_end = []
-    plan_window = []
-    s_dates = trexolist_data['Start date']
-    e_dates = trexolist_data['End date']
-    windows = trexolist_data['Plan Windows']
-    for i in range(len(norm_targets)):
-        try:
-            date = datetime.strptime(s_dates[i],'%b_%d_%Y_%H:%M:%S')
-        except:
-            date = np.nan
-        try:
-            end = datetime.strptime(e_dates[i],'%b_%d_%Y_%H:%M:%S')
-        except:
-            end = np.nan
-        try:
-            window = windows[i][:windows[i].index('-')]
-            window = datetime.strptime(window,'%b%d,%Y')
-        except:
-            window = np.nan
-        date_start.append(date)
-        date_end.append(end)
-        plan_window.append(window)
-    trexo_data['date_start'] = np.array(date_start)
-    trexo_data['date_end'] = np.array(date_end)
-    trexo_data['plan_window'] = np.array(plan_window)
-
-    trexo_data['proprietary_period'] = np.array(trexolist_data['Prop.Period'])
-    trexo_data['status'] = np.array(trexolist_data['Status'])
-
-    if not grouped:
-        return trexo_data
 
 
-    # Use RA and dec to detect aliases for a same object
-    ra = [Angle(ra, unit=hourangle).deg for ra in trexo_data['ra']]
-    dec = [Angle(dec, unit=deg).deg for dec in trexo_data['dec']]
+def _group_by_target(observations):
+    """
+    Group observations by host, using RA and dec to detect aliases
+    for a same object
+    """
+    ra = [Angle(obs['ra'], unit=hourangle).deg for obs in observations]
+    dec = [Angle(obs['dec'], unit=deg).deg for obs in observations]
     coords = SkyCoord(ra, dec, unit='deg', frame='icrs')
 
-    ntargets = len(trexo_data['target'])
-    taken = np.zeros(ntargets, bool)
+    nobs = len(observations)
+    taken = np.zeros(nobs, bool)
     group_indices = []
-    for i in range(ntargets):
+    for i in range(nobs):
         if taken[i]:
             continue
         seps = coords[i].separation(coords).to('arcsec').value
@@ -415,15 +283,183 @@ def load_trexolists(grouped=False, trexo_file=None):
 
     grouped_data = []
     for i,indices in enumerate(group_indices):
-        target = {}
-        for key in trexo_data.keys():
-            if isinstance(trexo_data[key], list):
-                target[key] = [trexo_data[key][idx] for idx in indices]
-            else:
-                target[key] = trexo_data[key][indices]
+        target = [observations[j] for j in indices]
         grouped_data.append(target)
 
     return grouped_data
+
+
+def load_trexolists(grouped=False, trexo_file=None):
+    """
+    Extract the JWST programs' data from a trexolists.csv file.
+    Note that trexolists know targets by their host star, not by
+    individual planets in a given system.
+
+    Parameters
+    ----------
+    grouped: Bool
+        - If False, return a single 1D list with observations.
+        - If True, return a nested list of the observations per target.
+    trexo_file: String
+        If None, extract data from default Gen TSO location.
+        Otherwise, a path to a trexolists.csv file.
+
+    Returns
+    -------
+    observations: 1D or 2D list of dictionaries
+        A list of all JWST observations, where each item is a dictionary
+        containing the observation's details.
+        If grouped is True, the output is a nested list, where the
+        observations are grouped per target (host).
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>>
+    >>> # Get data as lists of individual programs:
+    >>> observations = cat.load_trexolists()
+    >>> # Show one of them:
+    >>> observations[98]
+    {'category': 'ERS',
+     'pi': 'Batalha',
+     'pid': '1366',
+     'proprietary_period': 0,
+     'target': 'WASP-39',
+     'target_in_program': 'WASP-39',
+     'observation': '3',
+     'visit': '1',
+     'status': 'Archived',
+     'ra': '14:29:18.3955',
+     'dec': '-03:26:40.20',
+     'event': 'transit',
+     'instrument': 'NIRSPEC',
+     'mode': 'BOTS',
+     'disperser': 'G395H',
+     'filter': 'F290LP',
+     'subarray': 'SUB2048',
+     'readout': 'NRSRAPID',
+     'groups': 70,
+     'phase_start': 0.95248,
+     'phase_end': 0.96275,
+     'duration': 10.56,
+     'plan_window': None,
+     'date_start': datetime.datetime(2022, 7, 30, 20, 46, 32),
+     'date_end': datetime.datetime(2022, 7, 31, 6, 21, 30),
+     'planets': ['b']}
+
+    >>> # Get data grouped per target (host):
+    >>> observations = cat.load_trexolists(grouped=True)
+    >>> for obs in observations[27]:
+    >>>     print(f"{obs['pid']}  {obs['pi']}  {obs['instrument']} {obs['event']} ")
+    1366  Batalha  NIRISS transit
+    1366  Batalha  NIRCAM transit
+    1366  Batalha  NIRSPEC transit
+    1366  Batalha  NIRSPEC transit
+    2783  Powell  MIRI transit
+    5634  Baeyens  NIRSPEC see_phase
+    """
+    if trexo_file is None:
+        trexo_file = f'{ROOT}data/trexolists.csv'
+
+    trexolist_data = ascii.read(
+        trexo_file,
+        format='csv', guess=False, fast_reader=False, comment='#',
+    )
+
+    observations = []
+    for i,data in enumerate(trexolist_data):
+        #data = trexolist_data[0]
+
+        obs = {}
+        obs['category'] = str(data['Category'])
+        obs['pi'] = str(data['PI name'])
+        obs['pid'] = str(data['Program'])
+        obs['proprietary_period'] = int(data['Prop.Period'])
+
+        target = str(data['Target'])
+        obs['target'] = u.normalize_name(target)
+        obs['target_in_program'] = target
+
+        obs['observation'] = str(data['Observation'])
+        obs['visit'] = str(data['Visit'])
+        obs['status'] = str(data['Status'])
+        obs['ra'] = str(data['R.A. 2000'])
+        obs['dec'] = str(data['Dec. 2000'])
+
+        obs['event'] = data['Event'].lower().replace('phasec', 'phase')
+
+        # mode, disperser, filer
+        inst, mode = data['Mode'].split('.')
+        obs['instrument'] = inst
+        nirspec_filter = {
+            'G395H': 'F290LP',
+            'G395M': 'F290LP',
+            'G235H': 'F170LP',
+            'G140H': 'F100LP',
+            'PRISM': 'CLEAR',
+        }
+        if mode == 'SOSS':
+            disperser = 'None'
+            filter = 'CLEAR'
+        elif mode == 'LRS':
+            disperser = 'None'
+            filter = 'None'
+        elif mode == 'MRS':
+            disperser = 'unknown'
+            filter = 'None'
+        elif inst == 'MIRI':
+            disperser = 'None'
+            filter = mode
+            mode = 'Imaging TS'
+        elif inst == 'NIRCAM':
+            disperser, filter = mode.split('+')
+            mode = 'GRISMR TS'
+        elif inst == 'NIRSPEC':
+            mode, disperser = mode.split('+')
+            filter = nirspec_filter[disperser]
+        obs['mode'] = mode
+        obs['disperser'] = disperser
+        obs['filter'] = filter
+
+        obs['subarray'] = str(data['Subarray'])
+        obs['readout'] = str(data['Readout pattern'])
+        obs['groups'] = int(data['Groups'])
+
+        start = data['Start.Phase']
+        obs['phase_start'] = np.nan if start=='N/A' else float(start)
+        end = data['End.Phase']
+        obs['phase_end'] = np.nan if end=='N/A' else float(end)
+        obs['duration'] = float(data['Hours'])
+
+        window = data['Plan Windows']
+        if window == 'X':
+            obs['plan_window'] = None
+        else:
+            if '(' in window:
+                window = window[0:window.index('(')]
+            w_start, w_end = window.split('-')
+            start = datetime.strptime(w_start, '%b%d,%Y').strftime('%Y-%m-%d')
+            end = datetime.strptime(w_end, '%b%d,%Y').strftime('%Y-%m-%d')
+            obs['plan_window'] = f"{start} - {end}"
+
+        date = data['Start date']
+        if date == 'X':
+            obs['date_start'] = None
+        else:
+            obs['date_start'] = datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
+        date = data['End date']
+        if date == 'X':
+            obs['date_end'] = None
+        else:
+            obs['date_end'] = datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
+
+        observations.append(obs)
+
+    _add_planet_info(observations)
+
+    if grouped:
+        return _group_by_target(observations)
+    return observations
 
 
 def load_programs(grouped=False, verbose=False):
@@ -469,31 +505,12 @@ def load_programs(grouped=False, verbose=False):
         obs['target'] = norm_target
         obs['target_in_program'] = target
 
-    if not grouped:
-        return observations
 
-    # Use RA and dec to detect aliases for a same object
-    ra = [Angle(obs['ra'], unit=hourangle).deg for obs in observations]
-    dec = [Angle(obs['dec'], unit=deg).deg for obs in observations]
-    coords = SkyCoord(ra, dec, unit='deg', frame='icrs')
+    _add_planet_info(observations)
 
-    nobs = len(observations)
-    taken = np.zeros(nobs, bool)
-    group_indices = []
-    for i in range(nobs):
-        if taken[i]:
-            continue
-        seps = coords[i].separation(coords).to('arcsec').value
-        indices = np.where(seps < 50)[0]
-        taken[indices] = True
-        group_indices.append(indices)
-
-    grouped_data = []
-    for i,indices in enumerate(group_indices):
-        target = [observations[j] for j in indices]
-        grouped_data.append(target)
-
-    return grouped_data
+    if grouped:
+        return _group_by_target(observations)
+    return observations
 
 
 def parse(name, style):

@@ -17,31 +17,37 @@ Lets use `Gen TSO` to show the list of existing JWST transit programs:
 import gen_tso.catalogs as cat
 
 catalog = cat.Catalog()
-host = ''
+
 info = {}
-nplanets = len(catalog.targets)
 for target in catalog.targets:
     has_transits = (
         target.is_jwst_planet and
-        'transit' in target.trexo_data['event']
+        'transit' in [obs['event'] for obs in target.programs]
     )
 
     if has_transits:
-        obs = target.trexo_data
-        programs = obs['program']
-        obs_id = obs['observation']
-        events = obs['event']
-        planets = [','.join(planets) for planets in obs['planets']]
-        status = obs['status']
-        mode = obs['mode']
-        nobs = len(events)
-        info[target.host] = [
-            f"    {programs[i]:20} {obs_id[i]:>3}  {planets[i]:3}  {mode[i]:20}  {status[i]}"
-            for i in range(nobs)
-            if events[i] == 'transit'
-            if status[i] not in ['Skipped', 'Failed', 'Withdrawn']
-        ]
+        info[target.host] = []
+        for obs in target.programs:
+            if obs['event'] != 'transit':
+                continue
+            if obs['status'] in ['Skipped', 'Failed', 'Withdrawn']:
+                continue
 
+            program = f"{obs['category']:>3} {obs['pid']} {obs['pi']}"
+            if obs['instrument'] == 'NIRCAM':
+                mode = obs['filter']
+            else:
+                mode = obs['mode']
+                disperser = obs['disperser']
+                if disperser != 'None':
+                    mode += f' {disperser}'
+            inst = f"{obs['instrument']} {mode}"
+            planets = ','.join(obs['planets'])
+            info[target.host] += [
+                f"    {program:25}  {inst:20}  {planets:3}  {obs['status']}"
+            ]
+
+print('Target:Program                 Instrument         Planet  Status')
 for key, observations in info.items():
     print(f'\n{key}:')
     for obs in observations:
