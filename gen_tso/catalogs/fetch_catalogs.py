@@ -25,7 +25,6 @@ import warnings
 
 from astropy.coordinates import SkyCoord
 import numpy as np
-from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad as simbad
 from astroquery.vizier import Vizier
 from astropy.table import Table
@@ -1242,6 +1241,9 @@ def fetch_gaia_targets(
     >>> dec_source = -5.094857
     >>> cat.fetch_gaia_targets(ra_source, dec_source)
     """
+    # Moved inside function to avoid hanging at import time
+    # (when astroquery is not reachable)
+    from astroquery.gaia import Gaia
     max_sep_degrees = max_separation / 3600.0
 
     try:

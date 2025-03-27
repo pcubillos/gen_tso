@@ -207,7 +207,6 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
     >>> import gen_tso.catalogs as cat
     >>> nea_data = cat.load_nea_targets_table()
     """
-    # database = 'new_nea_data.txt'
     with open(f'{ROOT}data/{database}', 'r') as f:
         lines = f.readlines()
 
@@ -498,13 +497,6 @@ def load_programs(grouped=False, verbose=False):
             f'Fetch from the command line with:\n  tso --update_programs'
             f'\n\nMissing programs:\n{not_found}'
         )
-
-    for obs in observations:
-        target = obs['target']
-        norm_target = u.normalize_name(target)
-        obs['target'] = norm_target
-        obs['target_in_program'] = target
-
 
     _add_planet_info(observations)
 
