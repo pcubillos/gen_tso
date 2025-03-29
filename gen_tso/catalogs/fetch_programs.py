@@ -441,7 +441,7 @@ def parse_status(pid, path=None):
     return visit_status
 
 
-def parse_program(pid, path=None, to_csv=False):
+def parse_program(pid, path=None, to_csv=None):
     """
     Parse a JWST program's xml files (of APT and status) to extract
     the program's, status, and observation information.
@@ -453,11 +453,9 @@ def parse_program(pid, path=None, to_csv=False):
     path: String
         Path where the input XML files are located. These are
         files downloaded with cat.fetch_jwst_programs().
-    to_csv: Bool or string
-        - If True, save outputs to a csv file located in
-          gen_tso.utils.ROOT/data/programs/jwst_tso_programs.csv
-        - If of type string, save outputs to a csv file at a custom
-          location given by the input.
+    to_csv: string
+        If not None, save the outputs to a csv file located in
+        given filename path.
 
     Returns
     -------
@@ -541,7 +539,6 @@ def parse_program(pid, path=None, to_csv=False):
                     for child in obs.find(".//apt:SpecialRequirements", ns)
                 ]).tolist()
                 phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
-                between_reqs = obs.find(".//apt:Between", ns)
                 time_series_reqs = obs.find(".//apt:TimeSeriesObservation", ns)
                 if time_series_reqs is None:
                     continue
@@ -590,7 +587,11 @@ def parse_program(pid, path=None, to_csv=False):
                     observation['phase_reqs'] = phase_reqs.attrib
                 # Add orbital-phase information when possible
                 period, phase, obs_duration = _get_phase_info(observation)
-                if period is not None:
+                if period is None:
+                    observation['period'] = None
+                    observation['phase_start'] = None
+                    observation['phase_duration'] = None
+                else:
                     observation['period'] = period
                     observation['phase_start'] = phase
                     observation['phase_duration'] = obs_duration
@@ -598,10 +599,7 @@ def parse_program(pid, path=None, to_csv=False):
                 observations.append(observation)
 
     # Write to CSV file
-    if to_csv is True:
-        # TBD: update last_udpated_programs flag
-        to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
-    if to_csv:
+    if to_csv is not None:
         fieldnames = {key for obs in observations for key in obs.keys()}
         fieldnames = []
         for obs in observations:
@@ -673,6 +671,9 @@ def _clean_label(label, hosts):
     -------
     label: String
     """
+    if label is None:
+        return ''
+    label = label.lower()
     label = label.replace('776.01', '776 c')
     label = label.replace('776.02', '776 b')
     label = label.replace('836.01', '836 c')
@@ -785,7 +786,7 @@ def get_planet_letters(obs, targets, verbose=False):
     if len(planets) > 0:
         obs_label = obs['label']
         hosts = [planets[0].host] + [get_host(a) for a in planets[0].aliases]
-        label = _clean_label(obs_label.lower(), hosts)
+        label = _clean_label(obs_label, hosts)
         planet_letters = _planet_from_label(label)
         if len(planet_letters) > 0:
             if verbose:
@@ -793,7 +794,7 @@ def get_planet_letters(obs, targets, verbose=False):
             return planet_letters
 
         # From period
-        if 'period' in obs:
+        if obs['period'] is not None:
             planet_letters = [_planet_from_period(obs, planets)]
             if verbose:
                 period = obs["period"]
