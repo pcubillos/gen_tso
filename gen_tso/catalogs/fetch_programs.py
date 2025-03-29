@@ -10,7 +10,7 @@ __all__ = [
     # To format XML info into human language
     '_parse_date',
     '_parse_window',
-    'get_phase_info',
+    '_get_phase_info',
     'guess_event_type',
     'parse_status',
     'parse_program',
@@ -287,10 +287,14 @@ def _parse_window(window_text):
     return window
 
 
-def get_phase_info(obs):
+def _get_phase_info(obs):
     """
     Extract the orbital period, starting phase, and duration
     from an observations from the PeriodZeroPhase constraints.
+
+    Note that output values are adjusted to reflect the astrophysical
+    values, since some constraints may have been modified to ease the
+    scheduling.
 
     Parameters
     ----------
@@ -302,16 +306,17 @@ def get_phase_info(obs):
     period: Float
         Orbital period in days.
     phase: Float
-        Orbital phase at the observation's start time.
+        Orbital phase at start of observation (midpoint between
+        PhaseStart and PhaseEnd).
     phase_duration: Float
         Duration of the observation in orbital phase units.
     """
-    pid = obs['pid']
-    if 'PeriodZeroPhase' not in obs['special_reqs']:
+    if obs['phase_reqs'] is None:
         return None, None, None
+    phase_reqs = obs['phase_reqs']
 
     # The orbital period in days:
-    value, unit = obs['reqs_phase']['Period'].split()
+    value, unit = phase_reqs['Period'].split()
     per_unit = unit.lower().rstrip('s')
     period = float(value) * getattr(pc, per_unit) / pc.day
 
@@ -319,8 +324,8 @@ def get_phase_info(obs):
     phase_duration = (duration*pc.hour) / (period*pc.day)
 
     # The mid-point of the starting phase range:
-    phase_start = float(obs['reqs_phase']['PhaseStart'])
-    phase_end = float(obs['reqs_phase']['PhaseEnd'])
+    phase_start = float(phase_reqs['PhaseStart'])
+    phase_end = float(phase_reqs['PhaseEnd'])
     phase = 0.5*(phase_start+phase_end)
     if phase < 0:
          phase += 1
@@ -329,6 +334,7 @@ def get_phase_info(obs):
     # but phase-curved have halved-period values to ease scheduling
     is_phase = phase_duration > 0.54
     phase_doubling = 1
+    pid = obs['pid']
     if pid == '3860':
         phase_doubling = 4
     elif is_phase or pid in ['2084']:
@@ -457,7 +463,7 @@ def parse_program(pid, path=None, to_csv=False):
     -------
     observations: List of dictionaries
         Dictionaries with the observations information:
-        - The program's category, PI and PID, cycle, and proprietary period
+        - The program's category, PI, PID, cycle, and proprietary period
         - The target's name, ra, and dec
         - The observation's number, visit, duration (hours),
           status, start and end dates (or planned window), labels,
@@ -469,6 +475,9 @@ def parse_program(pid, path=None, to_csv=False):
     --------
     >>> import gen_tso.catalogs as cat
     >>> obs = cat.parse_program(pid=3712)
+
+    >>> import gen_tso.catalogs as cat
+    >>> obs = cat.parse_program(pid=3712, to_csv='jwst_tso_program_3712.csv')
 
     >>> import gen_tso.catalogs as cat
     >>> from gen_tso.utils import KNOWN_PROGRAMS
@@ -576,11 +585,11 @@ def parse_program(pid, path=None, to_csv=False):
                     observation['label'] = " : ".join([group_label, label])
 
                 observation['special_reqs'] = reqs
-                observation['reqs_phase'] = None
+                observation['phase_reqs'] = None
                 if phase_reqs is not None:
-                    observation['reqs_phase'] = phase_reqs.attrib
+                    observation['phase_reqs'] = phase_reqs.attrib
                 # Add orbital-phase information when possible
-                period, phase, obs_duration = get_phase_info(observation)
+                period, phase, obs_duration = _get_phase_info(observation)
                 if period is not None:
                     observation['period'] = period
                     observation['phase_start'] = phase
