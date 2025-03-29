@@ -1,6 +1,5 @@
 include MANIFEST.in
 include docs/requirements.txt
-include gen_tso/data/images/gen_tso_logo.png
 include gen_tso/data/base_theme.css
 include gen_tso/data/last_updated_nea.txt
 include gen_tso/data/last_updated_trexolist.txt
@@ -8,10 +7,11 @@ include gen_tso/data/nea_data.txt
 include gen_tso/data/tess_data.txt
 include gen_tso/data/target_aliases.txt
 include gen_tso/data/trexolists.csv
-include gen_tso/data/flux_rates_miri.pickle
-include gen_tso/data/flux_rates_nircam.pickle
-include gen_tso/data/flux_rates_niriss.pickle
-include gen_tso/data/flux_rates_nirspec.pickle
+include gen_tso/data/flux_rates_*.pickle
+include gen_tso/data/user_planet_data.txt
+include gen_tso/data/images/gen_tso_logo.png
+include gen_tso/data/programs/jwst_tso_programs.csv
+include gen_tso/data/programs/planets_per_program.txt
 include gen_tso/data/models/.gitignore
 include gen_tso/data/throughputs/*.pickle
 
