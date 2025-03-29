@@ -23,6 +23,7 @@ __all__ = [
 ]
 
 from concurrent.futures import ThreadPoolExecutor
+import csv
 from datetime import datetime
 import os
 import re
@@ -434,17 +435,23 @@ def parse_status(pid, path=None):
     return visit_status
 
 
-def parse_program(pid, path=None):
+def parse_program(pid, path=None, to_csv=False):
     """
     Parse a JWST program's xml files (of APT and status) to extract
     the program's, status, and observation information.
 
     Parameters
     ----------
-    pid: Integer
-        The programs ID number.
+    pid: Integer or 1D list of integers.
+        JWST TSO program ID number(s).
     path: String
-        Path where the XML files are located.
+        Path where the input XML files are located. These are
+        files downloaded with cat.fetch_jwst_programs().
+    to_csv: Bool or string
+        - If True, save outputs to a csv file located in
+          gen_tso.utils.ROOT/data/programs/jwst_tso_programs.csv
+        - If of type string, save outputs to a csv file at a custom
+          location given by the input.
 
     Returns
     -------
@@ -462,107 +469,142 @@ def parse_program(pid, path=None):
     --------
     >>> import gen_tso.catalogs as cat
     >>> obs = cat.parse_program(pid=3712)
+
+    >>> import gen_tso.catalogs as cat
+    >>> from gen_tso.utils import KNOWN_PROGRAMS
+    >>> observations = cat.parse_program(pid=KNOWN_PROGRAMS, to_csv=True)
     """
     if path is None:
         path = f'{ROOT}data/programs/'
 
-    status = parse_status(pid, path)
-    # APT
-    root = ET.parse(f'{path}/{pid}.xml').getroot()
-    ns = {'apt': 'http://www.stsci.edu/JWST/APT'}
+    if isinstance(pid, (int, str)):
+        pid = [pid]
 
-    # The program
-    pi_category = root.find('.//apt:ProposalCategory', ns).text
-    cycle = root.find('.//apt:Cycle', ns).text
-    prop = root.find('.//apt:ProprietaryPeriod', ns).text
-    proprietary_period = prop[prop.find('[')+1:prop.find(' Month')]
-    path = ".//apt:PrincipalInvestigator/apt:InvestigatorAddress/apt:LastName"
-    pi_lastname = root.find(path, ns).text
-
-    # The targets
-    targets = {}
-    for child in root.findall('.//apt:Targets/apt:Target', ns):
-        target = {}
-        target['number'] = child.find('apt:Number', ns).text
-        target['ID'] = child.find('apt:TargetID', ns).text
-        target['name'] = child.find('apt:TargetName', ns).text
-        archive_name = child.find('apt:TargetArchiveName', ns)
-        if archive_name is not None:
-            target['archive_name'] = archive_name.text
-        coords = child.find('apt:EquatorialCoordinates', ns)
-        if coords is None:
-            continue
-        coords = coords.get('Value')
-        target['ra'] = ':'.join(coords.split()[0:3])
-        target['dec'] = ':'.join(coords.split()[3:6])
-        epoch = child.find('apt:Epoch', ns)
-        if epoch is not None:
-            target['epoch'] = epoch.text
-        targets[f"{target['number']} {target['ID']}"] = target
-
-    # The observations
     observations = []
-    for obs_group in root.findall( './/apt:ObservationGroup', ns):
-        label = obs_group.find('apt:Label', ns)
-        group_label = "" if label is None else label.text
-        for obs in obs_group.findall('.//apt:Observation', ns):
-            observation = {
-                'category': pi_category,
-                'pi': pi_lastname,
-                'pid': str(pid),
-                'cycle': int(cycle),
-                'proprietary_period': int(proprietary_period),
-            }
-            reqs = np.unique([
-                child.tag[child.tag.rindex('}')+1:]
-                for child in obs.find(".//apt:SpecialRequirements", ns)
-            ]).tolist()
-            phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
-            between_reqs = obs.find(".//apt:Between", ns)
-            time_series_reqs = obs.find(".//apt:TimeSeriesObservation", ns)
-            if time_series_reqs is None:
+    for program in pid:
+        status = parse_status(program, path)
+        # APT
+        root = ET.parse(f'{path}/{program}.xml').getroot()
+        ns = {'apt': 'http://www.stsci.edu/JWST/APT'}
+
+        # The program
+        pi_category = root.find('.//apt:ProposalCategory', ns).text
+        cycle = root.find('.//apt:Cycle', ns).text
+        prop = root.find('.//apt:ProprietaryPeriod', ns).text
+        proprietary_period = prop[prop.find('[')+1:prop.find(' Month')]
+        pi = ".//apt:PrincipalInvestigator/apt:InvestigatorAddress/apt:LastName"
+        pi_lastname = root.find(pi, ns).text
+
+        # The targets
+        targets = {}
+        for child in root.findall('.//apt:Targets/apt:Target', ns):
+            target = {}
+            target['number'] = child.find('apt:Number', ns).text
+            target['ID'] = child.find('apt:TargetID', ns).text
+            target['name'] = child.find('apt:TargetName', ns).text
+            archive_name = child.find('apt:TargetArchiveName', ns)
+            if archive_name is not None:
+                target['archive_name'] = archive_name.text
+            coords = child.find('apt:EquatorialCoordinates', ns)
+            if coords is None:
                 continue
+            coords = coords.get('Value')
+            target['ra'] = ':'.join(coords.split()[0:3])
+            target['dec'] = ':'.join(coords.split()[3:6])
+            epoch = child.find('apt:Epoch', ns)
+            if epoch is not None:
+                target['epoch'] = epoch.text
+            targets[f"{target['number']} {target['ID']}"] = target
 
-            observ = obs.find('apt:Number', ns).text
-            visit = obs.find('apt:Visit', ns).get('Number')
-            for state in status:
-                if state['observation'] == observ and state['visit'] == visit:
-                    observation.update(state)
-            # Short observations are background:
-            if observation['duration'] < 1.5:
-                continue
+        # The observations
+        for obs_group in root.findall( './/apt:ObservationGroup', ns):
+            label = obs_group.find('apt:Label', ns)
+            group_label = "" if label is None else label.text
+            for obs in obs_group.findall('.//apt:Observation', ns):
+                observation = {
+                    'category': pi_category,
+                    'pid': str(program),
+                    'pi': pi_lastname,
+                    'cycle': int(cycle),
+                }
+                reqs = np.unique([
+                    child.tag[child.tag.rindex('}')+1:]
+                    for child in obs.find(".//apt:SpecialRequirements", ns)
+                ]).tolist()
+                phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
+                between_reqs = obs.find(".//apt:Between", ns)
+                time_series_reqs = obs.find(".//apt:TimeSeriesObservation", ns)
+                if time_series_reqs is None:
+                    continue
 
-            target_id = obs.find('apt:TargetID', ns).text
-            target_name = targets[target_id]['name']
-            norm_target = normalize_name(target_name)
-            observation['target'] = norm_target
-            observation['target_in_program'] = target_name
+                observ = obs.find('apt:Number', ns).text
+                visit = obs.find('apt:Visit', ns).get('Number')
+                for state in status:
+                    if state['observation'] == observ and state['visit'] == visit:
+                        break
+                observation['observation'] = state['observation']
+                observation['visit'] = state['visit']
+                observation['status'] = state['status']
+                # Short observations are background:
+                if state['duration'] < 1.5:
+                    continue
+                # placeholder
+                observation['event'] = ''
 
-            observation['ra'] = targets[target_id]['ra']
-            observation['dec'] = targets[target_id]['dec']
-            observation['instrument'] = obs.find('apt:Instrument', ns).text
-            template = obs.find('apt:Template', ns)[0]
-            observation.update(_extract_instrument_template(template))
+                target_id = obs.find('apt:TargetID', ns).text
+                target_name = targets[target_id]['name']
+                norm_target = normalize_name(target_name)
+                observation['target'] = norm_target
+                observation['target_in_program'] = target_name
 
-            label = obs.find('apt:Label', ns)
-            observation['label'] = group_label
-            if label is not None:
-                label = label.text.lower()
-                observation['label'] = " : ".join([group_label, label])
+                observation['ra'] = targets[target_id]['ra']
+                observation['dec'] = targets[target_id]['dec']
+                observation['instrument'] = obs.find('apt:Instrument', ns).text
+                template = obs.find('apt:Template', ns)[0]
+                observation.update(_extract_instrument_template(template))
 
-            observation['special_reqs'] = reqs
-            if phase_reqs is not None:
-                observation['reqs_phase'] = phase_reqs.attrib
-            if between_reqs is not None:
-                observation['reqs_date'] = between_reqs.attrib
-            # Add orbital-phase information when possible
-            period, phase, obs_duration = get_phase_info(observation)
-            if period is not None:
-                observation['period'] = period
-                observation['phase_start'] = phase
-                observation['phase_duration'] = obs_duration
-            observation['event'] = guess_event_type(observation)
-            observations.append(observation)
+                observation['duration'] = state['duration']
+                observation['date_start'] = state['date_start']
+                observation['date_end'] = state['date_end']
+                observation['plan_window'] = state['plan_window']
+                observation['proprietary_period'] = int(proprietary_period)
+                label = obs.find('apt:Label', ns)
+
+                observation['label'] = group_label
+                if label is not None:
+                    label = label.text.lower()
+                    observation['label'] = " : ".join([group_label, label])
+
+                observation['special_reqs'] = reqs
+                observation['reqs_phase'] = None
+                if phase_reqs is not None:
+                    observation['reqs_phase'] = phase_reqs.attrib
+                # Add orbital-phase information when possible
+                period, phase, obs_duration = get_phase_info(observation)
+                if period is not None:
+                    observation['period'] = period
+                    observation['phase_start'] = phase
+                    observation['phase_duration'] = obs_duration
+                observation['event'] = guess_event_type(observation)
+                observations.append(observation)
+
+    # Write to CSV file
+    if to_csv is True:
+        # TBD: update last_udpated_programs flag
+        to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
+    if to_csv:
+        fieldnames = {key for obs in observations for key in obs.keys()}
+        fieldnames = []
+        for obs in observations:
+            for key in obs.keys():
+                if key not in fieldnames:
+                    fieldnames.append(key)
+
+        with open(to_csv, mode="w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in observations:
+                writer.writerow(row)
 
     return observations
 
