@@ -51,7 +51,7 @@ import gen_tso.viewer_popovers as pops
 
 
 def load_catalog():
-    catalog = cat.Catalog()
+    catalog = cat.Catalog(custom_targets='user_planet_data.txt')
     is_jwst = np.array([target.is_jwst_planet for target in catalog.targets])
     is_transit = np.array([target.is_transiting for target in catalog.targets])
     is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
@@ -177,7 +177,6 @@ for location in loading_folders:
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
-trexolists_url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html'
 stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
 stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
 
@@ -1188,7 +1187,7 @@ def server(input, output, session):
     preset_sed = reactive.Value(None)
     preset_obs_dur = reactive.Value(None)
     esasky_command = reactive.Value(None)
-    trexo_info = reactive.Value(None)
+    programs_info = reactive.Value(None)
     tso_draw = reactive.Value(None)
     clipboard = reactive.Value('')
     latest_pandeia = reactive.Value(None)
@@ -2067,7 +2066,7 @@ def server(input, output, session):
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
 
-        trexo_info.set(target.trexo_data)
+        programs_info.set(target.programs)
 
         keys = ui.HTML(
             'Keys:<br>'
@@ -2089,19 +2088,19 @@ def server(input, output, session):
 
 
     @render.data_frame
-    @reactive.event(trexo_info)
+    @reactive.event(programs_info)
     def trexo_df():
-        data = trexo_info.get()
-        nobs = len(data['program'])
+        data = programs_info.get()
+        nobs = len(data)
 
         today = datetime.today()
-        status = data['status']
-        date_obs = data['date_start']
-        plan_obs = data['plan_window']
-        propriety = data['proprietary_period']
+        status = [obs['status'] for obs in data]
+        date_obs = [obs['date_start'] for obs in data]
+        plan_obs = [obs['plan_window'] for obs in data]
+        propriety = [obs['proprietary_period'] for obs in data]
         warnings = [
-            i for i in range(nobs)
-            if status[i] in ['Skipped', 'Failed', 'Withdrawn']
+            i for i,obs in enumerate(data)
+            if obs['status'] in ['Skipped', 'Failed', 'Withdrawn']
         ]
         available = []
         private = []
@@ -2119,13 +2118,14 @@ def server(input, output, session):
                     f' ({propriety[i]} m)'
                 )
             else:
-                if isinstance(plan_obs[i], datetime):
-                    dates.append(
-                        plan_obs[i].strftime('%Y-%m-%d') +
-                        f' ({propriety[i]} m)'
-                    )
-                else:
+                if plan_obs[i] is None:
                     dates.append(f'--- ({propriety[i]} m)')
+                elif '-' in plan_obs[i]:
+                    date = plan_obs[i][0:plan_obs[i].index(' ')]
+                    dates.append(f'{date} ({propriety[i]} m)')
+                else:
+                    dates.append(f'{plan_obs[i]} ({propriety[i]} m)')
+
                 if i not in warnings:
                     tbd_dates.append(i)
         styles = [
@@ -2143,32 +2143,30 @@ def server(input, output, session):
             },
         ]
         programs = [
-            ' '.join(program.split()[0:2])
-            for program in data['program']
+            ui.tags.a(
+                f"{obs['category']} {obs['pid']}",
+                href=stsci_url.replace('PID', obs['pid']),
+                target="_blank",
+            )
+            for obs in data
         ]
-        pi = [
-            ' '.join(program.split()[2:])
-            for program in data['program']
-        ]
-        hrefs = [stsci_url.replace('PID', pid.split()[1]) for pid in programs]
-        programs = [
-            ui.tags.a(programs[i], href=hrefs[i], target="_blank")
-            for i in range(nobs)
-        ]
-        planets = [', '.join(planets) for planets in data['planets']]
+        planets = [', '.join(obs['planets']) for obs in data]
 
         data_df = {
             'Program ID': programs,
-            'PI': pi,
-            'Target name': data['trexo_name'],
+            'PI': [obs['pi'] for obs in data],
+            'Target name': [obs['target'] for obs in data],
             'Planet(s)': planets,
-            'Event': data['event'],
-            'Status': data['status'],
-            'Instrument / Mode': data['mode'],
-            'Subarray': data['subarray'],
-            'Readout': data['readout'],
-            'Groups': data['groups'],
-            'Duration (h)': data['duration'],
+            'Event': [obs['event'] for obs in data],
+            'Status': [obs['status'] for obs in data],
+            'Instrument': [obs['instrument'] for obs in data],
+            'Mode': [obs['mode'] for obs in data],
+            'Disperser': [obs['disperser'] for obs in data],
+            'Filter': [obs['filter'] for obs in data],
+            'Subarray': [obs['subarray'] for obs in data],
+            'Readout': [obs['readout'] for obs in data],
+            'Groups': [obs['groups'] for obs in data],
+            'Duration (h)': [obs['duration'] for obs in data],
             'Obs date (prop. period)': dates,
         }
         df = pd.DataFrame(data=data_df)

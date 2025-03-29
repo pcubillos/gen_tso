@@ -25,7 +25,6 @@ import warnings
 
 from astropy.coordinates import SkyCoord
 import numpy as np
-from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad as simbad
 from astroquery.vizier import Vizier
 from astropy.table import Table
@@ -34,9 +33,8 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import requests
 
-from ..utils import ROOT, KNOWN_PROGRAMS
+from ..utils import ROOT
 from .catalogs import load_targets, load_trexolists, load_programs, load_aliases
-from .fetch_programs import parse_program
 from . import utils as u
 from . import target as tar
 from .target import Target
@@ -299,6 +297,7 @@ def fetch_trexolist():
     >>> import gen_tso.catalogs as cat
     >>> cat.fetch_trexolist()
     """
+    # Fetch the data:
     url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.csv'
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
@@ -310,9 +309,15 @@ def fetch_trexolist():
     with open(trexolists_path, mode="wb") as file:
         file.write(response.content)
 
-    today = datetime.now(timezone.utc)
+    # Fetch the last-update date:
+    url = "https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.html"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    last_update_tag = soup.find('h3', string=lambda text: 'Last update' in text)
+    last_update_text = last_update_tag.get_text(strip=True)
+    date = datetime.strptime(last_update_text[13:], "%a %b %d %H:%M:%S %Y")
     with open(f'{ROOT}data/last_updated_trexolist.txt', 'w') as f:
-        f.write(f'{today.year}_{today.month:02}_{today.day:02}')
+        f.write(f'{date.year}_{date.month:02}_{date.day:02}')
 
 
 def fetch_nasa_confirmed_targets():
@@ -1242,6 +1247,9 @@ def fetch_gaia_targets(
     >>> dec_source = -5.094857
     >>> cat.fetch_gaia_targets(ra_source, dec_source)
     """
+    # Moved inside function to avoid hanging at import time
+    # (when astroquery is not reachable)
+    from astroquery.gaia import Gaia
     max_sep_degrees = max_separation / 3600.0
 
     try:

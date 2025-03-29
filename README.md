@@ -33,19 +33,20 @@ tso
 ```bibtex
 @ARTICLE{Cubillos2024paspGenTSO,
        author = {{Cubillos}, Patricio E.},
-        title = "{Gen TSO: A General JWST Simulator for Exoplanet Times-series
-Observations}",
-      journal = {arXiv e-prints},
-     keywords = {Astrophysics - Earth and Planetary Astrophysics, Astrophysics
-- Instrumentation and Methods for Astrophysics},
+        title = "{Gen TSO: A General JWST Simulator for Exoplanet Times-series Observations}",
+      journal = {\pasp},
+     keywords = {Exoplanets, Time series analysis, Astronomy databases, 498, 1916, 83, Astrophysics - Earth and Planetary Astrophysics, Astrophysics - Instrumentation and Methods for Astrophysics},
          year = 2024,
-        month = oct,
-          eid = {arXiv:2410.04856},
-        pages = {arXiv:2410.04856},
+        month = dec,
+       volume = {136},
+       number = {12},
+          eid = {124501},
+        pages = {124501},
+          doi = {10.1088/1538-3873/ad8fd4},
 archivePrefix = {arXiv},
        eprint = {2410.04856},
  primaryClass = {astro-ph.EP},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2024arXiv241004856C},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024PASP..136l4501C},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```
