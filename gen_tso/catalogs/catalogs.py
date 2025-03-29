@@ -248,7 +248,7 @@ def _add_planet_info(observations):
     """
     If data exists, add planet letter info to a list of observations
     """
-    planets_file = f'{ROOT}data/planets_per_program.txt'
+    planets_file = f'{ROOT}data/programs/planets_per_program.txt'
     if os.path.exists(planets_file):
         planet_data = np.loadtxt(planets_file, dtype=str)
         for obs in observations:
