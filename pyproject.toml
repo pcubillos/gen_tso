@@ -8,6 +8,8 @@ build-backend = "setuptools.build_meta"
 name = "gen_tso"
 description = "A general ETC for time-series observations"
 readme = "README.md"
+#license = "GPL-2.0-or-later"
+#license-files = [ "LICENSE" ]
 license = { file = "LICENSE" }
 
 #https://packaging.python.org/en/latest/guides/single-sourcing-package-version/
@@ -52,8 +54,21 @@ include-package-data = true
 find = {namespaces = false}  # Take only folders with a __init__.py file
 
 #https://setuptools.pypa.io/en/stable/userguide/datafiles.html
-#[tool.setuptools.package-data]
-#"gen_tso.data" = ["*"]
+[tool.setuptools.package-data]
+"gen_tso.data" = [
+    "base_theme.css",
+    "flux_rates_*.pickle",
+    "last_updated_*",
+    "nea_data.txt",
+    "target_aliases.txt",
+    "tess_data.txt",
+    "trexolists.csv",
+    "user_planet_data.txt",
+]
+"gen_tso.data.models" = ["*"]
+"gen_tso.data.images" = ["*"]
+"gen_tso.data.programs" = ["jwst_tso_programs.csv", "planets_per_program.txt"]
+"gen_tso.data.throughputs" = ["*"]
 
 [tool.pytest.ini_options]
 filterwarnings = [

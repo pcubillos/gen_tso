@@ -1,0 +1,4 @@
+# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)
+# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass
+>BD+05 4868: 326.860513 6.604861 7.448  0.69  0.70 4596.0 4.58 -0.07
+ BD+05 4868 b: 20.0 nan nan 0.0208 1.271869 1820.0 0
