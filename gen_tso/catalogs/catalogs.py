@@ -90,6 +90,7 @@ class Catalog():
 
         # JWST targets (TBD select source by date)
         #programs = load_trexolists(grouped=True)
+        # Use own programs while trexolists is out of date
         programs = load_programs(grouped=True)
         njwst = len(programs)
         host_aliases = load_aliases('host')

@@ -51,7 +51,7 @@ import gen_tso.viewer_popovers as pops
 
 
 def load_catalog():
-    catalog = cat.Catalog()
+    catalog = cat.Catalog(custom_targets='user_planet_data.txt')
     is_jwst = np.array([target.is_jwst_planet for target in catalog.targets])
     is_transit = np.array([target.is_transiting for target in catalog.targets])
     is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
