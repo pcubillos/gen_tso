@@ -10,6 +10,7 @@ __all__ = [
     'load_aliases',
 ]
 
+import csv
 from datetime import datetime
 import os
 
@@ -20,10 +21,9 @@ import prompt_toolkit as ptk
 from astropy.coordinates import Angle, SkyCoord
 from astropy.units import hourangle, deg
 
-from ..utils import ROOT, KNOWN_PROGRAMS
+from ..utils import ROOT
 from . import utils as u
 from .target import Target
-from .fetch_programs import parse_program
 
 
 def find_target(targets=None):
@@ -461,7 +461,7 @@ def load_trexolists(grouped=False, trexo_file=None):
     return observations
 
 
-def load_programs(grouped=False, verbose=False):
+def load_programs(grouped=False, csv_file=None):
     """
     Get the data from the downloaded JWST programs (xml files)
     Note that the programs know targets by host star, not by
@@ -473,30 +473,41 @@ def load_programs(grouped=False, verbose=False):
         - If False, return a 1D list of all observations
         - If True, return a nested list of observations grouped by
           host target.
-    verbose: Bool
-        If True and there were program files not found, show a
-        warning in the screen outputs and tell how to fetch the files.
+    csv_file: String
+        Path to a csv file saved with parse_programs().
+        If None, load the default csv file of gen_tso (which should
+        contain all known programs).
 
     Examples
     --------
     >>> import gen_tso.catalogs as cat
     >>> programs = cat.load_programs()
     """
-    observations = []
-    for pid in KNOWN_PROGRAMS:
-        not_found = []
-        try:
-            obs = parse_program(pid)
-            observations += obs
-        except FileNotFoundError:
-            not_found.append(pid)
+    # Read the CSV file into a list of dictionaries
+    if csv_file is None:
+        csv_file = f'{ROOT}data/programs/jwst_tso_programs.csv'
 
-    if len(not_found) > 0 and verbose:
-        print(
-            f'There are missing JWST-program files.  '
-            f'Fetch from the command line with:\n  tso --update_programs'
-            f'\n\nMissing programs:\n{not_found}'
-        )
+    observations = []
+    with open(csv_file, mode="r", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            observations.append(row)
+
+    # Parse data types
+    int_keys = ['cycle', 'groups', 'integrations', 'proprietary_period']
+    float_keys = ['duration', 'period', 'phase_start', 'phase_duration']
+    date_keys = ['date_start', 'date_end']
+    for obs in observations:
+        for key,val in obs.items():
+            if val == '':
+                obs[key] = None
+            elif key in int_keys:
+                obs[key] = int(val)
+            elif key in float_keys:
+                obs[key] = float(val)
+            elif key in date_keys:
+                date_format = "%Y-%m-%d %H:%M:%S"
+                obs[key] = datetime.strptime(val, date_format)
 
     _add_planet_info(observations)
 
