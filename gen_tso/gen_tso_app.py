@@ -16,7 +16,6 @@ import pandeia.engine
 import pyratbay.constants as pc
 import pyratbay.tools as pt
 import plotly.graph_objects as go
-import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -47,7 +46,12 @@ from gen_tso.pandeia_io.pandeia_setup import (
     check_pysynphot,
     update_synphot_files,
 )
+
 import gen_tso.viewer_popovers as pops
+from gen_tso.export_script import (
+    export_script_fixed_values,
+    export_script_calculated_values,
+)
 
 
 def load_catalog():
@@ -177,8 +181,8 @@ for location in loading_folders:
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
-stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
 stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
+cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/'
 
 depth_units = [
     "none",
@@ -210,6 +214,7 @@ layout_kwargs = dict(
     class_="pb-2 pt-0 m-0",
 )
 
+
 app_ui = ui.page_fluid(
     # ESA Sky
     ui.tags.script(
@@ -238,6 +243,11 @@ app_ui = ui.page_fluid(
         });
         </script>
     """),
+    # Syntax highlighting (python)
+    ui.HTML(
+        f'<link rel="stylesheet" href="{cdnjs}styles/base16/one-light.min.css">'
+        f'<script src="{cdnjs}highlight.min.js"></script>'
+    ),
     ui.tags.style(
         """
         .popover {
@@ -302,13 +312,10 @@ app_ui = ui.page_fluid(
                     gap='1px',
                     class_="p-0 m-0",
                 ),
-                ui.panel_conditional(
-                    'false',
-                    ui.input_action_button(
-                        id="export_button",
-                        label="Export to notebook",
-                        class_="btn btn-outline-success btn-sm",
-                    ),
+                ui.input_action_button(
+                    id="export_button",
+                    label="Export to notebook",
+                    class_="btn btn-outline-success btn-sm",
                 ),
                 col_widths=(9,3),
                 fill=True,
@@ -899,6 +906,33 @@ def planet_model_name(input):
         return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 
+def get_throughput(input, evaluate=False):
+    config = parse_instrument(
+        input, 'instrument', 'mode',
+        'aperture', 'disperser', 'filter', 'subarray', 'detector',
+    )
+    if config is None:
+        return None
+    inst, mode, aperture, disperser, filter, subarray, detector = config
+    obs_type = detector.obs_type
+
+    key = aperture if obs_type == 'photometry' else subarray
+    if key not in throughputs[obs_type][inst][mode]:
+        return None
+
+    if mode == 'lrsslitless':
+        filter = 'None'
+    elif mode == 'mrs_ts':
+        filter = disperser
+    elif mode == 'bots':
+        filter = f'{disperser}/{filter}'
+
+    if evaluate:
+        return throughputs[obs_type][inst][mode][key][filter]
+    config = inst, mode, key, filter
+    return throughputs[obs_type], config
+
+
 def throughput_config(input, evaluate=False):
     config = parse_instrument(
         input, 'instrument', 'mode',
@@ -1078,7 +1112,6 @@ def parse_instrument(input, *args):
         if readout not in detector.readouts:
             return None
         config['readout'] = readout
-
     # Now parse front-end to back-end:
     if 'pairing' in args:
         if mode == 'sw_ts':
@@ -1172,6 +1205,8 @@ def draw(tso_list, resolution, n_obs):
     return sims
 
 
+# ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
@@ -1680,6 +1715,53 @@ def server(input, output, session):
             "height": "50px",
         }
         return img
+
+
+    @reactive.effect
+    @reactive.event(input.export_button)
+    def export_to_notebook():
+        script = export_script_fixed_values(
+            input, user_spectra, saturation_fraction, acq_target_list,
+        )
+
+        fixed_script = ui.HTML(
+            f'<pre><code class="language-python">{script}</code></pre>'
+            "<script>hljs.highlightAll();</script>"
+        )
+
+        clipboard.set(script)
+        m = ui.modal(
+            ui.p("TSO script/notebook"),
+            ui.input_action_button(
+                id='copy_script',
+                label='Copy to clipboard',
+                class_='btn btn-outline-primary',
+            ),
+            ui.navset_card_tab(
+                ui.nav_panel(
+                    "Fixed values",
+                    fixed_script,
+                ),
+                ui.nav_panel(
+                    "Calculated values",
+                    "Panel B content",
+                ),
+                id="selected_navset_card_tab",
+            ),
+            easy_close=True,
+            size='l',
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    @reactive.event(input.copy_script)
+    async def copy_clipboard_script():
+        print(input.selected_navset_card_tab.get())
+        await session.send_custom_message(
+            "copy_to_clipboard",
+            clipboard.get(),
+        )
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -2818,14 +2900,18 @@ def server(input, output, session):
         input.aperture, input.disperser, input.filter, input.subarray,
     )
     def plotly_filters():
-        show_all = req(input.filter_filter).get() == 'all'
-        config = throughput_config(input)
+        config = parse_instrument(
+            input, 'instrument', 'mode',
+            'aperture', 'disperser', 'filter', 'subarray',
+        )
         if config is None:
             return
 
-        obs_type, inst, mode, key, filter = config
+        throughputs, t_config = get_throughput(input)
+        inst, mode, key, filter = t_config
+        show_all = input.filter_filter.get() == 'all'
         fig = plots.plotly_filters(
-            throughputs[obs_type], inst, mode, key, filter, show_all,
+            throughputs, inst, mode, key, filter, show_all,
         )
         return fig
 
@@ -2833,7 +2919,7 @@ def server(input, output, session):
     @render_plotly
     def plotly_sed():
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
-        throughput = throughput_config(input, evaluate=True)
+        throughput = get_throughput(input, evaluate=True)
         if throughput is None:
             return
 
@@ -2872,7 +2958,7 @@ def server(input, output, session):
     )
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
-        throughput = throughput_config(input, evaluate=True)
+        throughput = get_throughput(input, evaluate=True)
         if throughput is None:
             return
 
@@ -3254,4 +3340,3 @@ def server(input, output, session):
 
 
 app = App(app_ui, server)
-
