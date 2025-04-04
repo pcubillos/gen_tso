@@ -21,18 +21,38 @@ def parse_depth_source(input, spectra):
     depth_label = planet_model_name(input)
     obs_geometry = input.obs_geometry.get()
 
+    transit_depth_script = ""
+
     if model_type == 'Input':
         model = spectra[obs_geometry][depth_label]
         filename = model['filename']
         units = model['units']
-        return filename, units
+
+        warning = ""
+        if 'unknown_' in filename:
+            filename = filename.replace('unknown_', '')
+            warning = (
+                f"# NOTE! Need to set the path to this {obs_geometry} depth file.\n    "
+                "# (browsers don't expose paths of uploaded files for security reasons)\n    "
+            )
+
+        transit_depth_script = f"""
+    # The planet's {obs_geometry} spectrum:
+    obs_type = {repr(obs_geometry)}
+    units = {repr(units)}
+    depth_file = {repr(filename)}
+    {warning}label, wl, depth = u.read_spectrum_file(depth_file, units)
+    depth_model = [wl, depth]"""
+
+        return transit_depth_script
 
     if model_type == 'Flat':
         pass
         # nwave = 1000
-        # transit_depth = input.transit_depth.get() * 0.01
         # wl = np.linspace(0.6, 50.0, nwave)
         # depth = np.tile(transit_depth, nwave)
+        # transit_depth = np.round(input.transit_depth.get() * 0.01, decimals=4)
+        # return transit_depth
 
     elif model_type == 'Blackbody':
         pass
@@ -70,19 +90,7 @@ def export_script_fixed_values(
     order, ngroup, nint, pairing, pupil, detector = config[7:]
 
     name = input.target.get()
-    obs_geometry = input.obs_geometry.get()
-    transit_dur = float(input.t_dur.get())
-    planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
-    depth_file, units = parse_depth_source(input, spectra)
-    if 'unknown_' in depth_file:
-        path_warning = (
-            f"# NOTE! Need to set the path to this {obs_geometry.lower()} depth file.\n    "
-	    "# (browsers don't expose paths of uploaded files for security reasons)\n    "
-        )
-        depth_file = depth_file.replace('unknown_', '')
-    else:
-        path_warning = ''
 
     target_focus = input.target_focus.get()
     if target_focus == 'acquisition':
@@ -97,7 +105,8 @@ def export_script_fixed_values(
         input, spectra, target_acq_mag=target_acq_mag,
     )
 
-    # WRITE SCRIPT
+
+    # Write the script
     script = f"""\
     import gen_tso.pandeia_io as jwst
     import gen_tso.catalogs as cat
@@ -124,11 +133,11 @@ def export_script_fixed_values(
     sed_model = {repr(sed_model)}
     norm_band = {repr(norm_band)}
     norm_mag = {norm_mag}
-    pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+    pando.set_scene(sed_type, sed_model, norm_band, norm_mag)\
 """
 
     if mode == 'target_acq':
-        script += """\n
+        script += """
     # Target acquisition
     tso = pando.perform_calculation(
         ngroup, nint, disperser, filter, subarray, readout,
@@ -136,13 +145,11 @@ def export_script_fixed_values(
     )\
 """
     else:
+        # Transit depth
+        transit_depth_script = parse_depth_source(input, spectra)
+        transit_dur = float(input.t_dur.get())
         script += f"""
-    # The planet's {obs_geometry} spectrum:
-    obs_type = {repr(obs_geometry)}
-    units = {repr(units)}
-    depth_file = {repr(depth_file)}
-    {path_warning}label, wl, depth = u.read_spectrum_file(depth_file, units)
-    depth_model = [wl, depth]
+    {transit_depth_script}
 
     # in-transit and total observation duration times (hours):
     transit_dur = {transit_dur}
