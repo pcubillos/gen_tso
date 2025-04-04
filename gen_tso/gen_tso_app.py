@@ -164,11 +164,6 @@ bookmarked_spectra = {
     'eclipse': [],
     'sed': [],
 }
-user_spectra = {
-    'transit': [],
-    'eclipse': [],
-    'sed': {},
-}
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
@@ -182,12 +177,10 @@ for location in loading_folders:
     t_models, e_models, sed_models = collect_spectra(location)
     for label, model in t_models.items():
         spectra['transit'][label] = model
-        user_spectra['transit'].append(label)
     for label, model in e_models.items():
         spectra['eclipse'][label] = model
-        user_spectra['eclipse'].append(label)
     for label, model in sed_models.items():
-        user_spectra['sed'][label] = model
+        spectra['sed'][label] = model
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
@@ -561,7 +554,7 @@ app_ui = ui.page_fluid(
                         ui.input_select(
                             id="depth",
                             label="",
-                            choices=user_spectra['transit'],
+                            choices=list(spectra['transit']),
                         ),
                         '',
                         id='depth_tooltip',
@@ -1040,7 +1033,7 @@ def server(input, output, session):
             target_acq_mag = None
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-            input, user_spectra, target_acq_mag=target_acq_mag,
+            input, spectra, target_acq_mag=target_acq_mag,
         )
         if sed_label is None:
             error_msg = ui.markdown("**Error:**<br>No SED model to simulate")
@@ -1066,7 +1059,7 @@ def server(input, output, session):
             spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
             bookmarked_spectra['sed'].append(sed_label)
 
-        depth_label, wl, depth = parse_depth_model(input, spectra, user_spectra)
+        depth_label, wl, depth = parse_depth_model(input, spectra)
         if not run_is_tso:
             tso = pando.perform_calculation(
                 ngroup, nint,
@@ -1356,7 +1349,7 @@ def server(input, output, session):
             "planet_model_type", choices=choices, selected=planet_model_type,
         )
         if planet_model_type == 'Input':
-            choices = user_spectra[obs_geometry]
+            choices = list(spectra[obs_geometry])
             selected = tso['depth_label']
             ui.update_select("depth", choices=choices, selected=selected)
         elif planet_model_type == 'Flat':
@@ -1396,7 +1389,7 @@ def server(input, output, session):
     @reactive.event(input.export_button)
     def export_to_notebook():
         script = export_script_fixed_values(
-            input, user_spectra, saturation_fraction, acq_target_list,
+            input, spectra, saturation_fraction, acq_target_list,
         )
 
         fixed_script = ui.HTML(
@@ -1851,7 +1844,6 @@ def server(input, output, session):
         nobs = len(data)
 
         today = datetime.today()
-        status = [obs['status'] for obs in data]
         date_obs = [obs['date_start'] for obs in data]
         plan_obs = [obs['plan_window'] for obs in data]
         propriety = [obs['proprietary_period'] for obs in data]
@@ -2091,7 +2083,7 @@ def server(input, output, session):
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices = list(user_spectra['sed'])
+            choices = list(spectra['sed'])
             selected = None
 
         ui.update_select("sed", choices=choices, selected=selected)
@@ -2104,7 +2096,7 @@ def server(input, output, session):
     )
     def stellar_sed_label():
         """Check current SED is bookmarked"""
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, user_spectra)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         is_bookmarked = sed_label in bookmarked_spectra['sed']
         bookmarked_sed.set(is_bookmarked)
         if is_bookmarked:
@@ -2131,7 +2123,7 @@ def server(input, output, session):
     @reactive.event(input.sed_bookmark)
     def _():
         """Toggle bookmarked SED"""
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, user_spectra)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         if sed_type is None:
             msg = ui.markdown("**Error**:<br>No SED model to bookmark")
             ui.notification_show(msg, type="error", duration=5)
@@ -2193,7 +2185,7 @@ def server(input, output, session):
         bookmarked_depth.set(is_bookmarked)
         if is_bookmarked:
             bookmarked_spectra[obs_geometry].append(depth_label)
-            depth_label, wl, depth = parse_depth_model(input, spectra, user_spectra)
+            depth_label, wl, depth = parse_depth_model(input, spectra)
             spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
@@ -2201,7 +2193,7 @@ def server(input, output, session):
 
     @reactive.effect
     @reactive.event(input.obs_geometry, update_depth_flag)
-    def _():
+    def update_depth_types_and_models():
         obs_geometry = input.obs_geometry.get()
         choices = depth_choices[obs_geometry]
         model_type = input.planet_model_type.get()
@@ -2211,7 +2203,7 @@ def server(input, output, session):
             "planet_model_type", choices=choices, selected=model_type,
         )
 
-        spectra = user_spectra[obs_geometry]
+        models = list(spectra[obs_geometry])
         name = input.target.get()
         cached = (
             name in cache_target and
@@ -2221,12 +2213,11 @@ def server(input, output, session):
         if cached:
             selected = cache_target[name]['depth_label']
             cache_target[name]['depth_label'] = None
-        elif selected not in spectra:
-            selected = None if len(spectra) == 0 else spectra[0]
-        #print(f'Updating input [cached={cached}]: {repr(selected)}')
-        ui.update_select("depth", choices=spectra, selected=selected)
+        elif selected not in models:
+            selected = None if len(models) == 0 else models[0]
+        ui.update_select("depth", choices=models, selected=selected)
 
-        if len(spectra) > 0:
+        if len(models) > 0:
             tooltip_text = ''
         elif obs_geometry == 'transit':
             tooltip_text = f'Upload a {obs_geometry} depth spectrum'
@@ -2374,7 +2365,6 @@ def server(input, output, session):
             obs_geometry = input.obs_geometry.get()
             u = pt.u(units)
             spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
-            user_spectra[obs_geometry].append(label)
             if label not in bookmarked_spectra[obs_geometry]:
                 bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
@@ -2390,7 +2380,7 @@ def server(input, output, session):
                 u = 10**26 / pc.c * (wl*pc.um)**2.0
             elif 'mJy' in units:
                 u = 1.0
-            user_spectra['sed'][label] = {'wl': wl, 'flux': model*u}
+            spectra['sed'][label] = {'wl': wl, 'flux': model*u}
             update_sed_flag.set(label)
 
 
@@ -2450,7 +2440,7 @@ def server(input, output, session):
         if mode != 'target_acq':
             ngroup = 2
 
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, user_spectra)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         sat_label = make_saturation_label(
             inst, mode, aperture, disperser, filter, subarray, order, sed_label,
         )
@@ -2540,7 +2530,7 @@ def server(input, output, session):
         else:
             return
 
-        norm_mag, sed_label = parse_sed(input, user_spectra, target_acq_mag)[3:5]
+        norm_mag, sed_label = parse_sed(input, spectra, target_acq_mag)[3:5]
         if inst is None or sed_label is None:
             return
 
@@ -2606,7 +2596,7 @@ def server(input, output, session):
             return fig
 
         sed_models = [spectra['sed'][model] for model in model_names]
-        current_model = parse_sed(input, user_spectra)[-1]
+        current_model = parse_sed(input, spectra)[-1]
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
@@ -2769,7 +2759,7 @@ def server(input, output, session):
         depth_label = parse_obs(input)[1]
         transit_dur = float(input.t_dur.get())
 
-        if ngroup is None or parse_sed(input, user_spectra)[-1] is None:
+        if ngroup is None or parse_sed(input, spectra)[-1] is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
 
@@ -2800,7 +2790,7 @@ def server(input, output, session):
         report_text = f'<b>{target_focus} target{target_name}</b><br>{report_text}'
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-            input, user_spectra, target_acq_mag=target_acq_mag,
+            input, spectra, target_acq_mag=target_acq_mag,
         )
         pixel_rate, full_well = get_saturation_values(
             inst, mode, aperture, disperser, filter, subarray, order,

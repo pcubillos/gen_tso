@@ -4,7 +4,7 @@ import scipy.interpolate as si
 from gen_tso import pandeia_io as jwst
 from gen_tso.pandeia_io.pandeia_defaults import (
     _load_flux_rate_splines,
-    get_detector, 
+    get_detector,
     make_saturation_label,
 )
 
@@ -55,7 +55,7 @@ def get_throughput(input, evaluate=False):
         filter = disperser
     elif mode == 'bots':
         filter = f'{disperser}/{filter}'
-    
+
     if evaluate:
         return throughputs[obs_type][inst][mode][key][filter]
     config = inst, mode, key, filter
@@ -63,7 +63,7 @@ def get_throughput(input, evaluate=False):
 
 
 def get_auto_sed(input):
-    """ 
+    """
     Guess the model closest to the available options given a T_eff
     and log_g pair.
     """
@@ -113,12 +113,12 @@ def get_saturation_values(
 
 
 def draw(tso_list, resolution, n_obs):
-    """     
+    """
     Draw a random noised-up transit/eclipse depth realization from a TSO
     """
     if not isinstance(tso_list, list):
         tso_list = [tso_list]
-            
+
     sims = []
     for tso in tso_list:
         bin_wl, bin_spec, bin_err, wl_widths = jwst.simulate_tso(
@@ -136,7 +136,7 @@ def draw(tso_list, resolution, n_obs):
 def planet_model_name(input):
     """
     Get the planet model name based on the transit/eclipse depth values.
-    
+
     Returns
     -------
     depth_label: String
@@ -155,23 +155,23 @@ def planet_model_name(input):
 
 
 def parse_instrument(input, *args):
-    """             
+    """
     Parse instrumental configuration from front-end to back-end.
     Ensure that only the requested parameters are a valid configuration.
-    """                 
+    """
     # instrument and mode always checked
     inst = input.instrument.get().lower()
     mode = input.mode.get()
     detector = get_detector(inst, mode, detectors)
     if detector is None:
         return None
-                    
-    config = {      
+
+    config = {
         'instrument': inst,
         'mode': mode,
         'detector': detector,
-    }                       
-                            
+    }
+
     if 'aperture' in args:
         aperture = input.aperture.get()
         has_pupils = mode in ['lw_ts', 'sw_ts']
@@ -182,7 +182,7 @@ def parse_instrument(input, *args):
         if has_pupils:
             aperture = detector.pupil_to_aperture[aperture]
         config['aperture'] = aperture
-    
+
     if 'disperser' in args:
         disperser = input.disperser.get()
         if disperser not in detector.dispersers:
@@ -252,7 +252,7 @@ def parse_instrument(input, *args):
     return config_list
 
 
-def parse_depth_model(input, spectra, user_spectra):
+def parse_depth_model(input, spectra):
     """
     Parse transit/eclipse model name based on current state.
     Calculate or extract model.
@@ -276,7 +276,7 @@ def parse_depth_model(input, spectra, user_spectra):
         transit_depth = input.eclipse_depth.get() * 0.01
         t_planet = input.teq_planet.get()
         # Un-normalized planet and star SEDs
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, user_spectra)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
         planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
         wl, f_star = jwst.extract_sed(star_scene)
@@ -305,9 +305,9 @@ def parse_obs(input):
         rprs_sq = input.eclipse_depth.get()
         teq_planet = input.teq_planet.get()
     return planet_model_type, depth_model, rprs_sq, teq_planet
-    
 
-def parse_sed(input, user_spectra, target_acq_mag=None):
+
+def parse_sed(input, spectra, target_acq_mag=None):
     """Extract SED parameters"""
     if target_acq_mag is None:
         sed_type = input.sed_type()
@@ -317,7 +317,7 @@ def parse_sed(input, user_spectra, target_acq_mag=None):
         sed_type = 'phoenix'
         norm_band = 'gaia,g'
         norm_magnitude = target_acq_mag
-        
+
     if sed_type in ['phoenix', 'kurucz']:
         if target_acq_mag is None:
             sed_model = input.sed.get()
@@ -331,9 +331,9 @@ def parse_sed(input, user_spectra, target_acq_mag=None):
         model_label = f'bb_{sed_model:.0f}K'
     elif sed_type == 'input':
         model_label = input.sed.get()
-        if model_label not in user_spectra['sed']:
+        if model_label not in spectra['sed']:
             return None, None, None, None, None
-        sed_model = user_spectra['sed'][model_label]
+        sed_model = spectra['sed'][model_label]
 
     if sed_type == 'kurucz':
         sed_type = 'k93models'
