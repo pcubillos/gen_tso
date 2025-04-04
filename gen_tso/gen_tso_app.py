@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import pandeia.engine
 import pyratbay.constants as pc
-import pyratbay.tools as pt
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
@@ -187,17 +186,19 @@ nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
 cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/'
 
+# Depth and SED units, ensure they are consistent with u.read_spectrum_file()
 depth_units = [
     "none",
     "percent",
     "ppm",
 ]
-sed_units = [
-    "erg s\u207b\u00b9 cm\u207b\u00b2 Hz\u207b\u00b9 (frequency space)",
-    "erg s\u207b\u00b9 cm\u207b\u00b2 cm (wavenumber space)",
-    "erg s\u207b\u00b9 cm\u207b\u00b2 cm\u207b\u00b9 (wavelength space)",
-    "mJy",
-]
+ergs_s_cm2 = "erg s\u207b\u00b9 cm\u207b\u00b2"
+sed_units = {
+    "f_freq": f"{ergs_s_cm2} Hz\u207b\u00b9 (frequency space)",
+    "f_nu": f"{ergs_s_cm2} cm (wavenumber space)",
+    "f_lambda": f"{ergs_s_cm2} cm\u207b\u00b9 (wavelength space)",
+    "mJy": "mJy",
+}
 
 # 2D heatmap plots:
 heatmaps = {
@@ -1072,7 +1073,10 @@ def server(input, output, session):
                 return
             run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
-                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+                if planet_model_type != 'Input':
+                    spectra[obs_geometry][depth_label] = {
+                        'wl': wl, 'depth': depth,
+                    }
                 if depth_label not in bookmarked_spectra[obs_geometry]:
                     bookmarked_spectra[obs_geometry].append(depth_label)
             depth_model = [wl, depth]
@@ -1679,12 +1683,6 @@ def server(input, output, session):
                 placeholder='select a folder',
                 width='100%',
             ),
-            # TBD: I wish this could be used to browse a folder :(
-            #ui.input_file(
-            #    id="save_file_x",
-            #    label="Into this folder:",
-            #    button_label="Browse",
-            #),
             ui.input_action_button(
                 id='tso_save_button',
                 label='Save to file',
@@ -2175,6 +2173,7 @@ def server(input, output, session):
         """Toggle bookmarked depth model"""
         obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
+        planet_model_type = input.planet_model_type.get()
         if depth_label is None:
             msg = ui.markdown(
                 f"**Error:**<br>No {obs_geometry} depth model to bookmark"
@@ -2186,7 +2185,8 @@ def server(input, output, session):
         if is_bookmarked:
             bookmarked_spectra[obs_geometry].append(depth_label)
             depth_label, wl, depth = parse_depth_model(input, spectra)
-            spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+            if planet_model_type != 'Input':
+                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
 
@@ -2346,25 +2346,26 @@ def server(input, output, session):
             return
 
         # The units tell this function SED or depth spectrum:
+        filename = new_model[0]['name']
+        filepath = new_model[0]['datapath']
         units = uploaded_units.get()
-        label, wl, model = read_spectrum_file(
-            new_model[0]['datapath'], on_fail='warning',
-        )
-        label = new_model[0]['name']
+        _, wl, model = read_spectrum_file(filepath, units, on_fail='warning')
         if wl is None:
             msg = ui.markdown(
-                f'**Error:**<br>Invalid format for input file:<br>*{label}*'
+                f'**Error:**<br>Invalid format for input file:<br>*{filename}*'
             )
-            ui.notification_show(msg, type="error", duration=5)
+            ui.notification_show(msg, type="error", duration=7)
             return
-
-        if label.endswith('.dat') or label.endswith('.txt'):
-            label = label[0:-4]
+        label = os.path.splitext(filename)[0]
 
         if units in depth_units:
             obs_geometry = input.obs_geometry.get()
-            u = pt.u(units)
-            spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
+            spectra[obs_geometry][label] = {
+                'wl': wl,
+                'depth': model,
+                'units': units,
+                'filename': f'unknown_{filename}',
+            }
             if label not in bookmarked_spectra[obs_geometry]:
                 bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
@@ -2372,15 +2373,12 @@ def server(input, output, session):
             # Trigger update choose_depth
             update_depth_flag.set(label)
         elif units in sed_units:
-            if 'frequency' in units:
-                u = 10**26
-            elif 'wavenumber' in units:
-                u = 10**26 / pc.c
-            elif 'wavelength' in units:
-                u = 10**26 / pc.c * (wl*pc.um)**2.0
-            elif 'mJy' in units:
-                u = 1.0
-            spectra['sed'][label] = {'wl': wl, 'flux': model*u}
+            spectra['sed'][label] = {
+                'wl': wl,
+                'flux': model,
+                'units': units,
+                'filename': f'unknown_{filename}',
+            }
             update_sed_flag.set(label)
 
 
