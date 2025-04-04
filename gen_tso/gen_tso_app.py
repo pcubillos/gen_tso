@@ -13,7 +13,6 @@ import faicons as fa
 import numpy as np
 import pandas as pd
 import pandeia.engine
-import pyratbay.constants as pc
 import plotly.graph_objects as go
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
@@ -1393,7 +1392,8 @@ def server(input, output, session):
     @reactive.event(input.export_button)
     def export_to_notebook():
         script = export_script_fixed_values(
-            input, spectra, saturation_fraction, acq_target_list,
+            input, spectra, saturation_fraction,
+            acquisition_targets, acq_target_list,
         )
 
         fixed_script = ui.HTML(

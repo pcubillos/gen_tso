@@ -47,12 +47,16 @@ def parse_depth_source(input, spectra):
         return transit_depth_script
 
     if model_type == 'Flat':
-        pass
-        # nwave = 1000
-        # wl = np.linspace(0.6, 50.0, nwave)
-        # depth = np.tile(transit_depth, nwave)
-        # transit_depth = np.round(input.transit_depth.get() * 0.01, decimals=4)
-        # return transit_depth
+        transit_depth = input.transit_depth.get() * 0.01
+        transit_depth_script = f"""
+    # The planet's {obs_geometry} spectrum:
+    obs_type = {repr(obs_geometry)}
+    nwave = 1000
+    wl = np.linspace(0.6, 50.0, nwave)
+    depth = np.tile({transit_depth:.4e}, nwave)
+    depth_model = [wl, depth]"""
+
+        return transit_depth_script
 
     elif model_type == 'Blackbody':
         pass
