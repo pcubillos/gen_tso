@@ -6,7 +6,6 @@ __all__ = [
     'KNOWN_PROGRAMS',
     'check_latest_version',
     'get_latest_pandeia_release',
-    'get_latest_pandeia_versions',
     'get_version_advice',
     'get_pandeia_advice',
     'read_spectrum_file',
@@ -20,13 +19,16 @@ from packaging.version import parse
 
 from bs4 import BeautifulSoup
 import numpy as np
+import pyratbay.constants as pc
+import pyratbay.tools as pt
 import requests
 from shiny import ui
 
 ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 from .catalogs.utils import as_str
 
-# Guessed from load_trexolists()['program']
+
+# Manually kept:
 KNOWN_PROGRAMS = [
     1033, 1118, 1177, 1185, 1201, 1224, 1274, 1279, 1280, 1281, 1312,
     1331, 1353, 1366, 1442, 1541, 1633, 1729, 1743, 1803, 1846, 1935,
@@ -113,8 +115,6 @@ def get_pandeia_advice(package, latest_version):
     name = package.__name__
     my_version = parse(package.__version__)
     latest_version = parse(latest_version)
-    my_major_minor = parse(f'{my_version.major}.{my_version.minor}')
-    latest_major_minor = parse(f'{latest_version.major}.{latest_version.minor}')
     if my_version >= latest_version:
         color = '#0B980D'
         advice = ''
@@ -133,7 +133,7 @@ def get_pandeia_advice(package, latest_version):
     return status_advice
 
 
-def read_spectrum_file(file, on_fail=None):
+def read_spectrum_file(file, units='none', on_fail=None):
     """
     Parameters
     ----------
@@ -142,6 +142,14 @@ def read_spectrum_file(file, on_fail=None):
         This is a plain-text file with two columns (white space separater)
         First column is the wavelength, second is the depth/flux.
         Should be readable by numpy.loadtxt().
+    units: String
+        Units of the input spectrum.
+        For depths, use one of 'none', 'percent', 'ppm'.
+        For SEDs, use one of
+            'mJy', 
+            'f_freq' (for erg s-1 cm-2 Hz-1),
+            'f_nu' (for for erg s-1 cm-2 cm),
+            'f_lambda' (for erg s-1 cm-2 cm-1)
     on_fail: String
         if 'warning' raise a warning.
         if 'error' raise an error.
@@ -151,14 +159,33 @@ def read_spectrum_file(file, on_fail=None):
     >>> import gen_tso.utils as u
 
     >>> file = f'{u.ROOT}data/models/WASP80b_transit.dat'
-    >>> spectra = u.read_spectrum_file(file, on_fail='warning')
+    >>> label, wl, spectra = u.read_spectrum_file(file, on_fail='warning')
     """
+    # Validate units
+    depth_units = [
+        "none",
+        "percent",
+        "ppm",
+    ]
+    sed_units = [
+        "f_freq",
+        "f_nu",
+        "f_lambda",
+        "mJy",
+    ]
+    if units not in depth_units and units not in sed_units:
+        msg = (
+            f"The input units ({repr(units)}) must be one of {depth_units} "
+            f"for depths or one of {sed_units} for SEDs"
+        )
+        raise ValueError(msg)
+
+    # (try to) load the file:
     try:
-        data = np.loadtxt(file, unpack=True)
-        wl, depth = data
+        wl, spectrum = np.loadtxt(file, unpack=True)
     except ValueError as error:
         wl = None
-        depth = None
+        spectrum = None
         error_msg = (
             f'Error, could not load spectrum file: {repr(file)}\n{error}'
         )
@@ -167,10 +194,23 @@ def read_spectrum_file(file, on_fail=None):
         if on_fail == 'error':
             raise ValueError(error_msg)
 
+    # Set the units:
+    if units in depth_units:
+        u = pt.u(units)
+    else:
+        if units == 'f_freq':
+            u = 10**26
+        elif units == 'f_nu':
+            u = 10**26 / pc.c
+        elif units == 'f_lambda':
+            u = 10**26 / pc.c * (wl*pc.um)**2.0
+        elif 'mJy' in units:
+            u = 1.0
+
     path, label = os.path.split(file)
     if label.endswith('.dat') or label.endswith('.txt'):
         label = label[0:-4]
-    return label, wl, depth
+    return label, wl, spectrum*u
 
 
 def collect_spectra(folder, on_fail=None):
@@ -248,21 +288,42 @@ def collect_spectra(folder, on_fail=None):
 
     transit_spectra = {}
     for file in transit_files:
-        label, wl, depth = read_spectrum_file(f'{folder}/{file}', on_fail)
+        filename = f'{folder}/{file}'
+        units = 'none'
+        label, wl, depth = read_spectrum_file(filename, units, on_fail)
         if wl is not None:
-            transit_spectra[label] = {'wl': wl, 'depth': depth}
+            transit_spectra[label] = {
+                'wl': wl,
+                'depth': depth,
+                'units': units,
+                'filename': filename,
+            }
 
     eclipse_spectra = {}
     for file in eclipse_files:
-        label, wl, depth = read_spectrum_file(f'{folder}/{file}', on_fail)
+        filename = f'{folder}/{file}'
+        units = 'none'
+        label, wl, model = read_spectrum_file(filename, units, on_fail)
         if wl is not None:
-            eclipse_spectra[label] = {'wl': wl, 'depth': depth}
+            eclipse_spectra[label] = {
+                'wl': wl,
+                'depth': depth,
+                'units': units,
+                'filename': filename,
+            }
 
     sed_spectra = {}
     for file in sed_files:
-        label, wl, model = read_spectrum_file(f'{folder}/{file}', on_fail)
+        filename = f'{folder}/{file}'
+        units = 'mJy'
+        label, wl, model = read_spectrum_file(filename, units, on_fail)
         if wl is not None:
-            sed_spectra[label] = {'wl': wl, 'flux': model}
+            sed_spectra[label] = {
+                'wl': wl,
+                'flux': depth,
+                'units': units,
+                'filename': filename,
+            }
 
     return transit_spectra, eclipse_spectra, sed_spectra
 
