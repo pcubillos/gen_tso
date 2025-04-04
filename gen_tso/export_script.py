@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
-        
+
 import textwrap
 
 import numpy as np
@@ -12,7 +12,7 @@ from gen_tso.app_utils import (
 )
 
 
-def parse_depth_source(input, user_spectra):
+def parse_depth_source(input, spectra):
     """
     Parse transit/eclipse model name based on current state.
     Calculate or extract model.
@@ -22,7 +22,7 @@ def parse_depth_source(input, user_spectra):
     obs_geometry = input.obs_geometry.get()
 
     if model_type == 'Input':
-        model = user_spectra[obs_geometry][depth_label]
+        model = spectra[obs_geometry][depth_label]
         filename = model['filename']
         units = model['units']
         return filename, units
@@ -39,7 +39,7 @@ def parse_depth_source(input, user_spectra):
         # transit_depth = input.eclipse_depth.get() * 0.01
         # t_planet = input.teq_planet.get()
         # # Un-normalized planet and star SEDs
-        # sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, user_spectra)
+        # sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         # star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
         # planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
         # wl, f_star = jwst.extract_sed(star_scene)
@@ -52,12 +52,10 @@ def parse_depth_source(input, user_spectra):
         # # Eclipse_depth = Fplanet/Fstar * rprs**2
         # depth = f_planet / f_star * transit_depth
 
-    #return depth_label, wl, depth
-
-
 
 def export_script_fixed_values(
-        input, user_spectra, saturation_fraction, acq_target_list,
+        input, spectra, saturation_fraction,
+        acquisition_targets, acq_target_list,
     ):
     """
     values: String
@@ -71,29 +69,32 @@ def export_script_fixed_values(
     inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
     order, ngroup, nint, pairing, pupil, detector = config[7:]
 
-    req_saturation = saturation_fraction.get()
     name = input.target.get()
     obs_geometry = input.obs_geometry.get()
     transit_dur = float(input.t_dur.get())
     planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
-    print(planet_model_type)
 
-    depth_file, units = parse_depth_source(input, user_spectra)
-
+    depth_file, units = parse_depth_source(input, spectra)
+    if 'unknown_' in depth_file:
+        path_warning = (
+            f"# NOTE! Need to set the path to this {obs_geometry.lower()} depth file.\n    "
+	    "# (browsers don't expose paths of uploaded files for security reasons)\n    "
+        )
+        depth_file = depth_file.replace('unknown_', '')
+    else:
+        path_warning = ''
 
     target_focus = input.target_focus.get()
     if target_focus == 'acquisition':
         selected = acquisition_targets.cell_selection()['rows'][0]
         target_list = acq_target_list.get()
         target_acq_mag = np.round(target_list[1][selected], 3)
+        name = target_list[0][selected]
     elif target_focus == 'science':
-        #in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
-        #    inst, subarray, readout, ngroup, transit_dur,
-        #)
         target_acq_mag = None
 
     sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-        input, user_spectra, target_acq_mag=target_acq_mag,
+        input, spectra, target_acq_mag=target_acq_mag,
     )
 
     # WRITE SCRIPT
@@ -115,11 +116,10 @@ def export_script_fixed_values(
     readout = {repr(readout)}
     aperture = {repr(aperture)}
     order = {repr(order)}
-
     ngroup = {ngroup}
     nint = {repr(nint)}
 
-    # The star:
+    # The star ({name}):
     sed_type = {repr(sed_type)}
     sed_model = {repr(sed_model)}
     norm_band = {repr(norm_band)}
@@ -136,13 +136,12 @@ def export_script_fixed_values(
     )\
 """
     else:
-        script += f"""\n
-    # The planet:
-    # Planet model: wl(um) and transit depth (no units):
+        script += f"""
+    # The planet's {obs_geometry} spectrum:
     obs_type = {repr(obs_geometry)}
-    filename = {repr(depth_file)}
     units = {repr(units)}
-    label, wl, model = u.read_spectrum_file(filename, units)
+    depth_file = {repr(depth_file)}
+    {path_warning}label, wl, depth = u.read_spectrum_file(depth_file, units)
     depth_model = [wl, depth]
 
     # in-transit and total observation duration times (hours):
@@ -160,7 +159,7 @@ def export_script_fixed_values(
 
 
 def export_script_calculated_values(
-        input, user_spectra, saturation_fraction, acq_target_list,
+        input, spectra, saturation_fraction, acq_target_list,
     ):
     """
     values: String
@@ -193,7 +192,7 @@ def export_script_calculated_values(
         target_acq_mag = None
 
     sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-        input, user_spectra, target_acq_mag=target_acq_mag,
+        input, spectra, target_acq_mag=target_acq_mag,
     )
 
     # WRITE SCRIPT
