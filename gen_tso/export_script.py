@@ -111,11 +111,10 @@ def export_script_fixed_values(
     sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
         input, spectra, target_acq_mag=target_acq_mag,
     )
-
+    sed_warning = ""
     if sed_type == 'input':
         sed_units = sed_model['units']
         sed_file = sed_model['filename']
-        sed_warning = ""
         if 'unknown_' in sed_file:
             sed_file = sed_file.replace('unknown_', '')
             sed_warning = warning_template.replace('FILE', "SED's 'sed_file'")
@@ -126,6 +125,9 @@ def export_script_fixed_values(
     label, sed_wl, flux = u.read_spectrum_file(sed_file, sed_units)
     sed_model = {{'wl': sed_wl, 'flux': flux}}
     """.strip()
+    elif sed_type == 'blackbody':
+        t_eff = input.t_eff.get()
+        sed_script = f"sed_model = {t_eff}"
     else:
         sed_script = f"sed_model = {repr(sed_model)}"
 
