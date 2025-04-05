@@ -249,41 +249,41 @@ def collect_spectra(folder, on_fail=None):
     >>> folder = f'{u.ROOT}data/models/'
     >>> spectra = u.collect_spectra(folder, on_fail=None)
     """
-    files = os.listdir(folder)
+    files = sorted(os.listdir(folder))
     transit_files = [
-        file for file in sorted(files)
+        file for file in files
         if 'transit' in file or 'transmission' in file
-        if not os.path.isdir(file)
+        if not os.path.isdir(f'{folder}/{file}')
     ]
-    if 'transit' in files and os.path.isdir('transit'):
+    if 'transit' in files and os.path.isdir(f'{folder}/transit'):
         sub_folder = f'{folder}/transit'
         transit_files += [
             f'transit/{file}' for file in sorted(os.listdir(sub_folder))
-            if not os.path.isdir(f'transit/{file}')
+            if not os.path.isdir(f'{folder}/transit/{file}')
         ]
 
     eclipse_files = [
-        file for file in sorted(files)
+        file for file in files
         if 'eclipse' in file or 'emission' in file
-        if not os.path.isdir(file)
+        if not os.path.isdir(f'{folder}/{file}')
     ]
-    if 'eclipse' in files and os.path.isdir('eclipse'):
+    if 'eclipse' in files and os.path.isdir(f'{folder}/eclipse'):
         sub_folder = f'{folder}/eclipse'
         eclipse_files += [
             f'eclipse/{file}' for file in sorted(os.listdir(sub_folder))
-            if not os.path.isdir(f'eclipse/{file}')
+            if not os.path.isdir(f'{folder}/eclipse/{file}')
         ]
 
     sed_files = [
-        file for file in sorted(files)
+        file for file in files
         if 'sed' in file or 'star' in file
-        if not os.path.isdir(file)
+        if not os.path.isdir(f'{folder}/{file}')
     ]
-    if 'sed' in files and os.path.isdir('sed'):
+    if 'sed' in files and os.path.isdir(f'{folder}/sed'):
         sub_folder = f'{folder}/sed'
         sed_files += [
             f'sed/{file}' for file in sorted(os.listdir(sub_folder))
-            if not os.path.isdir(f'sed/{file}')
+            if not os.path.isdir(f'{folder}/sed/{file}')
         ]
 
     transit_spectra = {}
