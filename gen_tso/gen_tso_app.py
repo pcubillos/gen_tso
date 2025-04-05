@@ -1056,7 +1056,7 @@ def server(input, output, session):
         if sed_label not in bookmarked_spectra['sed']:
             scene = pando.calc['scene'][0]
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
-            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux, 'filename':None}
             bookmarked_spectra['sed'].append(sed_label)
 
         depth_label, wl, depth = parse_depth_model(input, spectra)
@@ -2081,7 +2081,12 @@ def server(input, output, session):
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices = list(spectra['sed'])
+            # bookmarking SED create spectra['sed'] items,
+            # a None filename flags them out of the 'input' list
+            choices = [
+                sed for sed,model in spectra['sed'].items()
+                if model['filename'] is not None
+            ]
             selected = None
 
         ui.update_select("sed", choices=choices, selected=selected)
@@ -2131,7 +2136,7 @@ def server(input, output, session):
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
-            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux, 'filename':None}
             bookmarked_spectra['sed'].append(sed_label)
         else:
             bookmarked_spectra['sed'].remove(sed_label)

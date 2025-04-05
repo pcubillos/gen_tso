@@ -79,10 +79,7 @@ def export_script_fixed_values(
         input, spectra, saturation_fraction,
         acquisition_targets, acq_target_list,
     ):
-    """
-    values: String
-        fixed or calculated
-    """
+    """Translate gen_tso's current app state to a python script"""
     config = parse_instrument(
         input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
         'subarray', 'readout', 'order', 'ngroup', 'nint',
@@ -92,7 +89,6 @@ def export_script_fixed_values(
     order, ngroup, nint, pairing, pupil, detector = config[7:]
 
     name = input.target.get()
-
 
     target_focus = input.target_focus.get()
     if target_focus == 'acquisition':
