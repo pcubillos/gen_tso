@@ -11,6 +11,7 @@ __all__ = [
     'find_closest_sed',
     'extract_sed',
     'make_scene',
+    'blackbody_eclipse_depth',
     'set_depth_scene',
     'get_bandwidths',
     'simulate_tso',
@@ -522,11 +523,13 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     Parameters
     ----------
     sed_type: String
-        Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
+        Type of model: 'phoenix', 'k93models', 'blackbody', 'input', or 'flat'
     sed_model:
         The SED model required for each sed_type:
         - phoenix or k93models: the model key (see get_sed_list)
         - blackbody: the effective temperature (K)
+        - input: dict with 'wl' and 'flux' keys containing the
+                 wavelength (un) and SED spectrum (mJy).
         - flat: the unit ('flam' or 'fnu')
     norm_band: String
         Band over which to normalize the spectrum.
@@ -669,6 +672,68 @@ def extract_sed(scene, wl_range=None):
     else:
         wl_mask = (wave.value >= wl_range[0]) & (wave.value <= wl_range[1])
     return wave.value[wl_mask], flux.value[wl_mask]
+
+
+def blackbody_eclipse_depth(t_planet, rprs, sed_type, sed_model, return_fluxes=False):
+    """
+    Compute an eclipse-depth spectrum assuming a blackbody planet emission.
+
+    Parameters
+    ----------
+    t_planet: Float
+        Planet effective temperature (kelvin).
+    rprs: Float
+        Planet-to-star radius ratio.
+    sed_type: String
+        Type of stellar SED model: select one from:
+        'phoenix', 'k93models', 'blackbody', or 'input'.
+    sed_model:
+        The SED model required for each sed_type:
+        - for phoenix or k93models: the model key (see get_sed_list)
+        - for blackbody: the effective temperature (K)
+        - for input: a dict including 'wl' and 'flux' keys containing the
+              wavelength (um) and SED flux spectrum (mJy).
+    return_fluxes: Bool
+        If True, also return the planetary and stellar fluxes
+
+    Returns
+    -------
+    wl: 1D float array
+        Eclipse depth's wavelength array (um).
+    depth: 1D float array
+        Eclipse depth spectrum.
+    f_planet: 1D float array
+        Planet surface flux (erg s-1 cm-2 Hz-1).
+    f_star: 1D float array
+        Stellar surface flux (erg s-1 cm-2 Hz-1).
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> t_planet = 2000.0
+    >>> rprs = 0.1
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> wl, depth = jwst.blackbody_eclipse_depth(t_planet, rprs, sed_type, sed_model)
+    """
+    # Un-normalized planet and star SEDs
+    star_scene = make_scene(sed_type, sed_model, norm_band='none')
+    planet_scene = make_scene('blackbody', t_planet, norm_band='none')
+    wl_star, f_star = extract_sed(star_scene)
+    wl_planet, f_planet = extract_sed(planet_scene)
+    # Interpolate black body at wl_star
+    interp_func = si.interp1d(
+        wl_planet, f_planet, bounds_error=False, fill_value=np.nan,
+    )
+    f_planet = interp_func(wl_star)
+    wl_mask = np.isfinite(f_planet)
+    wl = wl_star[wl_mask]
+    # Eclipse_depth = Fplanet/Fstar * rprs**2
+    depth = f_planet[wl_mask] / f_star[wl_mask] * rprs**2
+    if return_fluxes:
+        return wl, depth, f_planet[wl_mask], f_star[wl_mask]
+    return wl, depth
 
 
 def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
