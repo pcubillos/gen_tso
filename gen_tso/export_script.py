@@ -54,30 +54,25 @@ def parse_depth_source(input, spectra):
         transit_depth_script = f"""
     # The planet's {obs_geometry} spectrum:
     obs_type = {repr(obs_geometry)}
-    nwave = 1000
-    wl = np.linspace(0.6, 50.0, nwave)
+    wl = ps.constant_resolution_spectrum(0.1, 50.0, resolution=300)
+    nwave = len(wl)
     depth = np.tile({transit_depth:.4e}, nwave)
     depth_model = [wl, depth]"""
 
         return transit_depth_script
 
     elif model_type == 'Blackbody':
-        """
-        sed_units = {repr(units)}
-        sed_file = {repr(filename)}
-        label, wl, flux = u.read_spectrum_file(sed_file, sed_units)
-        sed = {'wl': wl, 'flux': flux}
-        wl, depth = jwst.make_blackbody_depth(t_planet, rprs, sed_type, sed)
-
-        sed_type = 'phoenix'
-        sed = 'k5v'
-        wl, depth = jwst.make_blackbody_depth(t_planet, rprs, sed_type, sed)
-        """
         rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
         t_planet = input.teq_planet.get()
-        # Un-normalized planet and star SEDs
-        sed_type, sed = parse_sed(input, spectra)[0:2]
-        wl, d = jwst.make_blackbody_depth(t_planet, rprs, sed_type, sed)
+        transit_depth_script = f"""
+    # The planet's {obs_geometry} spectrum:
+    t_planet = {t_planet:.1f}
+    rprs = {rprs:.5f}
+    wl, depth = jwst.blackbody_eclipse_depth(t_planet, rprs, sed_type, sed_model)
+    depth_model = [wl, depth]"""
+
+        return transit_depth_script
+
 
 
 def export_script_fixed_values(
@@ -131,14 +126,15 @@ def export_script_fixed_values(
     else:
         sed_script = f"sed_model = {repr(sed_model)}"
 
-    # Write the script
-    script = f"""\
+    imports = """\
     import gen_tso.pandeia_io as jwst
     import gen_tso.catalogs as cat
     import gen_tso.utils as u
     import numpy as np
+"""
 
-
+    # Write the script
+    script = f"""
     # The Pandeia instrumental configuration:
     instrument = {repr(inst)}
     mode = {repr(mode)}
@@ -162,8 +158,8 @@ def export_script_fixed_values(
 """
 
     if mode == 'target_acq':
-        script += """
-    # Target acquisition
+        script += """\n
+    # Run target acquisition
     tso = pando.perform_calculation(
         ngroup, nint, disperser, filter, subarray, readout,
         aperture, order,
@@ -172,6 +168,8 @@ def export_script_fixed_values(
     else:
         # Transit depth
         transit_depth_script = parse_depth_source(input, spectra)
+        if 'ps.' in transit_depth_script:
+            imports += "    import pyratbay.spectrum as ps\n"
         transit_dur = float(input.t_dur.get())
         script += f"""
     {transit_depth_script}
@@ -187,6 +185,7 @@ def export_script_fixed_values(
         ngroup, disperser, filter, subarray, readout, aperture, order,
     )\
 """
+    script = imports + script
     return textwrap.dedent(script)
 
 
