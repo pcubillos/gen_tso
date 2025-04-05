@@ -12,6 +12,12 @@ from gen_tso.app_utils import (
 )
 
 
+warning_template = (
+    "# NOTE! Need to set the path to the FILE.\n    "
+    "# (browsers don't expose paths of uploaded files for security reasons)\n    "
+)
+
+
 def parse_depth_source(input, spectra):
     """
     Parse transit/eclipse model name based on current state.
@@ -31,17 +37,14 @@ def parse_depth_source(input, spectra):
         warning = ""
         if 'unknown_' in filename:
             filename = filename.replace('unknown_', '')
-            warning = (
-                f"# NOTE! Need to set the path to this {obs_geometry} depth file.\n    "
-                "# (browsers don't expose paths of uploaded files for security reasons)\n    "
-            )
+            warning = warning_template.replace('FILE', f"{obs_geometry} 'depth_file'")
 
         transit_depth_script = f"""
     # The planet's {obs_geometry} spectrum:
-    obs_type = {repr(obs_geometry)}
+    {warning}obs_type = {repr(obs_geometry)}
     units = {repr(units)}
     depth_file = {repr(filename)}
-    {warning}label, wl, depth = u.read_spectrum_file(depth_file, units)
+    label, wl, depth = u.read_spectrum_file(depth_file, units)
     depth_model = [wl, depth]"""
 
         return transit_depth_script
@@ -59,22 +62,22 @@ def parse_depth_source(input, spectra):
         return transit_depth_script
 
     elif model_type == 'Blackbody':
-        pass
-        # transit_depth = input.eclipse_depth.get() * 0.01
-        # t_planet = input.teq_planet.get()
-        # # Un-normalized planet and star SEDs
-        # sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
-        # star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
-        # planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
-        # wl, f_star = jwst.extract_sed(star_scene)
-        # wl_planet, f_planet = jwst.extract_sed(planet_scene)
-        # # Interpolate black body at wl_star
-        # interp_func = si.interp1d(
-        #     wl_planet, f_planet, bounds_error=False, fill_value=0.0,
-        # )
-        # f_planet = interp_func(wl)
-        # # Eclipse_depth = Fplanet/Fstar * rprs**2
-        # depth = f_planet / f_star * transit_depth
+        """
+        sed_units = {repr(units)}
+        sed_file = {repr(filename)}
+        label, wl, flux = u.read_spectrum_file(sed_file, sed_units)
+        sed = {'wl': wl, 'flux': flux}
+        wl, depth = jwst.make_blackbody_depth(t_planet, rprs, sed_type, sed)
+
+        sed_type = 'phoenix'
+        sed = 'k5v'
+        wl, depth = jwst.make_blackbody_depth(t_planet, rprs, sed_type, sed)
+        """
+        rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
+        t_planet = input.teq_planet.get()
+        # Un-normalized planet and star SEDs
+        sed_type, sed = parse_sed(input, spectra)[0:2]
+        wl, d = jwst.make_blackbody_depth(t_planet, rprs, sed_type, sed)
 
 
 def export_script_fixed_values(
@@ -109,6 +112,22 @@ def export_script_fixed_values(
         input, spectra, target_acq_mag=target_acq_mag,
     )
 
+    if sed_type == 'input':
+        sed_units = sed_model['units']
+        sed_file = sed_model['filename']
+        sed_warning = ""
+        if 'unknown_' in sed_file:
+            sed_file = sed_file.replace('unknown_', '')
+            sed_warning = warning_template.replace('FILE', "SED's 'sed_file'")
+
+        sed_script = f"""
+    sed_units = {repr(sed_units)}
+    sed_file = {repr(sed_file)}
+    label, sed_wl, flux = u.read_spectrum_file(sed_file, sed_units)
+    sed_model = {{'wl': sed_wl, 'flux': flux}}
+    """.strip()
+    else:
+        sed_script = f"sed_model = {repr(sed_model)}"
 
     # Write the script
     script = f"""\
@@ -133,8 +152,8 @@ def export_script_fixed_values(
     nint = {repr(nint)}
 
     # The star ({name}):
-    sed_type = {repr(sed_type)}
-    sed_model = {repr(sed_model)}
+    {sed_warning}sed_type = {repr(sed_type)}
+    {sed_script}
     norm_band = {repr(norm_band)}
     norm_mag = {norm_mag}
     pando.set_scene(sed_type, sed_model, norm_band, norm_mag)\
