@@ -1,6 +1,8 @@
-import numpy as np
-import scipy.interpolate as si
+# Copyright (c) 2025 Patricio Cubillos
+# Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
+import numpy as np
+import pyratbay.spectrum as ps
 from gen_tso import pandeia_io as jwst
 from gen_tso.pandeia_io.pandeia_defaults import (
     _load_flux_rate_splines,
@@ -268,26 +270,15 @@ def parse_depth_model(input, spectra):
             wl = spectra[obs_geometry][depth_label]['wl']
             depth = spectra[obs_geometry][depth_label]['depth']
     elif model_type == 'Flat':
-        nwave = 1000
         transit_depth = input.transit_depth.get() * 0.01
-        wl = np.linspace(0.6, 50.0, nwave)
+        wl = ps.constant_resolution_spectrum(0.1, 50.0, resolution=300)
+        nwave = len(wl)
         depth = np.tile(transit_depth, nwave)
     elif model_type == 'Blackbody':
-        transit_depth = input.eclipse_depth.get() * 0.01
+        rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
         t_planet = input.teq_planet.get()
-        # Un-normalized planet and star SEDs
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
-        star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
-        planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
-        wl, f_star = jwst.extract_sed(star_scene)
-        wl_planet, f_planet = jwst.extract_sed(planet_scene)
-        # Interpolate black body at wl_star
-        interp_func = si.interp1d(
-            wl_planet, f_planet, bounds_error=False, fill_value=0.0,
-        )
-        f_planet = interp_func(wl)
-        # Eclipse_depth = Fplanet/Fstar * rprs**2
-        depth = f_planet / f_star * transit_depth
+        sed_type, sed = parse_sed(input, spectra)[0:2]
+        wl, depth = jwst.blackbody_eclipse_depth(t_planet, rprs, sed_type, sed)
 
     return depth_label, wl, depth
 
