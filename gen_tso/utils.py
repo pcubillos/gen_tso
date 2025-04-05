@@ -320,7 +320,7 @@ def collect_spectra(folder, on_fail=None):
         if wl is not None:
             sed_spectra[label] = {
                 'wl': wl,
-                'flux': depth,
+                'flux': model,
                 'units': units,
                 'filename': filename,
             }
