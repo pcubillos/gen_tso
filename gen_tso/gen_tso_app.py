@@ -1403,11 +1403,14 @@ def server(input, output, session):
 
         clipboard.set(script)
         m = ui.modal(
-            ui.p("TSO script/notebook"),
-            ui.input_action_button(
-                id='copy_script',
-                label='Copy to clipboard',
-                class_='btn btn-outline-primary',
+            ui.markdown("**TSO script/notebook**"),
+            ui.div(
+                ui.input_action_button(
+                    id='copy_script',
+                    label='Copy to clipboard',
+                    class_='btn btn-primary',
+                ),
+                class_='d-flex justify-content-end mb-2'
             ),
             ui.navset_card_tab(
                 ui.nav_panel(
