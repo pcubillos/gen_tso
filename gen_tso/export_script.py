@@ -89,7 +89,6 @@ def export_script_fixed_values(
     order, ngroup, nint, pairing, pupil, detector = config[7:]
 
     name = input.target.get()
-
     target_focus = input.target_focus.get()
     if target_focus == 'acquisition':
         selected = acquisition_targets.cell_selection()['rows'][0]
@@ -121,13 +120,6 @@ def export_script_fixed_values(
         sed_script = f"sed_model = {t_eff}"
     else:
         sed_script = f"sed_model = {repr(sed_model)}"
-
-    imports = """\
-    import gen_tso.pandeia_io as jwst
-    import gen_tso.catalogs as cat
-    import gen_tso.utils as u
-    import numpy as np
-"""
 
     # Write the script
     script = f"""
@@ -164,8 +156,6 @@ def export_script_fixed_values(
     else:
         # Transit depth
         transit_depth_script = parse_depth_source(input, spectra)
-        if 'ps.' in transit_depth_script:
-            imports += "    import pyratbay.spectrum as ps\n"
         transit_dur = float(input.t_dur.get())
         script += f"""
     {transit_depth_script}
@@ -181,17 +171,25 @@ def export_script_fixed_values(
         ngroup, disperser, filter, subarray, readout, aperture, order,
     )\
 """
+
+    imports = """\
+    import gen_tso.pandeia_io as jwst
+    import gen_tso.utils as u
+"""
+
+    if 'np.' in script:
+        imports += "    import numpy as np\n"
+    if 'ps.' in script:
+        imports += "    import pyratbay.spectrum as ps\n"
     script = imports + script
     return textwrap.dedent(script)
 
 
 def export_script_calculated_values(
-        input, spectra, saturation_fraction, acq_target_list,
+        input, spectra, saturation_fraction,
+        acquisition_targets, acq_target_list,
     ):
-    """
-    values: String
-        fixed or calculated
-    """
+    """Translate gen_tso's current app state to a python script"""
     config = parse_instrument(
         input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
         'subarray', 'readout', 'order', 'ngroup', 'nint',
@@ -200,35 +198,49 @@ def export_script_calculated_values(
     inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
     order, ngroup, nint, pairing, pupil, detector = config[7:]
 
-    req_saturation = saturation_fraction.get()
     name = input.target.get()
-    obs_geometry = input.obs_geometry.get()
-    transit_dur = float(input.t_dur.get())
-    planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
-    print(planet_model_type)
-
     target_focus = input.target_focus.get()
     if target_focus == 'acquisition':
         selected = acquisition_targets.cell_selection()['rows'][0]
         target_list = acq_target_list.get()
         target_acq_mag = np.round(target_list[1][selected], 3)
+        name = target_list[0][selected]
     elif target_focus == 'science':
         #in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
         #    inst, subarray, readout, ngroup, transit_dur,
         #)
         target_acq_mag = None
 
+    req_saturation = saturation_fraction.get()
+    obs_geometry = input.obs_geometry.get()
+    transit_dur = float(input.t_dur.get())
+    planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
+
     sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
         input, spectra, target_acq_mag=target_acq_mag,
     )
+    sed_warning = ""
+    if sed_type == 'input':
+        sed_units = sed_model['units']
+        sed_file = sed_model['filename']
+        if 'unknown_' in sed_file:
+            sed_file = sed_file.replace('unknown_', '')
+            sed_warning = warning_template.replace('FILE', "SED's 'sed_file'")
 
-    # WRITE SCRIPT
-    script = f"""\
-    import gen_tso.pandeia_io as jwst
-    import gen_tso.catalogs as cat
-    import numpy as np
+        sed_script = f"""
+    sed_units = {repr(sed_units)}
+    sed_file = {repr(sed_file)}
+    label, sed_wl, flux = u.read_spectrum_file(sed_file, sed_units)
+    sed_model = {{'wl': sed_wl, 'flux': flux}}
+    """.strip()
+    elif sed_type == 'blackbody':
+        t_eff = input.t_eff.get()
+        sed_script = f"sed_model = {t_eff}"
+    else:
+        sed_script = f"sed_model = {repr(sed_model)}"
 
-
+    # Write the script
+    script = f"""
     # The Pandeia instrumental configuration:
     instrument = {repr(inst)}
     mode = {repr(mode)}
@@ -241,42 +253,43 @@ def export_script_calculated_values(
     aperture = {repr(aperture)}
     order = {repr(order)}
 
-    # The star:
+    # The target ({name}):
+    catalog = cat.Catalog()
+    target = catalog.get_target({repr(name)})
+    t_eff = target.teff
+    logg_star = target.logg_star
+
     sed_type = {repr(sed_type)}
-    sed_model = {repr(sed_model)}
-    norm_band = {repr(norm_band)}
-    norm_mag = {norm_mag}
+    sed_model = jwst.find_closest_sed(teff, logg_star, sed_type)
+    norm_band = '2mass,ks'
+    norm_mag = target.ks_mag
     pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 
-    # Integration timings:
+    # Set ngroup below requested saturation fraction:
     ngroup = {ngroup}
-    nint = {repr(nint)}
-    # Automate ngroup below requested saturation fraction:
-    # ngroup = pando.saturation_fraction(fraction={req_saturation:.1f})
+    ngroup = pando.saturation_fraction(fraction={req_saturation:.1f})
 
-    # Automate nint to match an observation duration:
-    # nint, exp_time = jwst.bin_search_exposure_time(
-    #     instrument, subarray, readout, ngroup, obs_dur,
-    # )
+    # Estimate total duration of observation:
+    transit_dur = target.transit_dur
+    t_start = 1.0
+    t_settling = 0.75
+    t_base = np.max([0.5*transit_dur, 1.0])
+    total_duration = t_start + t_settling + transit_dur + 2*t_base
 
-    # Estimate obs_duration:
-    # t_base = np.max([0.5*transit_dur, 1.0])
-    # obs_dur = t_start + t_settling + transit_dur + 2*t_base
-    obs_dur = jwst.obs_duration(transit_dur, t_base)
-
-    # To automate target properties:
-    # catalog = cat.Catalog()
-    # target = catalog.get_target({repr(name)})
-    # t_eff = target.teff
-    # logg_star = target.logg_star
-    # sed_model = jwst.find_closest_sed(teff, logg_star, sed_type={repr(sed_type)})
-    # norm_band = '2mass,ks'
-    # norm_mag = target.ks_mag
-    # pando.set_scene(sed_type, sed_model, norm_band, norm_mag)\
+    # Set nint to match an observation duration:
+    nint = {nint}
+    nint, exp_time = jwst.bin_search_exposure_time(
+        instrument, subarray, readout, ngroup, total_duration,
+    )
+    # Observation duration times (hours):
+    exp_time = jwst.exposure_time(instrument, subarray, readout, ngroup, nint)
+    obs_dur = exp_time / 3600.0
 """
 
     if mode == 'target_acq':
         script += """\n
+    nint = 1
+
     # Target acquisition
     tso = pando.perform_calculation(
         ngroup, nint, disperser, filter, subarray, readout,
@@ -284,26 +297,11 @@ def export_script_calculated_values(
     )\
 """
     else:
-        script += f"""\n
-    # The planet:
-    # Planet model: wl(um) and transit depth (no units):
-    obs_type = {repr(obs_geometry)}
-    spec_file = 'data/models/WASP80b_transit.dat'
-    depth_model = np.loadtxt(spec_file, unpack=True)
-    depth_label, wl, depth = parse_depth_model(input)
-    depth_model = [wl, depth]
-
-    # in-transit and total observation duration times (hours):
-    # transit_dur = target.transit_dur
-    transit_dur = {transit_dur}
-    exp_time = jwst.exposure_time(instrument, subarray, readout, ngroup, nint)
-    obs_dur = exp_time / 3600.0
-
-    # Automate obs_duration:
-    # t_start = 1.0
-    # t_settling = 0.75
-    # t_base = np.max([0.5*transit_dur, 1.0])
-    # obs_dur = t_start + t_settling + transit_dur + 2*t_base
+        # Transit depth
+        transit_depth_script = parse_depth_source(input, spectra)
+        transit_dur = float(input.t_dur.get())
+        script += f"""
+    {transit_depth_script}
 
     # Run TSO simulation:
     tso = pando.tso_calculation(
@@ -311,4 +309,17 @@ def export_script_calculated_values(
         ngroup, disperser, filter, subarray, readout, aperture, order,
     )\
 """
+
+    imports = """\
+    import gen_tso.pandeia_io as jwst
+    import gen_tso.catalogs as cat
+    import gen_tso.utils as u
+"""
+
+    if 'np.' in script:
+        imports += "    import numpy as np\n"
+    if 'ps.' in script:
+        imports += "    import pyratbay.spectrum as ps\n"
+    script = imports + script
+
     return textwrap.dedent(script)

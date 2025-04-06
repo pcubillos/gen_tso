@@ -1391,12 +1391,21 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.export_button)
     def export_to_notebook():
+        # For fixed values
         script = export_script_fixed_values(
             input, spectra, saturation_fraction,
             acquisition_targets, acq_target_list,
         )
-
         fixed_script = ui.HTML(
+            f'<pre><code class="language-python">{script}</code></pre>'
+            "<script>hljs.highlightAll();</script>"
+        )
+        # For calculated values
+        script = export_script_calculated_values(
+            input, spectra, saturation_fraction,
+            acquisition_targets, acq_target_list,
+        )
+        calculated_script = ui.HTML(
             f'<pre><code class="language-python">{script}</code></pre>'
             "<script>hljs.highlightAll();</script>"
         )
@@ -1419,7 +1428,7 @@ def server(input, output, session):
                 ),
                 ui.nav_panel(
                     "Calculated values",
-                    "Panel B content",
+                    calculated_script,
                 ),
                 id="selected_navset_card_tab",
             ),
