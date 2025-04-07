@@ -2966,8 +2966,7 @@ def server(input, output, session):
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        i = jwst.find_closest_sed(t_eff, log_g, sed_type='phoenix')
-        chosen_sed = p_keys[i]
+        chosen_sed = jwst.find_closest_sed(t_eff, log_g, sed_type='phoenix')
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
 
         deselect_targets = {'event': 'deselectAllShapes'}

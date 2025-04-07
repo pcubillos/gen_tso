@@ -4,7 +4,6 @@
 import textwrap
 
 import numpy as np
-import gen_tso.catalogs as cat
 import gen_tso.pandeia_io as jwst
 from gen_tso.app_utils import (
     planet_model_name,
@@ -191,7 +190,11 @@ def export_script_calculated_values(
         input, spectra, saturation_fraction,
         acquisition_targets, acq_target_list, catalog,
     ):
-    """Translate gen_tso's current app state to a python script"""
+    """
+    Translate gen_tso's current app state to a python script
+    When values can be computed from variables rather than fixed
+    numbers, show that script.
+    """
     config = parse_instrument(
         input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
         'subarray', 'readout', 'order', 'ngroup', 'nint',
@@ -201,6 +204,7 @@ def export_script_calculated_values(
     order, ngroup, nint, pairing, pupil, detector = config[7:]
 
     name = input.target.get()
+    target = catalog.get_target(name)
     target_focus = input.target_focus.get()
     if target_focus == 'acquisition':
         selected = acquisition_targets.cell_selection()['rows'][0]
@@ -209,7 +213,6 @@ def export_script_calculated_values(
         name = target_list[0][selected]
     elif target_focus == 'science':
         target_acq_mag = None
-        target = catalog.get_target(name)
 
     target_script = (
         "catalog = cat.Catalog()\n    "
@@ -229,6 +232,14 @@ def export_script_calculated_values(
     teff_text = 'target.teff' if t_eff == target.teff else f'{t_eff}'
     logg_text = 'target.logg_star' if log_g == target.logg_star else f'{log_g}'
 
+    # Magnitude
+    is_target_kmag = (
+        target_focus == 'science' and
+        norm_band == '2mass,ks' and
+        norm_mag == target.ks_mag
+    )
+    mag_text = 'target.ks_mag' if is_target_kmag else f'{norm_mag:.4f}'
+
     if sed_type == 'input':
         sed_units = sed_model['units']
         sed_file = sed_model['filename']
@@ -246,7 +257,7 @@ def export_script_calculated_values(
         sed_script = f"sed_model = {teff_text}"
     else:
         calc_sed_model = jwst.find_closest_sed(t_eff, log_g, sed_type)
-        if calc_sed_model != sed_model:
+        if target_focus == 'acquisition' or calc_sed_model != sed_model:
             sed_script = f"sed_model = {repr(sed_model)}"
         else:
             sed_script = (
@@ -331,8 +342,8 @@ def export_script_calculated_values(
     {target_script}
     {sed_warning}sed_type = {repr(sed_type)}
     {sed_script}
-    norm_band = '2mass,ks'
-    norm_mag = target.ks_mag
+    norm_band = {repr(norm_band)}
+    norm_mag = {mag_text}
     pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
 """
 
