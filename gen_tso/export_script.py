@@ -4,6 +4,7 @@
 import textwrap
 
 import numpy as np
+import gen_tso.pandeia_io as jwst
 from gen_tso.app_utils import (
     planet_model_name,
     parse_instrument,
@@ -206,13 +207,9 @@ def export_script_calculated_values(
         target_acq_mag = np.round(target_list[1][selected], 3)
         name = target_list[0][selected]
     elif target_focus == 'science':
-        #in_transit_integs, in_transit_time = jwst.bin_search_exposure_time(
-        #    inst, subarray, readout, ngroup, transit_dur,
-        #)
         target_acq_mag = None
 
     req_saturation = saturation_fraction.get()
-    obs_geometry = input.obs_geometry.get()
     transit_dur = float(input.t_dur.get())
     planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
@@ -239,6 +236,63 @@ def export_script_calculated_values(
     else:
         sed_script = f"sed_model = {repr(sed_model)}"
 
+    t_settling = input.settling_time.get()
+    t_base = input.baseline_time.get()
+    min_baseline = input.min_baseline_time.get()
+
+    # ngroup
+    pando = jwst.PandeiaCalculation(inst, mode)
+    pando.set_config(disperser, filter, subarray, readout, aperture, order)
+    pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+    ngroup_script = (
+        '# Set ngroup below requested saturation fraction '
+        f'(ngroup = {ngroup}):\n    '
+        f'ngroup = pando.saturation_fraction(fraction={req_saturation:.1f})'
+    )
+    if ngroup != pando.saturation_fraction(fraction=req_saturation):
+        ngroup_script = (
+            '# Number of groups per integration:\n    '
+            f'ngroup = {ngroup}'
+        )
+
+    # obs_duration
+    obs_dur = float(input.obs_dur.get())
+    transit_dur = float(input.t_dur.get())
+    t_start = 1.0
+    t_baseline = np.max([t_base*transit_dur, min_baseline])
+    total_duration = t_start + t_settling + transit_dur + 2*t_baseline
+    if np.abs(total_duration - obs_dur) < 0.01:
+        time_script = f"""
+    # Estimate in-transit and total duration of observation:
+    transit_dur = target.transit_dur
+    t_start = 1.0
+    t_settling = {t_settling}
+    t_base = np.max([{t_base}*transit_dur, {min_baseline}])
+    total_duration = t_start + t_settling + transit_dur + 2*t_base
+"""
+    else:
+        time_script = (
+             '\n    # in-transit and total duration of observation:'
+            f'\n    transit_dur = target.transit_dur'
+            f'\n    total_duration = {obs_dur}'
+        )
+
+    # nint
+    match_integs = input.integs_switch.get()
+    calculated_nint, exp_time = jwst.bin_search_exposure_time(
+        inst, subarray, readout, ngroup, obs_dur,
+    )
+    if match_integs and nint == calculated_nint:
+        nint_script = (
+            f'{time_script}\n    '
+            f'# Set nint to match the observation duration (nint = {nint}):\n'
+            '    nint, exp_time = jwst.bin_search_exposure_time(\n'
+            '        instrument, subarray, readout, ngroup, total_duration,\n'
+            '    )'
+        )
+    else:
+        nint_script = f"\n    # Number of integrations:\n    nint = {nint}"
+
     # Write the script
     script = f"""
     # The Pandeia instrumental configuration:
@@ -252,6 +306,7 @@ def export_script_calculated_values(
     readout = {repr(readout)}
     aperture = {repr(aperture)}
     order = {repr(order)}
+    pando.set_config(disperser, filter, subarray, readout, aperture, order)
 
     # The target ({name}):
     catalog = cat.Catalog()
@@ -260,53 +315,35 @@ def export_script_calculated_values(
     logg_star = target.logg_star
 
     sed_type = {repr(sed_type)}
-    sed_model = jwst.find_closest_sed(teff, logg_star, sed_type)
+    sed_model = jwst.find_closest_sed(t_eff, logg_star, sed_type)
     norm_band = '2mass,ks'
     norm_mag = target.ks_mag
     pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
-
-    # Set ngroup below requested saturation fraction:
-    ngroup = {ngroup}
-    ngroup = pando.saturation_fraction(fraction={req_saturation:.1f})
-
-    # Estimate total duration of observation:
-    transit_dur = target.transit_dur
-    t_start = 1.0
-    t_settling = 0.75
-    t_base = np.max([0.5*transit_dur, 1.0])
-    total_duration = t_start + t_settling + transit_dur + 2*t_base
-
-    # Set nint to match an observation duration:
-    nint = {nint}
-    nint, exp_time = jwst.bin_search_exposure_time(
-        instrument, subarray, readout, ngroup, total_duration,
-    )
-    # Observation duration times (hours):
-    exp_time = jwst.exposure_time(instrument, subarray, readout, ngroup, nint)
-    obs_dur = exp_time / 3600.0
 """
 
     if mode == 'target_acq':
-        script += """\n
+        script += f"""
+    # Timings
+    ngroup = {ngroup}
     nint = 1
 
-    # Target acquisition
-    tso = pando.perform_calculation(
-        ngroup, nint, disperser, filter, subarray, readout,
-        aperture, order,
-    )\
+    # Run target acquisition
+    tso = pando.perform_calculation(ngroup, nint)\
 """
     else:
         # Transit depth
         transit_depth_script = parse_depth_source(input, spectra)
-        transit_dur = float(input.t_dur.get())
         script += f"""
+    {ngroup_script}
+    {nint_script}
+    # Observation duration times (hours):
+    exp_time = jwst.exposure_time(instrument, subarray, readout, ngroup, nint)
+    obs_dur = exp_time / 3600.0
     {transit_depth_script}
 
     # Run TSO simulation:
     tso = pando.tso_calculation(
-        obs_type, transit_dur, obs_dur, depth_model,
-        ngroup, disperser, filter, subarray, readout, aperture, order,
+        obs_type, transit_dur, obs_dur, depth_model, ngroup,
     )\
 """
 
