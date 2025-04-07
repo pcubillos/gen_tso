@@ -452,7 +452,7 @@ def get_sed_list(source):
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
 
 
-def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='phoenix'):
+def find_closest_sed(teff, logg, sed_type='phoenix'):
     """
     A very simple cost-function to find the closest stellar model
     within a non-regular Teff-log_g grid.
@@ -467,21 +467,13 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
         Target effective temperature.
     logg: float
         Target log(g).
-    models_teff: list of floats
-        SED model effective-temperature grid.
-    models_logg: list of floats
-        SED model log(g) grid.
     sed_type: String
         Select from 'phoenix' or 'k93models'
 
     Returns
     -------
-    If models_teff or models_logg are None
-        sed: String
+    sed: String
         The SED key that best matches the teff,logg pair.
-    Else
-        idx: integer
-        index of model with the closest Teff and logg.
 
     Examples
     --------
@@ -493,27 +485,14 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
     >>> )
     >>> print(f'SED: {repr(sed)}')
     SED: 'k7v'
-    >>>
-    >>> # PHOENIX models when I already have the list of models:
-    >>> keys, names, p_teff, p_logg = jwst.get_sed_list('phoenix')
-    >>> teff = 4143.0
-    >>> logg = 4.66
-    >>> idx = jwst.find_closest_sed(teff, logg, p_teff, p_logg)
-    >>> print(f'{keys[idx]}: {repr(names[idx])}')
-    k5v: 'K5V 4250K log(g)=4.5'
     """
-    return_key = False
-    if models_teff is None or models_logg is None:
-        keys, names, models_teff, models_logg = get_sed_list(sed_type)
-        return_key = True
+    keys, names, models_teff, models_logg = get_sed_list(sed_type)
     cost = (
         np.abs(np.log10(teff/models_teff)) +
         np.abs(logg-models_logg) / 15.0
     )
     idx = np.argmin(cost)
-    if return_key:
-        return keys[idx]
-    return idx
+    return keys[idx]
 
 
 def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
