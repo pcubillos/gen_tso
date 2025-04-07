@@ -288,13 +288,16 @@ def export_script_calculated_values(
     # obs_duration
     obs_dur = float(input.obs_dur.get())
     transit_dur = float(input.t_dur.get())
+    is_target_tdur = np.abs(transit_dur - target.transit_dur) < 0.01
+    tdur_text = 'target.transit_dur' if is_target_tdur else f'{transit_dur}'
+
     t_start = 1.0
     t_baseline = np.max([t_base*transit_dur, min_baseline])
     total_duration = t_start + t_settling + transit_dur + 2*t_baseline
     if np.abs(total_duration - obs_dur) < 0.01:
         time_script = f"""
     # Estimate in-transit and total duration of observation:
-    transit_dur = target.transit_dur
+    transit_dur = {tdur_text}
     t_start = 1.0
     t_settling = {t_settling}
     t_base = np.max([{t_base}*transit_dur, {min_baseline}])
@@ -303,7 +306,7 @@ def export_script_calculated_values(
     else:
         time_script = (
              '\n    # in-transit and total duration of observation:'
-            f'\n    transit_dur = target.transit_dur'
+            f'\n    transit_dur = {tdur_text}'
             f'\n    total_duration = {obs_dur}'
         )
 
