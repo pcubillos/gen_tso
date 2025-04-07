@@ -1403,7 +1403,7 @@ def server(input, output, session):
         # For calculated values
         script = export_script_calculated_values(
             input, spectra, saturation_fraction,
-            acquisition_targets, acq_target_list,
+            acquisition_targets, acq_target_list, catalog,
         )
         calculated_script = ui.HTML(
             f'<pre><code class="language-python">{script}</code></pre>'
@@ -2966,7 +2966,7 @@ def server(input, output, session):
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        i = jwst.find_closest_sed(t_eff, log_g, p_teff, p_logg)
+        i = jwst.find_closest_sed(t_eff, log_g, sed_type='phoenix')
         chosen_sed = p_keys[i]
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
 

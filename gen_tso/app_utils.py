@@ -72,17 +72,14 @@ def get_auto_sed(input):
     sed_type = input.sed_type()
     sed_models = sed_dict[sed_type]
     if sed_type == 'kurucz':
-        m_teff, m_logg = k_teff, k_logg
-    elif sed_type == 'phoenix':
-        m_teff, m_logg = p_teff, p_logg
+        sed_type = 'k93models'
 
     try:
         t_eff = float(input.t_eff.get())
         log_g = float(input.log_g.get())
     except ValueError:
         return sed_models, None
-    idx = jwst.find_closest_sed(t_eff, log_g, m_teff, m_logg)
-    chosen_sed = list(sed_models)[idx]
+    chosen_sed = jwst.find_closest_sed(t_eff, log_g, sed_type)
     return sed_models, chosen_sed
 
 
