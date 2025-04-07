@@ -4,6 +4,7 @@
 import textwrap
 
 import numpy as np
+import gen_tso.catalogs as cat
 import gen_tso.pandeia_io as jwst
 from gen_tso.app_utils import (
     planet_model_name,
@@ -138,7 +139,7 @@ def export_script_fixed_values(
     ngroup = {ngroup}
     nint = {repr(nint)}
 
-    # The star ({name}):
+    # The target ({name}):
     {sed_warning}sed_type = {repr(sed_type)}
     {sed_script}
     norm_band = {repr(norm_band)}
@@ -188,7 +189,7 @@ def export_script_fixed_values(
 
 def export_script_calculated_values(
         input, spectra, saturation_fraction,
-        acquisition_targets, acq_target_list,
+        acquisition_targets, acq_target_list, catalog,
     ):
     """Translate gen_tso's current app state to a python script"""
     config = parse_instrument(
@@ -208,6 +209,12 @@ def export_script_calculated_values(
         name = target_list[0][selected]
     elif target_focus == 'science':
         target_acq_mag = None
+        target = catalog.get_target(name)
+
+    target_script = (
+        "catalog = cat.Catalog()\n    "
+        f"target = catalog.get_target({repr(name)})\n    "
+    )
 
     req_saturation = saturation_fraction.get()
     transit_dur = float(input.t_dur.get())
@@ -217,6 +224,11 @@ def export_script_calculated_values(
         input, spectra, target_acq_mag=target_acq_mag,
     )
     sed_warning = ""
+    t_eff = float(input.t_eff.get())
+    log_g = float(input.log_g.get())
+    teff_text = 'target.teff' if t_eff == target.teff else f'{t_eff}'
+    logg_text = 'target.logg_star' if log_g == target.logg_star else f'{log_g}'
+
     if sed_type == 'input':
         sed_units = sed_model['units']
         sed_file = sed_model['filename']
@@ -231,10 +243,17 @@ def export_script_calculated_values(
     sed_model = {{'wl': sed_wl, 'flux': flux}}
     """.strip()
     elif sed_type == 'blackbody':
-        t_eff = input.t_eff.get()
-        sed_script = f"sed_model = {t_eff}"
+        sed_script = f"sed_model = {teff_text}"
     else:
-        sed_script = f"sed_model = {repr(sed_model)}"
+        calc_sed_model = jwst.find_closest_sed(t_eff, log_g, sed_type)
+        if calc_sed_model != sed_model:
+            sed_script = f"sed_model = {repr(sed_model)}"
+        else:
+            sed_script = (
+                f"t_eff = {teff_text}\n    "
+                f"logg_star = {logg_text}\n    "
+                "sed_model = jwst.find_closest_sed(t_eff, logg_star, sed_type)"
+            )
 
     t_settling = input.settling_time.get()
     t_base = input.baseline_time.get()
@@ -309,13 +328,9 @@ def export_script_calculated_values(
     pando.set_config(disperser, filter, subarray, readout, aperture, order)
 
     # The target ({name}):
-    catalog = cat.Catalog()
-    target = catalog.get_target({repr(name)})
-    t_eff = target.teff
-    logg_star = target.logg_star
-
-    sed_type = {repr(sed_type)}
-    sed_model = jwst.find_closest_sed(t_eff, logg_star, sed_type)
+    {target_script}
+    {sed_warning}sed_type = {repr(sed_type)}
+    {sed_script}
     norm_band = '2mass,ks'
     norm_mag = target.ks_mag
     pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
