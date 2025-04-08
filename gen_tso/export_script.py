@@ -214,11 +214,6 @@ def export_script_calculated_values(
     elif target_focus == 'science':
         target_acq_mag = None
 
-    target_script = (
-        "catalog = cat.Catalog()\n    "
-        f"target = catalog.get_target({repr(name)})\n    "
-    )
-
     req_saturation = saturation_fraction.get()
     transit_dur = float(input.t_dur.get())
     planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
@@ -240,6 +235,7 @@ def export_script_calculated_values(
     )
     mag_text = 'target.ks_mag' if is_target_kmag else f'{norm_mag:.4f}'
 
+    # SED
     if sed_type == 'input':
         sed_units = sed_model['units']
         sed_file = sed_model['filename']
@@ -266,9 +262,13 @@ def export_script_calculated_values(
                 "sed_model = jwst.find_closest_sed(t_eff, logg_star, sed_type)"
             )
 
-    t_settling = input.settling_time.get()
-    t_base = input.baseline_time.get()
-    min_baseline = input.min_baseline_time.get()
+    sed_script = f"""
+    {sed_warning}sed_type = {repr(sed_type)}
+    {sed_script}
+    norm_band = {repr(norm_band)}
+    norm_mag = {mag_text}
+    pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+"""
 
     # ngroup
     pando = jwst.PandeiaCalculation(inst, mode)
@@ -292,6 +292,9 @@ def export_script_calculated_values(
     tdur_text = 'target.transit_dur' if is_target_tdur else f'{transit_dur}'
 
     t_start = 1.0
+    t_settling = input.settling_time.get()
+    t_base = input.baseline_time.get()
+    min_baseline = input.min_baseline_time.get()
     t_baseline = np.max([t_base*transit_dur, min_baseline])
     total_duration = t_start + t_settling + transit_dur + 2*t_baseline
     if np.abs(total_duration - obs_dur) < 0.01:
@@ -326,8 +329,8 @@ def export_script_calculated_values(
     else:
         nint_script = f"\n    # Number of integrations:\n    nint = {nint}"
 
-    # Write the script
-    script = f"""
+    # Instrument setup
+    inst_script = f"""
     # The Pandeia instrumental configuration:
     instrument = {repr(inst)}
     mode = {repr(mode)}
@@ -341,17 +344,11 @@ def export_script_calculated_values(
     order = {repr(order)}
     pando.set_config(disperser, filter, subarray, readout, aperture, order)
 
-    # The target ({name}):
-    {target_script}
-    {sed_warning}sed_type = {repr(sed_type)}
-    {sed_script}
-    norm_band = {repr(norm_band)}
-    norm_mag = {mag_text}
-    pando.set_scene(sed_type, sed_model, norm_band, norm_mag)
+    # The target ({name}):\
 """
 
     if mode == 'target_acq':
-        script += f"""
+        sed_script += f"""
     # Timings
     ngroup = {ngroup}
     nint = 1
@@ -362,7 +359,7 @@ def export_script_calculated_values(
     else:
         # Transit depth
         transit_depth_script = parse_depth_source(input, spectra)
-        script += f"""
+        sed_script += f"""
     {ngroup_script}
     {nint_script}
     # Observation duration times (hours):
@@ -376,16 +373,25 @@ def export_script_calculated_values(
     )\
 """
 
+    target_script = f"""
+    catalog = cat.Catalog()
+    target = catalog.get_target({repr(name)})
+"""
+    if 'target.' in sed_script:
+        script = inst_script + target_script + sed_script
+    else:
+        script = inst_script + sed_script
+
     imports = """\
     import gen_tso.pandeia_io as jwst
-    import gen_tso.catalogs as cat
     import gen_tso.utils as u
 """
-
-    if 'np.' in script:
-        imports += "    import numpy as np\n"
+    if 'cat.' in script:
+        imports += "    import gen_tso.catalogs as cat\n"
     if 'ps.' in script:
         imports += "    import pyratbay.spectrum as ps\n"
+    if 'np.' in script:
+        imports += "    import numpy as np\n"
     script = imports + script
 
     return textwrap.dedent(script)
