@@ -414,7 +414,7 @@ def guess_event_type(obs):
     event = ''
 
     # Guess from orbital phase when phase constraints exist:
-    if 'period' in obs:
+    if obs['period'] is not None:
         phase = obs['phase_start']
         duration = obs['phase_duration']
         if duration > 1.0:
@@ -529,8 +529,10 @@ def parse_program(pid, path=None, to_csv=None):
     >>> obs = cat.parse_program(pid=3712, to_csv='jwst_tso_program_3712.csv')
 
     >>> import gen_tso.catalogs as cat
-    >>> from gen_tso.utils import KNOWN_PROGRAMS
-    >>> observations = cat.parse_program(pid=KNOWN_PROGRAMS, to_csv=True)
+    >>> from gen_tso.utils import ROOT, KNOWN_PROGRAMS
+    >>> # Save to default csv file
+    >>> to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
+    >>> observations = cat.parse_program(pid=KNOWN_PROGRAMS, to_csv=to_csv)
     """
     if path is None:
         path = f'{ROOT}data/programs/'
@@ -854,6 +856,8 @@ def get_planet_letters(obs, targets, verbose=False):
             return planet_letters
 
     # else, hardcoded patching:
+    if pid=='5191':
+        return ['b', 'c']
     if pid=='8739':
         return ['b']
     if pid=='2420' and obs_id=='5' and visit=='1':
