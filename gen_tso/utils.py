@@ -303,7 +303,7 @@ def collect_spectra(folder, on_fail=None):
     for file in eclipse_files:
         filename = f'{folder}/{file}'
         units = 'none'
-        label, wl, model = read_spectrum_file(filename, units, on_fail)
+        label, wl, depth = read_spectrum_file(filename, units, on_fail)
         if wl is not None:
             eclipse_spectra[label] = {
                 'wl': wl,
