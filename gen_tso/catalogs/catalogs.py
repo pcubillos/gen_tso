@@ -12,7 +12,7 @@ __all__ = [
 
 import csv
 from datetime import datetime
-import os
+import json
 
 from astropy.io import ascii
 import numpy as np
@@ -88,10 +88,8 @@ class Catalog():
             custom = load_targets(custom_targets, is_confirmed=True)
             self.targets += custom
 
-        # JWST targets (TBD select source by date)
-        #programs = load_trexolists(grouped=True)
-        # Use own programs while trexolists is out of date
-        programs = load_programs(grouped=True)
+        # TBD: a switch between load_trexolists() and load_programs()?
+        programs = load_trexolists(grouped=True)
         njwst = len(programs)
         host_aliases = load_aliases('host')
 
@@ -247,18 +245,19 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
 def _add_planet_info(observations):
     """
     If data exists, add planet letter info to a list of observations
+    and other corrections
     """
-    planets_file = f'{ROOT}data/programs/planets_per_program.txt'
-    if os.path.exists(planets_file):
-        planet_data = np.loadtxt(planets_file, dtype=str)
-        for obs in observations:
-            pid = obs['pid']
-            obs_id = obs['observation']
-            obs['planets'] = []
-            for p, o, planets in planet_data:
-                if pid==p and obs_id==o:
-                    obs['planets'] = planets.split(',')
-                    break
+    planets_file = f'{ROOT}data/programs/planets_per_program.json'
+    with open(planets_file, "r") as f:
+        planet_data = json.load(f)
+    for obs in observations:
+        pid = obs['pid']
+        obs_id = obs['observation']
+        obs['planets'] = []
+        key = f'{pid}_{obs_id}'
+        if key in planet_data:
+            for var, value in planet_data[key].items():
+                obs[var] = value
 
 
 def _group_by_target(observations):
