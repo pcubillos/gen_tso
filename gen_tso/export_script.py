@@ -19,7 +19,7 @@ warning_template = (
 )
 
 
-def parse_depth_source(input, spectra):
+def parse_depth_source(input, spectra, teq_text=None, rprs_text=None, depth_text=None):
     """
     Parse transit/eclipse model name based on current state.
     Calculate or extract model.
@@ -51,24 +51,30 @@ def parse_depth_source(input, spectra):
         return transit_depth_script
 
     if model_type == 'Flat':
-        transit_depth = input.transit_depth.get() * 0.01
+        if depth_text is None:
+            depth = input.transit_depth.get() * 0.01
+            depth_text = f'{depth:.5e}'
         transit_depth_script = f"""
     # The planet's {obs_geometry} spectrum:
     obs_type = {repr(obs_geometry)}
     wl = ps.constant_resolution_spectrum(0.1, 50.0, resolution=300)
     nwave = len(wl)
-    depth = np.tile({transit_depth:.4e}, nwave)
+    depth = np.tile({depth_text}, nwave)
     depth_model = [wl, depth]"""
 
         return transit_depth_script
 
     elif model_type == 'Blackbody':
-        rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
-        t_planet = input.teq_planet.get()
+        if rprs_text is None:
+            rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
+            rprs_text = f'{rprs:.5f}'
+        if teq_text is None:
+            teq_text = f'{input.teq_planet.get():.1f}'
         transit_depth_script = f"""
     # The planet's {obs_geometry} spectrum:
-    t_planet = {t_planet:.1f}
-    rprs = {rprs:.5f}
+    obs_type = {repr(obs_geometry)}
+    t_planet = {teq_text}
+    rprs = {rprs_text}
     wl, depth = jwst.blackbody_eclipse_depth(t_planet, rprs, sed_type, sed_model)
     depth_model = [wl, depth]"""
 
@@ -347,6 +353,17 @@ def export_script_calculated_values(
     # The target ({name}):\
 """
 
+    teq = input.teq_planet.get()
+    teq_text = 'target.eq_temp' if np.abs(teq-target.eq_temp)<1.0 else f'{teq}'
+
+    rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
+    is_target_rprs = np.abs(rprs - target.rprs) < 0.001
+    rprs_text = 'target.rprs' if is_target_rprs else f'{rprs:.5f}'
+
+    depth = input.transit_depth.get() * 0.01
+    is_target_depth = np.abs(np.sqrt(depth) - target.rprs) < 0.001
+    depth_text = 'target.rprs**2' if is_target_depth else f'{depth:.5e}'
+
     if mode == 'target_acq':
         sed_script += f"""
     # Timings
@@ -358,7 +375,7 @@ def export_script_calculated_values(
 """
     else:
         # Transit depth
-        transit_depth_script = parse_depth_source(input, spectra)
+        transit_depth_script = parse_depth_source(input, spectra, teq_text, rprs_text, depth_text)
         sed_script += f"""
     {ngroup_script}
     {nint_script}
@@ -373,6 +390,7 @@ def export_script_calculated_values(
     )\
 """
 
+    # Now put everything together:
     target_script = f"""
     catalog = cat.Catalog()
     target = catalog.get_target({repr(name)})
