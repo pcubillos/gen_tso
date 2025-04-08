@@ -7,6 +7,7 @@ __all__ = [
     '_fetch_programs',
     '_extract_instrument_template',
     'fetch_jwst_programs',
+    'update_jwst_programs',
     # To format XML info into human language
     '_parse_date',
     '_parse_window',
@@ -27,6 +28,7 @@ import csv
 from datetime import datetime
 import os
 import re
+import shutil
 import warnings
 import xml.etree.ElementTree as ET
 
@@ -35,12 +37,13 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import requests
 
-from ..utils import ROOT
+from ..utils import ROOT, KNOWN_PROGRAMS
 from .utils import (
     normalize_name,
     get_host,
     get_letter,
 )
+from .catalogs import load_programs
 
 
 def _extract_html_text(html):
@@ -186,6 +189,54 @@ def fetch_jwst_programs(programs, apt_command=None, output_path=None):
             [f'{output_path}/{pid}.aptx' for pid in apt_programs]
         )
         os.system(f"{apt_command} -nogui -export xml {apt_files}")
+
+
+def update_jwst_programs():
+    """
+    Update JWST programs, re-processing only the necessary APTs
+    """
+    output_path = f'{ROOT}data/programs/'
+    programs = KNOWN_PROGRAMS
+    to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
+    failed = ['Failed', 'Skipped', 'Withdrawn']
+
+    if 'APT' not in os.environ:
+        # Only update status
+        _fetch_programs(programs, output_path, 'status')
+    else:
+        # Fetch status in tmp folder
+        apt_command = os.environ['APT']
+        tmp_path = f'{ROOT}data/programs_tmp/'
+        _fetch_programs(programs, tmp_path, 'status')
+
+        # Find observations that failed since last update
+        programs = load_programs()
+        pid = ''
+        to_update = []
+        for obs in programs:
+            if obs['pid'] != pid:
+                pid = obs['pid']
+                status = parse_status(pid, path=tmp_path)
+            for i in range(len(status)):
+                if status[i]['observation'] == obs['observation']:
+                    break
+            state = status[i]
+            if state['status'] != obs['status'] and state['status'] in failed:
+                to_update.append(pid)
+
+        # Fetch APTs of programs with failed observations
+        if len(to_update) > 0:
+            fetch_jwst_programs(to_update, apt_command, output_path)
+        # Move status xml files
+        for file in os.listdir(tmp_path):
+            if not file.endswith('-visit-status.xml'):
+                continue
+            src = os.path.join(tmp_path, file)
+            dest = os.path.join(output_path, file)
+            shutil.move(src, dest)
+
+    # Parse all
+    parse_program(programs, to_csv=to_csv)
 
 
 def _extract_instrument_template(element):
