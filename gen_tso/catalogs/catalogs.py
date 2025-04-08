@@ -366,38 +366,51 @@ def load_trexolists(grouped=False, trexo_file=None):
         format='csv', guess=False, fast_reader=False, comment='#',
     )
 
+    nirspec_filter = {
+        'G395H': 'F290LP',
+        'G395M': 'F290LP',
+        'G235H': 'F170LP',
+        'G235M': 'F170LP',
+        'G140H': 'F100LP',
+        'G140M': 'F100LP',
+        'PRISM': 'CLEAR',
+    }
+    instrument = {
+        'BOTS': 'NIRSPEC',
+        'SOSS': 'NIRISS',
+        'GTS': 'NIRCAM',
+        'LRS': 'MIRI',
+        'MRS': 'MIRI',
+        'F1500W': 'MIRI',
+        'F1280W': 'MIRI',
+    }
+
     observations = []
     for i,data in enumerate(trexolist_data):
-        #data = trexolist_data[0]
-
         obs = {}
-        obs['category'] = str(data['Category'])
-        obs['pi'] = str(data['PI name'])
-        obs['pid'] = str(data['Program'])
-        obs['proprietary_period'] = int(data['Prop.Period'])
+        obs['category'] = str(data['ProposalCategory'])
+        obs['pi'] = str(data['LastName'])
+        obs['pid'] = str(data['ProposalID'])
+        obs['cycle'] = str(data['Cycle'])
+        obs['proprietary_period'] = int(data['ProprietaryPeriod'])
 
-        target = str(data['Target'])
+        target = str(data['Planet_Name_NN'])
         obs['target'] = u.normalize_name(target)
         obs['target_in_program'] = target
 
         obs['observation'] = str(data['Observation'])
         obs['visit'] = str(data['Visit'])
         obs['status'] = str(data['Status'])
-        obs['ra'] = str(data['R.A. 2000'])
-        obs['dec'] = str(data['Dec. 2000'])
 
-        obs['event'] = data['Event'].lower().replace('phasec', 'phase')
+        coordinates = data['EquatorialCoordinates'].split()
+        obs['ra'] = ':'.join(coordinates[0:3])
+        obs['dec'] = ':'.join(coordinates[3:6])
 
-        # mode, disperser, filer
-        inst, mode = data['Mode'].split('.')
-        obs['instrument'] = inst
-        nirspec_filter = {
-            'G395H': 'F290LP',
-            'G395M': 'F290LP',
-            'G235H': 'F170LP',
-            'G140H': 'F100LP',
-            'PRISM': 'CLEAR',
-        }
+        obs['event'] = data['Event'].lower().replace('phasec', 'phase curve')
+
+        mode = str(data['ObservingMode'])
+        disperser = obs['disperser'] = str(data['GratingGrism'])
+        inst = obs['instrument'] = instrument[mode]
         if mode == 'SOSS':
             disperser = 'None'
             filter = 'CLEAR'
@@ -408,50 +421,54 @@ def load_trexolists(grouped=False, trexo_file=None):
             disperser = 'unknown'
             filter = 'None'
         elif inst == 'MIRI':
+            mode = 'Imaging TS'
             disperser = 'None'
             filter = mode
-            mode = 'Imaging TS'
-        elif inst == 'NIRCAM':
-            disperser, filter = mode.split('+')
+        elif mode == 'GTS':
             mode = 'GRISMR TS'
+            disperser, filter = disperser.split('+')
+            if '_' in data['Subarray']:
+                disperser = f'DHS0,{disperser}'
+                # hard-coded, known up to Cycle4:
+                filter = f'F150W2,{filter}'
         elif inst == 'NIRSPEC':
-            mode, disperser = mode.split('+')
             filter = nirspec_filter[disperser]
         obs['mode'] = mode
         obs['disperser'] = disperser
         obs['filter'] = filter
 
         obs['subarray'] = str(data['Subarray'])
-        obs['readout'] = str(data['Readout pattern'])
+        obs['readout'] = str(data['ReadoutPattern'])
         obs['groups'] = int(data['Groups'])
 
-        start = data['Start.Phase']
+        start = data['PhaseStart']
         obs['phase_start'] = np.nan if start=='N/A' else float(start)
-        end = data['End.Phase']
+        end = data['PhaseEnd']
         obs['phase_end'] = np.nan if end=='N/A' else float(end)
         obs['duration'] = float(data['Hours'])
 
-        window = data['Plan Windows']
+        window = str(data['PlanWindow'])
         if window == 'X':
             obs['plan_window'] = None
-        else:
-            if '(' in window:
-                window = window[0:window.index('(')]
+        elif '(' in window:
+            window = window[0:window.index('(')]
             w_start, w_end = window.split('-')
-            start = datetime.strptime(w_start, '%b%d,%Y').strftime('%Y-%m-%d')
-            end = datetime.strptime(w_end, '%b%d,%Y').strftime('%Y-%m-%d')
-            obs['plan_window'] = f"{start} - {end}"
+            start = datetime.strptime(w_start.strip(), '%b %d, %Y')
+            end = datetime.strptime(w_end.strip(), '%b %d, %Y')
+            obs['plan_window'] = f"{start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}"
+        else:
+            obs['plan_window'] = window
 
-        date = data['Start date']
+        date = data['StartTime']
         if date == 'X':
             obs['date_start'] = None
         else:
-            obs['date_start'] = datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
-        date = data['End date']
+            obs['date_start'] = datetime.strptime(date, '%b %d, %Y %H:%M:%S')
+        date = data['EndTime']
         if date == 'X':
             obs['date_end'] = None
         else:
-            obs['date_end'] = datetime.strptime(date,'%b_%d_%Y_%H:%M:%S')
+            obs['date_end'] = datetime.strptime(date, '%b %d, %Y %H:%M:%S')
 
         observations.append(obs)
 
