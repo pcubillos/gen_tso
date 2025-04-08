@@ -420,9 +420,9 @@ def load_trexolists(grouped=False, trexo_file=None):
             disperser = 'unknown'
             filter = 'None'
         elif inst == 'MIRI':
-            mode = 'Imaging TS'
             disperser = 'None'
             filter = mode
+            mode = 'Imaging TS'
         elif mode == 'GTS':
             mode = 'GRISMR TS'
             disperser, filter = disperser.split('+')
