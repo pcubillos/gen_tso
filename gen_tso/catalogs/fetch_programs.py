@@ -811,8 +811,18 @@ def get_planet_letters(obs, targets, verbose=False):
     visit = obs["visit"]
     info = f'{pid} {obs_id:3} {visit}  '
 
+    # Start with the exceptions, hardcoded patching:
+    if pid=='5191':
+        return ['b', 'c']
+    if pid=='8739':
+        return ['b']
+    if pid=='2420' and obs_id=='5' and visit=='1':
+        return ['c']
+    if pid=='3818' and obs_id=='2' and visit=='1':
+        return ['d']
+
     target_name = obs['target']
-    # It's in the 'target'
+    # The planet is in the 'target'
     if target_name[-1].lower() == 'b' and not target_name[-2].isalpha():
         name = target_name[:-1]
         planet_letters = ['b']
@@ -854,16 +864,6 @@ def get_planet_letters(obs, targets, verbose=False):
                 periods = np.round([p.period for p in planets], 1)
                 print(f'{info}{name:15}{period:6.1f}  {periods}  {planet_letters}')
             return planet_letters
-
-    # else, hardcoded patching:
-    if pid=='5191':
-        return ['b', 'c']
-    if pid=='8739':
-        return ['b']
-    if pid=='2420' and obs_id=='5' and visit=='1':
-        return ['c']
-    if pid=='3818' and obs_id=='2' and visit=='1':
-        return ['d']
 
     print(f'Could not determine planet for {repr(name)} (PID={pid})')
     return []
