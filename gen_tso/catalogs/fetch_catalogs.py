@@ -298,7 +298,7 @@ def fetch_trexolist():
     >>> cat.fetch_trexolist()
     """
     # Fetch the data:
-    url = 'https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/trexolists.csv'
+    url = "https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/03_trexolists.csv"
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
 
@@ -315,7 +315,7 @@ def fetch_trexolist():
     soup = BeautifulSoup(response.text, 'html.parser')
     last_update_tag = soup.find('h3', string=lambda text: 'Last update' in text)
     last_update_text = last_update_tag.get_text(strip=True)
-    date = datetime.strptime(last_update_text[13:], "%a %b %d %H:%M:%S %Y")
+    date = datetime.strptime(last_update_text[13:], '%Y-%m-%d %H:%M:%S')
     with open(f'{ROOT}data/last_updated_trexolist.txt', 'w') as f:
         f.write(f'{date.year}_{date.month:02}_{date.day:02}')
 

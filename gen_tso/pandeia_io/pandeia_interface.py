@@ -9,8 +9,9 @@ __all__ = [
     'saturation_level',
     'get_sed_list',
     'find_closest_sed',
-    'extract_sed',
     'make_scene',
+    'extract_sed',
+    'blackbody_eclipse_depth',
     'set_depth_scene',
     'get_bandwidths',
     'simulate_tso',
@@ -451,7 +452,7 @@ def get_sed_list(source):
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
 
 
-def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='phoenix'):
+def find_closest_sed(teff, logg, sed_type='phoenix'):
     """
     A very simple cost-function to find the closest stellar model
     within a non-regular Teff-log_g grid.
@@ -466,21 +467,13 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
         Target effective temperature.
     logg: float
         Target log(g).
-    models_teff: list of floats
-        SED model effective-temperature grid.
-    models_logg: list of floats
-        SED model log(g) grid.
     sed_type: String
         Select from 'phoenix' or 'k93models'
 
     Returns
     -------
-    If models_teff or models_logg are None
-        sed: String
+    sed: String
         The SED key that best matches the teff,logg pair.
-    Else
-        idx: integer
-        index of model with the closest Teff and logg.
 
     Examples
     --------
@@ -492,27 +485,14 @@ def find_closest_sed(teff, logg, models_teff=None, models_logg=None, sed_type='p
     >>> )
     >>> print(f'SED: {repr(sed)}')
     SED: 'k7v'
-    >>>
-    >>> # PHOENIX models when I already have the list of models:
-    >>> keys, names, p_teff, p_logg = jwst.get_sed_list('phoenix')
-    >>> teff = 4143.0
-    >>> logg = 4.66
-    >>> idx = jwst.find_closest_sed(teff, logg, p_teff, p_logg)
-    >>> print(f'{keys[idx]}: {repr(names[idx])}')
-    k5v: 'K5V 4250K log(g)=4.5'
     """
-    return_key = False
-    if models_teff is None or models_logg is None:
-        keys, names, models_teff, models_logg = get_sed_list(sed_type)
-        return_key = True
+    keys, names, models_teff, models_logg = get_sed_list(sed_type)
     cost = (
         np.abs(np.log10(teff/models_teff)) +
         np.abs(logg-models_logg) / 15.0
     )
     idx = np.argmin(cost)
-    if return_key:
-        return keys[idx]
-    return idx
+    return keys[idx]
 
 
 def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
@@ -522,11 +502,13 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     Parameters
     ----------
     sed_type: String
-        Type of model: 'phoenix', 'k93models', 'blackbody', or 'flat'
+        Type of model: 'phoenix', 'k93models', 'blackbody', 'input', or 'flat'
     sed_model:
         The SED model required for each sed_type:
         - phoenix or k93models: the model key (see get_sed_list)
         - blackbody: the effective temperature (K)
+        - input: dict with 'wl' and 'flux' keys containing the
+                 wavelength (un) and SED spectrum (mJy).
         - flat: the unit ('flam' or 'fnu')
     norm_band: String
         Band over which to normalize the spectrum.
@@ -669,6 +651,68 @@ def extract_sed(scene, wl_range=None):
     else:
         wl_mask = (wave.value >= wl_range[0]) & (wave.value <= wl_range[1])
     return wave.value[wl_mask], flux.value[wl_mask]
+
+
+def blackbody_eclipse_depth(t_planet, rprs, sed_type, sed_model, return_fluxes=False):
+    """
+    Compute an eclipse-depth spectrum assuming a blackbody planet emission.
+
+    Parameters
+    ----------
+    t_planet: Float
+        Planet effective temperature (kelvin).
+    rprs: Float
+        Planet-to-star radius ratio.
+    sed_type: String
+        Type of stellar SED model: select one from:
+        'phoenix', 'k93models', 'blackbody', or 'input'.
+    sed_model:
+        The SED model required for each sed_type:
+        - for phoenix or k93models: the model key (see get_sed_list)
+        - for blackbody: the effective temperature (K)
+        - for input: a dict including 'wl' and 'flux' keys containing the
+              wavelength (um) and SED flux spectrum (mJy).
+    return_fluxes: Bool
+        If True, also return the planetary and stellar fluxes
+
+    Returns
+    -------
+    wl: 1D float array
+        Eclipse depth's wavelength array (um).
+    depth: 1D float array
+        Eclipse depth spectrum.
+    f_planet: 1D float array
+        Planet surface flux (erg s-1 cm-2 Hz-1).
+    f_star: 1D float array
+        Stellar surface flux (erg s-1 cm-2 Hz-1).
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> t_planet = 2000.0
+    >>> rprs = 0.1
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> wl, depth = jwst.blackbody_eclipse_depth(t_planet, rprs, sed_type, sed_model)
+    """
+    # Un-normalized planet and star SEDs
+    star_scene = make_scene(sed_type, sed_model, norm_band='none')
+    planet_scene = make_scene('blackbody', t_planet, norm_band='none')
+    wl_star, f_star = extract_sed(star_scene)
+    wl_planet, f_planet = extract_sed(planet_scene)
+    # Interpolate black body at wl_star
+    interp_func = si.interp1d(
+        wl_planet, f_planet, bounds_error=False, fill_value=np.nan,
+    )
+    f_planet = interp_func(wl_star)
+    wl_mask = np.isfinite(f_planet)
+    wl = wl_star[wl_mask]
+    # Eclipse_depth = Fplanet/Fstar * rprs**2
+    depth = f_planet[wl_mask] / f_star[wl_mask] * rprs**2
+    if return_fluxes:
+        return wl, depth, f_planet[wl_mask], f_star[wl_mask]
+    return wl, depth
 
 
 def set_depth_scene(scene, obs_type, depth_model, wl_range=None):

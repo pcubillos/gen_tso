@@ -47,6 +47,7 @@ filter_popover = ui.popover(
         label=None,
         choices=["none", "all"],
         inline=True,
+        selected="none",
     ),
     placement="top",
     id="filter_popover",

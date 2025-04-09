@@ -30,6 +30,7 @@ for known exoplanets.
 - Perform transit and eclipse S/N simulations for **all JWST spectroscopic and photometric TSO modes**
 - Perform target-acquisition simulations on science or nearby targets
 - Interactive visualization of transit, eclipse, and stellar SEDs spectra, observing modes, and simulated TSO spectra
+- A **GUI-to-notebook button** to instantly translate the current GUI state to a Python script
 
 ---
 

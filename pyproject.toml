@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools>=61.0",
+    "setuptools>=77.0.3",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -8,14 +8,13 @@ build-backend = "setuptools.build_meta"
 name = "gen_tso"
 description = "A general ETC for time-series observations"
 readme = "README.md"
-#license = "GPL-2.0-or-later"
-#license-files = [ "LICENSE" ]
-license = { file = "LICENSE" }
+license = "GPL-2.0-or-later"
+license-files = [ "LICENSE" ]
 
 #https://packaging.python.org/en/latest/guides/single-sourcing-package-version/
 dynamic = ["version"]
 
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [
   {name = "Patricio Cubillos", email = "pcubillos@fulbrightmail.org"}
 ]
@@ -57,17 +56,17 @@ find = {namespaces = false}  # Take only folders with a __init__.py file
 [tool.setuptools.package-data]
 "gen_tso.data" = [
     "base_theme.css",
-    "flux_rates_*.pickle",
     "last_updated_*",
     "nea_data.txt",
-    "target_aliases.txt",
     "tess_data.txt",
+    "target_aliases.txt",
     "trexolists.csv",
+    "flux_rates_*.pickle",
     "user_planet_data.txt",
 ]
 "gen_tso.data.models" = ["*"]
 "gen_tso.data.images" = ["*"]
-"gen_tso.data.programs" = ["jwst_tso_programs.csv", "planets_per_program.txt"]
+"gen_tso.data.programs" = ["jwst_tso_programs.csv", "planets_per_program.json"]
 "gen_tso.data.throughputs" = ["*"]
 
 [tool.pytest.ini_options]

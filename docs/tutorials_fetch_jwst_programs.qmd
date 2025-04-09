@@ -652,7 +652,7 @@ def make_passband(wl_min, wl_max):
     return band
 
 
-def collect_configs(programss):
+def collect_configs(programs):
     """
     Split observations by mode and event, count them, and
     collect wavelenght coverage.

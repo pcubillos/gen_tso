@@ -13,10 +13,7 @@ import faicons as fa
 import numpy as np
 import pandas as pd
 import pandeia.engine
-import pyratbay.constants as pc
-import pyratbay.tools as pt
 import plotly.graph_objects as go
-import scipy.interpolate as si
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -47,7 +44,24 @@ from gen_tso.pandeia_io.pandeia_setup import (
     check_pysynphot,
     update_synphot_files,
 )
+
+from gen_tso.app_utils import (
+    detectors,
+    get_throughput,
+    get_auto_sed,
+    get_saturation_values,
+    planet_model_name,
+    draw,
+    parse_instrument,
+    parse_depth_model,
+    parse_obs,
+    parse_sed,
+)
 import gen_tso.viewer_popovers as pops
+from gen_tso.export_script import (
+    export_script_fixed_values,
+    export_script_calculated_values,
+)
 
 
 def load_catalog():
@@ -80,9 +94,7 @@ bands_dict = {
     'gaia,g': 'Gaia mag',
     'johnson,v': 'V mag',
 }
-detectors = jwst.generate_all_instruments()
 instruments = np.unique([det.instrument for det in detectors])
-throughputs = jwst.get_throughputs()
 
 modes = {}
 for inst in instruments:
@@ -150,11 +162,6 @@ bookmarked_spectra = {
     'eclipse': [],
     'sed': [],
 }
-user_spectra = {
-    'transit': [],
-    'eclipse': [],
-    'sed': {},
-}
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
@@ -168,29 +175,29 @@ for location in loading_folders:
     t_models, e_models, sed_models = collect_spectra(location)
     for label, model in t_models.items():
         spectra['transit'][label] = model
-        user_spectra['transit'].append(label)
     for label, model in e_models.items():
         spectra['eclipse'][label] = model
-        user_spectra['eclipse'].append(label)
     for label, model in sed_models.items():
-        user_spectra['sed'][label] = model
+        spectra['sed'][label] = model
 
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
-stsci_url = 'https://www.stsci.edu/cgi-bin/get-proposal-info?id=PID&observatory=JWST'
 stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
+cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/'
 
+# Depth and SED units, ensure they are consistent with u.read_spectrum_file()
 depth_units = [
     "none",
     "percent",
     "ppm",
 ]
-sed_units = [
-    "erg s\u207b\u00b9 cm\u207b\u00b2 Hz\u207b\u00b9 (frequency space)",
-    "erg s\u207b\u00b9 cm\u207b\u00b2 cm (wavenumber space)",
-    "erg s\u207b\u00b9 cm\u207b\u00b2 cm\u207b\u00b9 (wavelength space)",
-    "mJy",
-]
+ergs_s_cm2 = "erg s\u207b\u00b9 cm\u207b\u00b2"
+sed_units = {
+    "f_freq": f"{ergs_s_cm2} Hz\u207b\u00b9 (frequency space)",
+    "f_nu": f"{ergs_s_cm2} cm (wavenumber space)",
+    "f_lambda": f"{ergs_s_cm2} cm\u207b\u00b9 (wavelength space)",
+    "mJy": "mJy",
+}
 
 # 2D heatmap plots:
 heatmaps = {
@@ -209,6 +216,7 @@ layout_kwargs = dict(
     fillable=True,
     class_="pb-2 pt-0 m-0",
 )
+
 
 app_ui = ui.page_fluid(
     # ESA Sky
@@ -238,6 +246,11 @@ app_ui = ui.page_fluid(
         });
         </script>
     """),
+    # Syntax highlighting (python)
+    ui.HTML(
+        f'<link rel="stylesheet" href="{cdnjs}styles/base16/one-light.min.css">'
+        f'<script src="{cdnjs}highlight.min.js"></script>'
+    ),
     ui.tags.style(
         """
         .popover {
@@ -302,13 +315,10 @@ app_ui = ui.page_fluid(
                     gap='1px',
                     class_="p-0 m-0",
                 ),
-                ui.panel_conditional(
-                    'false',
-                    ui.input_action_button(
-                        id="export_button",
-                        label="Export to notebook",
-                        class_="btn btn-outline-success btn-sm",
-                    ),
+                ui.input_action_button(
+                    id="export_button",
+                    label="Export to notebook",
+                    class_="btn btn-outline-success btn-sm",
                 ),
                 col_widths=(9,3),
                 fill=True,
@@ -544,7 +554,7 @@ app_ui = ui.page_fluid(
                         ui.input_select(
                             id="depth",
                             label="",
-                            choices=user_spectra['transit'],
+                            choices=list(spectra['transit']),
                         ),
                         '',
                         id='depth_tooltip',
@@ -863,315 +873,8 @@ app_ui = ui.page_fluid(
 )
 
 
-def parse_obs(input):
-    planet_model_type = input.planet_model_type.get()
-    depth_model = None
-    rprs_sq = None
-    teq_planet = None
-    if planet_model_type == 'Input':
-        depth_model = input.depth.get()
-    elif planet_model_type == 'Flat':
-        rprs_sq = input.transit_depth.get()
-    elif planet_model_type == 'Blackbody':
-        rprs_sq = input.eclipse_depth.get()
-        teq_planet = input.teq_planet.get()
-    return planet_model_type, depth_model, rprs_sq, teq_planet
-
-
-def planet_model_name(input):
-    """
-    Get the planet model name based on the transit/eclipse depth values.
-
-    Returns
-    -------
-    depth_label: String
-        A string representation of the depth model.
-    """
-    planet_model_type = input.planet_model_type.get()
-    if planet_model_type == 'Input':
-        return input.depth.get()
-    elif planet_model_type == 'Flat':
-        transit_depth = input.transit_depth.get()
-        return f'Flat transit ({transit_depth:.3f}%)'
-    elif planet_model_type == 'Blackbody':
-        eclipse_depth = input.eclipse_depth.get()
-        t_planet = input.teq_planet.get()
-        return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
-
-
-def throughput_config(input, evaluate=False):
-    config = parse_instrument(
-        input, 'instrument', 'mode',
-        'aperture', 'disperser', 'filter', 'subarray', 'detector',
-    )
-    if config is None:
-        return
-    inst, mode, aperture, disperser, filter, subarray, detector = config
-    obs_type = detector.obs_type
-
-    key = aperture if obs_type == 'photometry' else subarray
-    if key not in throughputs[obs_type][inst][mode]:
-        return None
-
-    if mode == 'lrsslitless':
-        filter = 'None'
-    elif mode == 'mrs_ts':
-        filter = disperser
-    elif mode == 'bots':
-        filter = f'{disperser}/{filter}'
-
-    if evaluate:
-        return throughputs[obs_type][inst][mode][key][filter]
-    return obs_type, inst, mode, key, filter
-
-
-def get_auto_sed(input):
-    """
-    Guess the model closest to the available options given a T_eff
-    and log_g pair.
-    """
-    sed_type = input.sed_type()
-    sed_models = sed_dict[sed_type]
-    if sed_type == 'kurucz':
-        m_teff, m_logg = k_teff, k_logg
-    elif sed_type == 'phoenix':
-        m_teff, m_logg = p_teff, p_logg
-
-    try:
-        t_eff = float(input.t_eff.get())
-        log_g = float(input.log_g.get())
-    except ValueError:
-        return sed_models, None
-    idx = jwst.find_closest_sed(t_eff, log_g, m_teff, m_logg)
-    chosen_sed = list(sed_models)[idx]
-    return sed_models, chosen_sed
-
-
-def parse_sed(input, target_acq_mag=None):
-    """Extract SED parameters"""
-    if target_acq_mag is None:
-        sed_type = input.sed_type()
-        norm_band = input.magnitude_band.get()
-        norm_magnitude = float(input.magnitude.get())
-    else:
-        sed_type = 'phoenix'
-        norm_band = 'gaia,g'
-        norm_magnitude = target_acq_mag
-
-    if sed_type in ['phoenix', 'kurucz']:
-        if target_acq_mag is None:
-            sed_model = input.sed.get()
-        else:
-            sed_model = input.ta_sed.get()
-        if sed_model not in sed_dict[sed_type]:
-            return None, None, None, None, None
-        model_label = f'{sed_type}_{sed_model}'
-    elif sed_type == 'blackbody':
-        sed_model = float(input.t_eff.get())
-        model_label = f'bb_{sed_model:.0f}K'
-    elif sed_type == 'input':
-        model_label = input.sed.get()
-        if model_label not in user_spectra['sed']:
-            return None, None, None, None, None
-        sed_model = user_spectra['sed'][model_label]
-
-    if sed_type == 'kurucz':
-        sed_type = 'k93models'
-
-    # Make a label
-    band_name = bands_dict[norm_band].split()[0]
-    band_label = f'{norm_magnitude:.2f}_{band_name}'
-    sed_label = f'{model_label}_{band_label}'
-
-    return sed_type, sed_model, norm_band, norm_magnitude, sed_label
-
-
-def parse_depth_model(input):
-    """
-    Parse transit/eclipse model name based on current state.
-    Calculate or extract model.
-    """
-    model_type = input.planet_model_type.get()
-    depth_label = planet_model_name(input)
-    obs_geometry = input.obs_geometry.get()
-
-    if model_type == 'Input':
-        if depth_label is None:
-            wl, depth = None, None
-        else:
-            wl = spectra[obs_geometry][depth_label]['wl']
-            depth = spectra[obs_geometry][depth_label]['depth']
-    elif model_type == 'Flat':
-        nwave = 1000
-        transit_depth = input.transit_depth.get() * 0.01
-        wl = np.linspace(0.6, 50.0, nwave)
-        depth = np.tile(transit_depth, nwave)
-    elif model_type == 'Blackbody':
-        transit_depth = input.eclipse_depth.get() * 0.01
-        t_planet = input.teq_planet.get()
-        # Un-normalized planet and star SEDs
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
-        star_scene = jwst.make_scene(sed_type, sed_model, norm_band='none')
-        planet_scene = jwst.make_scene('blackbody', t_planet, norm_band='none')
-        wl, f_star = jwst.extract_sed(star_scene)
-        wl_planet, f_planet = jwst.extract_sed(planet_scene)
-        # Interpolate black body at wl_star
-        interp_func = si.interp1d(
-            wl_planet, f_planet, bounds_error=False, fill_value=0.0,
-        )
-        f_planet = interp_func(wl)
-        # Eclipse_depth = Fplanet/Fstar * rprs**2
-        depth = f_planet / f_star * transit_depth
-
-    return depth_label, wl, depth
-
-
-def parse_instrument(input, *args):
-    """
-    Parse instrumental configuration from front-end to back-end.
-    Ensure that only the requested parameters are a valid configuration.
-    """
-    # instrument and mode always checked
-    inst = input.instrument.get().lower()
-    mode = input.mode.get()
-    detector = get_detector(inst, mode, detectors)
-    if detector is None:
-        return None
-
-    config = {
-        'instrument': inst,
-        'mode': mode,
-        'detector': detector,
-    }
-
-    if 'aperture' in args:
-        aperture = input.aperture.get()
-        has_pupils = mode in ['lw_ts', 'sw_ts']
-        if has_pupils and aperture not in detector.pupils:
-            return None
-        if not has_pupils and aperture not in detector.apertures:
-            return None
-        if has_pupils:
-            aperture = detector.pupil_to_aperture[aperture]
-        config['aperture'] = aperture
-
-    if 'disperser' in args:
-        disperser = input.disperser.get()
-        if disperser not in detector.dispersers:
-            return None
-        config['disperser'] = disperser
-
-    if 'filter' in args:
-        filter = input.filter.get()
-        if filter not in detector.filters:
-            return None
-        config['filter'] = filter
-
-    if 'subarray' in args:
-        subarray = input.subarray.get()
-        if subarray not in detector.subarrays:
-            return None
-        config['subarray'] = subarray
-
-    if 'readout' in args:
-        readout = input.readout.get()
-        if readout not in detector.readouts:
-            return None
-        config['readout'] = readout
-
-    # Now parse front-end to back-end:
-    if 'pairing' in args:
-        if mode == 'sw_ts':
-            config['pairing'] = input.pairing.get()
-        else:
-            config['pairing'] = None
-
-    if 'pupil' in args:
-        config['pupil'] = input.aperture.get()
-
-    if 'ngroup' in args:
-        if mode == 'target_acq':
-            ngroup = int(input.ngroup_acq.get())
-            config['disperser'] = None
-        else:
-            ngroup = input.ngroup.get()
-        config['ngroup'] = ngroup
-
-    config['nint'] = 1 if mode == 'target_acq' else input.integrations.get()
-
-    if mode == 'mrs_ts':
-        config['aperture'] = ['ch1', 'ch2', 'ch3', 'ch4']
-
-    if mode == 'bots' and ('disperser' in args or 'filter' in args):
-        if 'filter' not in args:
-            filter = input.filter.get()
-        config['disperser'], config['filter'] = filter.split('/')
-
-    if 'order' in args:
-        if mode == 'soss':
-            if filter == 'f277w':
-                order = [1]
-            else:
-                order = input.order.get()
-                order = [int(val) for val in order.split()]
-        else:
-            order = None
-        config['order'] = order
-
-    # Return in the same order as requested
-    config_list = [config[arg] for arg in args]
-
-    return config_list
-
-
-def get_saturation_values(
-        inst, mode, aperture, disperser, filter, subarray, order,
-        sed_label, norm_mag,
-    ):
-    """
-    Get pixel_rate and full_well from instrumental settings.
-    """
-    sat_label = make_saturation_label(
-        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
-    )
-
-    sed_items = sat_label.split('_')
-    band_label = sed_items[-1]
-    sat_guess_label = '_'.join(sed_items[0:-2])
-    can_guess = band_label == 'Ks' and sat_guess_label in flux_rate_splines
-    pixel_rate = None
-    full_well = None
-    if sat_label in cache_saturation:
-        pixel_rate = cache_saturation[sat_label]['brightest_pixel_rate']
-        full_well = cache_saturation[sat_label]['full_well']
-    elif can_guess:
-        cs = flux_rate_splines[sat_guess_label]
-        pixel_rate = 10**cs(norm_mag)
-        full_well = full_wells[sat_guess_label]
-    return pixel_rate, full_well
-
-
-def draw(tso_list, resolution, n_obs):
-    """
-    Draw a random noised-up transit/eclipse depth realization from a TSO
-    """
-    if not isinstance(tso_list, list):
-        tso_list = [tso_list]
-
-    sims = []
-    for tso in tso_list:
-        bin_wl, bin_spec, bin_err, wl_widths = jwst.simulate_tso(
-           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
-        )
-        sims.append({
-            'wl': bin_wl,
-            'depth': bin_spec,
-            'uncert': bin_err,
-            'wl_widths': wl_widths,
-        })
-    return sims
-
-
+# ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+# ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 def server(input, output, session):
     bookmarked_sed = reactive.Value(False)
     bookmarked_depth = reactive.Value(False)
@@ -1330,7 +1033,7 @@ def server(input, output, session):
             target_acq_mag = None
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-            input, target_acq_mag=target_acq_mag,
+            input, spectra, target_acq_mag=target_acq_mag,
         )
         if sed_label is None:
             error_msg = ui.markdown("**Error:**<br>No SED model to simulate")
@@ -1353,10 +1056,10 @@ def server(input, output, session):
         if sed_label not in bookmarked_spectra['sed']:
             scene = pando.calc['scene'][0]
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
-            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux, 'filename':None}
             bookmarked_spectra['sed'].append(sed_label)
 
-        depth_label, wl, depth = parse_depth_model(input)
+        depth_label, wl, depth = parse_depth_model(input, spectra)
         if not run_is_tso:
             tso = pando.perform_calculation(
                 ngroup, nint,
@@ -1369,7 +1072,10 @@ def server(input, output, session):
                 return
             run_type = obs_geometry.capitalize()
             if depth_label not in spectra:
-                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+                if planet_model_type != 'Input':
+                    spectra[obs_geometry][depth_label] = {
+                        'wl': wl, 'depth': depth,
+                    }
                 if depth_label not in bookmarked_spectra[obs_geometry]:
                     bookmarked_spectra[obs_geometry].append(depth_label)
             depth_model = [wl, depth]
@@ -1646,7 +1352,7 @@ def server(input, output, session):
             "planet_model_type", choices=choices, selected=planet_model_type,
         )
         if planet_model_type == 'Input':
-            choices = user_spectra[obs_geometry]
+            choices = list(spectra[obs_geometry])
             selected = tso['depth_label']
             ui.update_select("depth", choices=choices, selected=selected)
         elif planet_model_type == 'Flat':
@@ -1680,6 +1386,66 @@ def server(input, output, session):
             "height": "50px",
         }
         return img
+
+
+    @reactive.effect
+    @reactive.event(input.export_button)
+    def export_to_notebook():
+        # For fixed values
+        script = export_script_fixed_values(
+            input, spectra, saturation_fraction,
+            acquisition_targets, acq_target_list,
+        )
+        fixed_script = ui.HTML(
+            f'<pre><code class="language-python">{script}</code></pre>'
+            "<script>hljs.highlightAll();</script>"
+        )
+        # For calculated values
+        script = export_script_calculated_values(
+            input, spectra, saturation_fraction,
+            acquisition_targets, acq_target_list, catalog,
+        )
+        calculated_script = ui.HTML(
+            f'<pre><code class="language-python">{script}</code></pre>'
+            "<script>hljs.highlightAll();</script>"
+        )
+
+        clipboard.set(script)
+        m = ui.modal(
+            ui.markdown("**TSO script/notebook**"),
+            ui.div(
+                ui.input_action_button(
+                    id='copy_script',
+                    label='Copy to clipboard',
+                    class_='btn btn-primary',
+                ),
+                class_='d-flex justify-content-end mb-2'
+            ),
+            ui.navset_card_tab(
+                ui.nav_panel(
+                    "Fixed values",
+                    fixed_script,
+                ),
+                ui.nav_panel(
+                    "Calculated values",
+                    calculated_script,
+                ),
+                id="selected_navset_card_tab",
+            ),
+            easy_close=True,
+            size='l',
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    @reactive.event(input.copy_script)
+    async def copy_clipboard_script():
+        print(input.selected_navset_card_tab.get())
+        await session.send_custom_message(
+            "copy_to_clipboard",
+            clipboard.get(),
+        )
+
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -1929,12 +1695,6 @@ def server(input, output, session):
                 placeholder='select a folder',
                 width='100%',
             ),
-            # TBD: I wish this could be used to browse a folder :(
-            #ui.input_file(
-            #    id="save_file_x",
-            #    label="Into this folder:",
-            #    button_label="Browse",
-            #),
             ui.input_action_button(
                 id='tso_save_button',
                 label='Save to file',
@@ -2094,7 +1854,6 @@ def server(input, output, session):
         nobs = len(data)
 
         today = datetime.today()
-        status = [obs['status'] for obs in data]
         date_obs = [obs['date_start'] for obs in data]
         plan_obs = [obs['plan_window'] for obs in data]
         propriety = [obs['proprietary_period'] for obs in data]
@@ -2334,7 +2093,12 @@ def server(input, output, session):
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
-            choices = list(user_spectra['sed'])
+            # bookmarking SED create spectra['sed'] items,
+            # a None filename flags them out of the 'input' list
+            choices = [
+                sed for sed,model in spectra['sed'].items()
+                if model['filename'] is not None
+            ]
             selected = None
 
         ui.update_select("sed", choices=choices, selected=selected)
@@ -2347,7 +2111,7 @@ def server(input, output, session):
     )
     def stellar_sed_label():
         """Check current SED is bookmarked"""
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         is_bookmarked = sed_label in bookmarked_spectra['sed']
         bookmarked_sed.set(is_bookmarked)
         if is_bookmarked:
@@ -2374,7 +2138,7 @@ def server(input, output, session):
     @reactive.event(input.sed_bookmark)
     def _():
         """Toggle bookmarked SED"""
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         if sed_type is None:
             msg = ui.markdown("**Error**:<br>No SED model to bookmark")
             ui.notification_show(msg, type="error", duration=5)
@@ -2384,7 +2148,7 @@ def server(input, output, session):
         if is_bookmarked:
             scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_mag)
             wl, flux = jwst.extract_sed(scene, wl_range=[0.3,30.0])
-            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux}
+            spectra['sed'][sed_label] = {'wl': wl, 'flux': flux, 'filename':None}
             bookmarked_spectra['sed'].append(sed_label)
         else:
             bookmarked_spectra['sed'].remove(sed_label)
@@ -2426,6 +2190,7 @@ def server(input, output, session):
         """Toggle bookmarked depth model"""
         obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
+        planet_model_type = input.planet_model_type.get()
         if depth_label is None:
             msg = ui.markdown(
                 f"**Error:**<br>No {obs_geometry} depth model to bookmark"
@@ -2436,15 +2201,16 @@ def server(input, output, session):
         bookmarked_depth.set(is_bookmarked)
         if is_bookmarked:
             bookmarked_spectra[obs_geometry].append(depth_label)
-            depth_label, wl, depth = parse_depth_model(input)
-            spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
+            depth_label, wl, depth = parse_depth_model(input, spectra)
+            if planet_model_type != 'Input':
+                spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
 
 
     @reactive.effect
     @reactive.event(input.obs_geometry, update_depth_flag)
-    def _():
+    def update_depth_types_and_models():
         obs_geometry = input.obs_geometry.get()
         choices = depth_choices[obs_geometry]
         model_type = input.planet_model_type.get()
@@ -2454,7 +2220,7 @@ def server(input, output, session):
             "planet_model_type", choices=choices, selected=model_type,
         )
 
-        spectra = user_spectra[obs_geometry]
+        models = list(spectra[obs_geometry])
         name = input.target.get()
         cached = (
             name in cache_target and
@@ -2464,12 +2230,11 @@ def server(input, output, session):
         if cached:
             selected = cache_target[name]['depth_label']
             cache_target[name]['depth_label'] = None
-        elif selected not in spectra:
-            selected = None if len(spectra) == 0 else spectra[0]
-        #print(f'Updating input [cached={cached}]: {repr(selected)}')
-        ui.update_select("depth", choices=spectra, selected=selected)
+        elif selected not in models:
+            selected = None if len(models) == 0 else models[0]
+        ui.update_select("depth", choices=models, selected=selected)
 
-        if len(spectra) > 0:
+        if len(models) > 0:
             tooltip_text = ''
         elif obs_geometry == 'transit':
             tooltip_text = f'Upload a {obs_geometry} depth spectrum'
@@ -2598,26 +2363,26 @@ def server(input, output, session):
             return
 
         # The units tell this function SED or depth spectrum:
+        filename = new_model[0]['name']
+        filepath = new_model[0]['datapath']
         units = uploaded_units.get()
-        label, wl, model = read_spectrum_file(
-            new_model[0]['datapath'], on_fail='warning',
-        )
-        label = new_model[0]['name']
+        _, wl, model = read_spectrum_file(filepath, units, on_fail='warning')
         if wl is None:
             msg = ui.markdown(
-                f'**Error:**<br>Invalid format for input file:<br>*{label}*'
+                f'**Error:**<br>Invalid format for input file:<br>*{filename}*'
             )
-            ui.notification_show(msg, type="error", duration=5)
+            ui.notification_show(msg, type="error", duration=7)
             return
-
-        if label.endswith('.dat') or label.endswith('.txt'):
-            label = label[0:-4]
+        label = os.path.splitext(filename)[0]
 
         if units in depth_units:
             obs_geometry = input.obs_geometry.get()
-            u = pt.u(units)
-            spectra[obs_geometry][label] = {'wl': wl, 'depth': model*u}
-            user_spectra[obs_geometry].append(label)
+            spectra[obs_geometry][label] = {
+                'wl': wl,
+                'depth': model,
+                'units': units,
+                'filename': f'unknown_{filename}',
+            }
             if label not in bookmarked_spectra[obs_geometry]:
                 bookmarked_spectra[obs_geometry].append(label)
             if input.planet_model_type.get() != 'Input':
@@ -2625,15 +2390,12 @@ def server(input, output, session):
             # Trigger update choose_depth
             update_depth_flag.set(label)
         elif units in sed_units:
-            if 'frequency' in units:
-                u = 10**26
-            elif 'wavenumber' in units:
-                u = 10**26 / pc.c
-            elif 'wavelength' in units:
-                u = 10**26 / pc.c * (wl*pc.um)**2.0
-            elif 'mJy' in units:
-                u = 1.0
-            user_spectra['sed'][label] = {'wl': wl, 'flux': model*u}
+            spectra['sed'][label] = {
+                'wl': wl,
+                'flux': model,
+                'units': units,
+                'filename': f'unknown_{filename}',
+            }
             update_sed_flag.set(label)
 
 
@@ -2693,7 +2455,7 @@ def server(input, output, session):
         if mode != 'target_acq':
             ngroup = 2
 
-        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input)
+        sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         sat_label = make_saturation_label(
             inst, mode, aperture, disperser, filter, subarray, order, sed_label,
         )
@@ -2783,13 +2545,13 @@ def server(input, output, session):
         else:
             return
 
-        norm_mag, sed_label = parse_sed(input, target_acq_mag)[3:5]
+        norm_mag, sed_label = parse_sed(input, spectra, target_acq_mag)[3:5]
         if inst is None or sed_label is None:
             return
 
         pixel_rate, full_well = get_saturation_values(
             inst, mode, aperture, disperser, filter, subarray, order,
-            sed_label, norm_mag,
+            sed_label, norm_mag, cache_saturation,
         )
         if pixel_rate is None:
             return
@@ -2818,14 +2580,18 @@ def server(input, output, session):
         input.aperture, input.disperser, input.filter, input.subarray,
     )
     def plotly_filters():
-        show_all = req(input.filter_filter).get() == 'all'
-        config = throughput_config(input)
+        config = parse_instrument(
+            input, 'instrument', 'mode',
+            'aperture', 'disperser', 'filter', 'subarray',
+        )
         if config is None:
             return
 
-        obs_type, inst, mode, key, filter = config
+        throughputs, t_config = get_throughput(input)
+        inst, mode, key, filter = t_config
+        show_all = input.filter_filter.get() == 'all'
         fig = plots.plotly_filters(
-            throughputs[obs_type], inst, mode, key, filter, show_all,
+            throughputs, inst, mode, key, filter, show_all,
         )
         return fig
 
@@ -2833,7 +2599,7 @@ def server(input, output, session):
     @render_plotly
     def plotly_sed():
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
-        throughput = throughput_config(input, evaluate=True)
+        throughput = get_throughput(input, evaluate=True)
         if throughput is None:
             return
 
@@ -2845,7 +2611,7 @@ def server(input, output, session):
             return fig
 
         sed_models = [spectra['sed'][model] for model in model_names]
-        current_model = parse_sed(input)[-1]
+        current_model = parse_sed(input, spectra)[-1]
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
@@ -2872,7 +2638,7 @@ def server(input, output, session):
     )
     def plotly_depth():
         input.bookmark_depth.get()  # (make panel reactive to bookmark_depth)
-        throughput = throughput_config(input, evaluate=True)
+        throughput = get_throughput(input, evaluate=True)
         if throughput is None:
             return
 
@@ -3008,7 +2774,7 @@ def server(input, output, session):
         depth_label = parse_obs(input)[1]
         transit_dur = float(input.t_dur.get())
 
-        if ngroup is None or parse_sed(input)[-1] is None:
+        if ngroup is None or parse_sed(input, spectra)[-1] is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
 
@@ -3039,11 +2805,11 @@ def server(input, output, session):
         report_text = f'<b>{target_focus} target{target_name}</b><br>{report_text}'
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
-            input, target_acq_mag=target_acq_mag,
+            input, spectra, target_acq_mag=target_acq_mag,
         )
         pixel_rate, full_well = get_saturation_values(
             inst, mode, aperture, disperser, filter, subarray, order,
-            sed_label, norm_mag,
+            sed_label, norm_mag, cache_saturation,
         )
         if pixel_rate is not None:
             saturation_text = jwst._print_pandeia_saturation(
@@ -3200,8 +2966,7 @@ def server(input, output, session):
         target_name = target_list[0][idx]
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
-        i = jwst.find_closest_sed(t_eff, log_g, p_teff, p_logg)
-        chosen_sed = p_keys[i]
+        chosen_sed = jwst.find_closest_sed(t_eff, log_g, sed_type='phoenix')
         ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
 
         deselect_targets = {'event': 'deselectAllShapes'}
@@ -3254,4 +3019,3 @@ def server(input, output, session):
 
 
 app = App(app_ui, server)
-

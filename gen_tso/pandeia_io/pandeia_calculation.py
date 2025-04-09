@@ -192,6 +192,54 @@ class PandeiaCalculation():
         else:
             raise ValueError(f"Invalid config output: '{output}'")
 
+    def set_config(
+        self, disperser=None, filter=None,
+        subarray=None, readout=None, aperture=None, order=None,
+    ):
+        """
+        Set the instrumental configuration.
+
+        Parameters
+        ----------
+        disperser: String
+            Disperser/grating for the given instrument.
+        filter: String
+            Filter for the given instrument.
+        subarray: String
+            Subarray mode for the given instrument.
+        readout: String
+            Readout pattern mode for the given instrument.
+        aperture: String
+            Aperture configuration for the given instrument.
+        order: Integer
+            For NIRISS SOSS only, the spectral order.
+            Other modes will ignore this argument.
+        """
+        # TBD: check the inputs are valid options
+        config = self.calc['configuration']
+        if aperture is not None:
+            config['instrument']['aperture'] = aperture
+
+        if disperser is not None:
+            config['instrument']['disperser'] = disperser
+        if config['instrument']['disperser'] == '':
+            config['instrument']['disperser'] = None
+
+        if filter is not None:
+            config['instrument']['filter'] = filter
+        if config['instrument']['filter'] == '':
+            config['instrument']['filter'] = None
+
+        if subarray is not None:
+            config['detector']['subarray'] = subarray
+
+        if readout is not None:
+            config['detector']['readout_pattern'] = readout
+
+        if order is not None and self.mode == 'soss':
+            self.calc['strategy']['order'] = order
+
+
     def wl_ranges(self):
         """
         Get wavelength range covered by the instrument/mode
@@ -610,27 +658,7 @@ class PandeiaCalculation():
         """
         # Unpack configuration parameters
         aperture, disperser, filter, subarray, readout, order, nint, ngroup = params
-        config = self.calc['configuration']
-        if aperture is not None:
-            config['instrument']['aperture'] = aperture
-        if disperser == '':
-            config['instrument']['disperser'] = None
-        elif disperser is not None:
-            config['instrument']['disperser'] = disperser
-        if config['instrument']['disperser'] == '':
-            config['instrument']['disperser'] = None
-        if filter == '':
-            config['instrument']['filter'] = None
-        elif filter is not None:
-            config['instrument']['filter'] = filter
-        if config['instrument']['filter'] == '':
-            config['instrument']['filter'] = None
-        if subarray is not None:
-            config['detector']['subarray'] = subarray
-        if readout is not None:
-            config['detector']['readout_pattern'] = readout
-        if order is not None and self.mode == 'soss':
-            self.calc['strategy']['order'] = order
+        self.set_config(disperser, filter, subarray, readout, aperture, order)
 
         self.calc['configuration']['detector']['nexp'] = 1 # dither
         self.calc['configuration']['detector']['nint'] = nint
@@ -643,6 +671,7 @@ class PandeiaCalculation():
         wl = np.array(self.report['1d']['extracted_flux'][0], dtype=float)
         self.report['1d']['extracted_flux'][0] = wl
         return self.report
+
 
     def calc_noise(
             self, obs_dur=None, ngroup=None,
@@ -660,14 +689,17 @@ class PandeiaCalculation():
         ngroup: Integer
             Number of groups per integrations
         disperser: String
+            Disperser/grating for the given instrument.
         filter: String
+            Filter for the given instrument.
         subarray: String
+            Subarray mode for the given instrument.
         readout: String
+            Readout pattern mode for the given instrument.
         aperture: String
-
-        Returns
-        -------
-        TBD
+            Aperture configuration for the given instrument.
+        nint: Integer
+            Number of integrations.
 
         Examples
         --------
@@ -761,11 +793,18 @@ class PandeiaCalculation():
         ngroup: Integer
             Number of groups per integrations
         disperser: String
+            Disperser/grating for the given instrument.
         filter: String
+            Filter for the given instrument.
         subarray: String
+            Subarray mode for the given instrument.
         readout: String
+            Readout pattern mode for the given instrument.
         aperture: String
-        order: String
+            Aperture configuration for the given instrument.
+        order: Integer
+            For NIRISS SOSS only, the spectral order.
+            Other modes will ignore this argument.
 
         Returns
         -------
@@ -909,22 +948,7 @@ class PandeiaCalculation():
         (the real function that) runs a TSO calculation.
         """
         aperture, disperser, filter, subarray, readout, order, ngroup = config
-        if aperture is not None:
-            self.calc['configuration']['instrument']['aperture'] = aperture
-        if disperser == '':
-            self.calc['configuration']['instrument']['disperser'] = None
-        elif disperser is not None:
-            self.calc['configuration']['instrument']['disperser'] = disperser
-        if filter == '':
-            self.calc['configuration']['instrument']['filter'] = None
-        elif filter is not None:
-            self.calc['configuration']['instrument']['filter'] = filter
-        if subarray is not None:
-            self.calc['configuration']['detector']['subarray'] = subarray
-        if readout is not None:
-            self.calc['configuration']['detector']['readout_pattern'] = readout
-        if order is not None and self.mode == 'soss':
-            self.calc['strategy']['order'] = order
+        self.set_config(disperser, filter, subarray, readout, aperture, order)
 
         # Now that everything is defined I can turn durations into integs:
         inst = self.instrument
@@ -1020,19 +1044,36 @@ class PandeiaCalculation():
 
         Parameters
         ----------
-        TBD
+        n_obs: integer
+            Number of transit/eclipse observations
+        resolution: float
+            If not None, resample the spectrum at the given resolution.
+        bins: integer
+            If not None, bin the spectrum in between the edges given
+            by this array.
+        noiseless: Bool
+            If True, do not add scatter noise to the spectrum.
 
         Returns
         -------
-        TBD
-
-        Examples
-        --------
-        >>> TBD
+        bin_wl: 1D array
+            Wavelengths of binned transit/eclipse spectrum.
+        bin_spec: 1D array
+            Binned simulated transit/eclipse spectrum.
+        bin_err: 1D array
+            Uncertainties of bin_spec.
+        bin_widths: 1D or 2D array
+            For spectra, the 1D bin widths of bin_wl.
+            For photometry, an array of shape [1,2] with the (lower,upper)
+            widths of the passband relative to bin_wl.
         """
         return simulate_tso(self.tso, n_obs, resolution, bins, noiseless)
 
+
     def save_tso(self, filename=None, tso=None):
+        """
+        Save TSO to pickle file.
+        """
         if tso is None:
             tso = self.tso
         if filename is None:

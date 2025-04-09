@@ -7,6 +7,7 @@ __all__ = [
     '_fetch_programs',
     '_extract_instrument_template',
     'fetch_jwst_programs',
+    'update_jwst_programs',
     # To format XML info into human language
     '_parse_date',
     '_parse_window',
@@ -27,6 +28,7 @@ import csv
 from datetime import datetime
 import os
 import re
+import shutil
 import warnings
 import xml.etree.ElementTree as ET
 
@@ -35,12 +37,13 @@ from bs4 import BeautifulSoup
 import pyratbay.constants as pc
 import requests
 
-from ..utils import ROOT
+from ..utils import ROOT, KNOWN_PROGRAMS
 from .utils import (
     normalize_name,
     get_host,
     get_letter,
 )
+from .catalogs import load_programs
 
 
 def _extract_html_text(html):
@@ -186,6 +189,54 @@ def fetch_jwst_programs(programs, apt_command=None, output_path=None):
             [f'{output_path}/{pid}.aptx' for pid in apt_programs]
         )
         os.system(f"{apt_command} -nogui -export xml {apt_files}")
+
+
+def update_jwst_programs():
+    """
+    Update JWST programs, re-processing only the necessary APTs
+    """
+    output_path = f'{ROOT}data/programs/'
+    programs = KNOWN_PROGRAMS
+    to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
+    failed = ['Failed', 'Skipped', 'Withdrawn']
+
+    if 'APT' not in os.environ:
+        # Only update status
+        _fetch_programs(programs, output_path, 'status')
+    else:
+        # Fetch status in tmp folder
+        apt_command = os.environ['APT']
+        tmp_path = f'{ROOT}data/programs_tmp/'
+        _fetch_programs(programs, tmp_path, 'status')
+
+        # Find observations that failed since last update
+        programs = load_programs()
+        pid = ''
+        to_update = []
+        for obs in programs:
+            if obs['pid'] != pid:
+                pid = obs['pid']
+                status = parse_status(pid, path=tmp_path)
+            for i in range(len(status)):
+                if status[i]['observation'] == obs['observation']:
+                    break
+            state = status[i]
+            if state['status'] != obs['status'] and state['status'] in failed:
+                to_update.append(pid)
+
+        # Fetch APTs of programs with failed observations
+        if len(to_update) > 0:
+            fetch_jwst_programs(to_update, apt_command, output_path)
+        # Move status xml files
+        for file in os.listdir(tmp_path):
+            if not file.endswith('-visit-status.xml'):
+                continue
+            src = os.path.join(tmp_path, file)
+            dest = os.path.join(output_path, file)
+            shutil.move(src, dest)
+
+    # Parse all
+    parse_program(programs, to_csv=to_csv)
 
 
 def _extract_instrument_template(element):
@@ -363,7 +414,7 @@ def guess_event_type(obs):
     event = ''
 
     # Guess from orbital phase when phase constraints exist:
-    if 'period' in obs:
+    if obs['period'] is not None:
         phase = obs['phase_start']
         duration = obs['phase_duration']
         if duration > 1.0:
@@ -478,8 +529,10 @@ def parse_program(pid, path=None, to_csv=None):
     >>> obs = cat.parse_program(pid=3712, to_csv='jwst_tso_program_3712.csv')
 
     >>> import gen_tso.catalogs as cat
-    >>> from gen_tso.utils import KNOWN_PROGRAMS
-    >>> observations = cat.parse_program(pid=KNOWN_PROGRAMS, to_csv=True)
+    >>> from gen_tso.utils import ROOT, KNOWN_PROGRAMS
+    >>> # Save to default csv file
+    >>> to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
+    >>> observations = cat.parse_program(pid=KNOWN_PROGRAMS, to_csv=to_csv)
     """
     if path is None:
         path = f'{ROOT}data/programs/'
@@ -758,8 +811,18 @@ def get_planet_letters(obs, targets, verbose=False):
     visit = obs["visit"]
     info = f'{pid} {obs_id:3} {visit}  '
 
+    # Start with the exceptions, hardcoded patching:
+    if pid=='5191':
+        return ['b', 'c']
+    if pid=='8739':
+        return ['b']
+    if pid=='2420' and obs_id=='5' and visit=='1':
+        return ['c']
+    if pid=='3818' and obs_id=='2' and visit=='1':
+        return ['d']
+
     target_name = obs['target']
-    # It's in the 'target'
+    # The planet is in the 'target'
     if target_name[-1].lower() == 'b' and not target_name[-2].isalpha():
         name = target_name[:-1]
         planet_letters = ['b']
@@ -801,14 +864,6 @@ def get_planet_letters(obs, targets, verbose=False):
                 periods = np.round([p.period for p in planets], 1)
                 print(f'{info}{name:15}{period:6.1f}  {periods}  {planet_letters}')
             return planet_letters
-
-    # else, hardcoded patching:
-    if pid=='8739':
-        return ['b']
-    if pid=='2420' and obs_id=='5' and visit=='1':
-        return ['c']
-    if pid=='3818' and obs_id=='2' and visit=='1':
-        return ['d']
 
     print(f'Could not determine planet for {repr(name)} (PID={pid})')
     return []
