@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools>=61.0",
+    "setuptools>=77.0.3",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -8,9 +8,8 @@ build-backend = "setuptools.build_meta"
 name = "gen_tso"
 description = "A general ETC for time-series observations"
 readme = "README.md"
-#license = "GPL-2.0-or-later"
-#license-files = [ "LICENSE" ]
-license = { file = "LICENSE" }
+license = "GPL-2.0-or-later"
+license-files = [ "LICENSE" ]
 
 #https://packaging.python.org/en/latest/guides/single-sourcing-package-version/
 dynamic = ["version"]
