@@ -1,4 +1,7 @@
 # Ignore everything in this directory
 *
-# Except this file
+# Except these file
 !.gitignore
+!sed/.gitignore
+!eclipse/.gitignore
+!transit/.gitignore
