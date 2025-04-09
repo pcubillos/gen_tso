@@ -184,8 +184,6 @@ def read_spectrum_file(file, units='none', on_fail=None):
     try:
         wl, spectrum = np.loadtxt(file, unpack=True)
     except ValueError as error:
-        wl = None
-        spectrum = None
         error_msg = (
             f'Error, could not load spectrum file: {repr(file)}\n{error}'
         )
@@ -193,6 +191,7 @@ def read_spectrum_file(file, units='none', on_fail=None):
             print(error_msg)
         if on_fail == 'error':
             raise ValueError(error_msg)
+        return None, None, None
 
     # Set the units:
     if units in depth_units:
