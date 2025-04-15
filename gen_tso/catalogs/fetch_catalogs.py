@@ -298,7 +298,7 @@ def fetch_trexolist():
     >>> cat.fetch_trexolist()
     """
     # Fetch the data:
-    url = "https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/03_trexolists.csv"
+    url = "https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/03_trexolists_extended.csv"
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
 
