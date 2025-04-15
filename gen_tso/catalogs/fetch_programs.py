@@ -163,7 +163,7 @@ def fetch_jwst_programs(programs, apt_command=None, output_path=None):
     >>> from gen_tso.utils import KNOWN_PROGRAMS
     >>>
     >>> # Fetch all known TSO programs
-    >>> apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
+    >>> apt_command = '/Applications/APT\\ 2025.1/bin/apt'
     >>> programs = KNOWN_PROGRAMS
     >>> cat.fetch_jwst_programs(programs, apt_command)
     >>>
@@ -688,7 +688,8 @@ def _planet_from_label(text):
         label = text.replace(' + ', '+')
         idx = label.index('+')
         planet_letters = [label[idx-1], label[idx+1]]
-        return planet_letters
+        if planet_letters[0].isalpha() and planet_letters[1].isalpha():
+            return planet_letters
 
     # Regular expression to match single letters surrounded by spaces
     pattern = r'(?<=\s)[a-zA-Z](?=\s)'
