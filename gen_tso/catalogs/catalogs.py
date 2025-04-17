@@ -261,6 +261,18 @@ def _add_planet_info(observations):
             for var, value in planet_data[key].items():
                 obs[var] = value
 
+    for key,obs in planet_data.items():
+        if key not in known_obs and 'missing' in obs:
+            obs.pop('missing')
+            date_format = "%Y-%m-%d %H:%M:%S"
+            val = obs['date_start']
+            if isinstance(val, str):
+                obs['date_start'] = datetime.strptime(val, date_format)
+            val = obs['date_end']
+            if isinstance(val, str):
+                obs['date_end'] = datetime.strptime(val, date_format)
+            observations.append(obs)
+
     return observations
 
 
