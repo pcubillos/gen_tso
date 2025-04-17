@@ -823,6 +823,8 @@ def get_planet_letters(obs, targets, verbose=False):
     # Start with the exceptions, hardcoded patching:
     if pid=='5191':
         return ['b', 'c']
+    if pid=='5177':
+        return ['b']
     if pid=='8739':
         return ['b']
     if pid=='2420' and obs_id=='5' and visit=='1':

@@ -8,6 +8,7 @@ __all__ = [
     'load_programs',
     'load_targets',
     'load_aliases',
+    '_group_by_target',
 ]
 
 import csv
@@ -109,7 +110,7 @@ class Catalog():
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
-            target.is_jwst_host = target.host in jwst_hosts and target.is_transiting
+            target.is_jwst_host = target.host in jwst_hosts
             if target.is_jwst_host:
                 for j in range(njwst):
                     if target.host == programs[j][0]['nea_host']:
