@@ -203,16 +203,16 @@ def _load_jwst_names(grouped=False):
     trexo_data = load_trexolists(grouped=grouped)
     observations = load_programs(grouped=grouped)
     if not grouped:
-        jwst_names = np.unique(trexo_data['target'])
+        jwst_names = np.unique([obs['target'] for obs in trexo_data])
         known_targets = np.unique([obs['target'] for obs in observations])
         jwst_names = np.union1d(jwst_names, known_targets).tolist()
         return jwst_names
 
     # Keep track of JWST target aliases from programs to cross-check:
-    jwst_aliases = [
-        np.unique(jwst_target['target']).tolist()
-        for jwst_target in trexo_data
-    ]
+    jwst_aliases = []
+    for obs_group in trexo_data:
+        names = np.unique([obs['target'] for obs in obs_group]).tolist()
+        jwst_aliases.append(names)
 
     # Match against my own program list:
     for obs_group in observations:
