@@ -360,26 +360,48 @@ def saturation_level(reports, get_max=False):
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
-
+    >>>
     >>> inst = 'nircam'
     >>> readout = 'rapid'
     >>> pando = jwst.PandeiaCalculation(inst, 'lw_tsgrism')
     >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
     >>> result = pando.perform_calculation(
-    >>>     ngroup=2, nint=683, readout='rapid', filter='f444w',
+    >>>     ngroup=2, nint=1, readout=readout, filter='f444w',
     >>> )
     >>> pixel_rate, full_well = jwst.saturation_level(result)
-
+    >>>
     >>> # Now I can calculate the saturation level for any integration time:
     >>> # (for the given filter and scene)
     >>> subarray = 'subgrism64'
     >>> for ngroup in [2, 97, 122]:
     >>>     integ_time = jwst.integration_time(inst, subarray, readout, ngroup)
-    >>>     sat_level = pixel_rate * integ_time / full_well * 100
+    >>>     sat_level = 100 * pixel_rate * integ_time / full_well
     >>>     print(f'Sat. fraction for {ngroup:3d} groups: {sat_level:5.1f}%')
     Sat. fraction for   2 groups:   1.5%
     Sat. fraction for  97 groups:  73.9%
     Sat. fraction for 122 groups:  93.0%
+
+    >>> # Calculate maximum number of groups before saturation
+    >>> inst = 'nircam'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'bright2'
+    >>> pando = jwst.PandeiaCalculation(inst, 'lw_tsgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> result = pando.perform_calculation(
+    >>>     ngroup=2, nint=1, readout=readout, filter='f444w',
+    >>> )
+    >>> pixel_rate, full_well = jwst.saturation_level(result)
+    >>>
+    >>> # ngroup staying below 80% of saturation:
+    >>> req_fraction = 80.0
+    >>> dt_integ = (
+    >>>     jwst.integration_time(inst, subarray, readout, 3) -
+    >>>     jwst.integration_time(inst, subarray, readout, 2)
+    >>> )
+    >>> sat_fraction = 100 * pixel_rate * dt_integ / full_well
+    >>> ngroup_req = int(req_fraction/sat_fraction)
+    >>> print(f'ngroup below {req_fraction:.1f}% of saturation: {ngroup_req}')
+    ngroup below 80.0% of saturation: 52
     """
     if not isinstance(reports, list):
         reports = [reports]
@@ -1229,12 +1251,17 @@ def _print_pandeia_saturation(
         inst = config['instrument']['instrument']
         subarray = config['detector']['subarray']
         readout = config['detector']['readout_pattern']
-        ngroup = config['detector']['ngroup']
 
-    sat_time = integration_time(inst, subarray, readout, ngroup)
-    sat_fraction = 100 * pixel_rate * sat_time / full_well
-    ngroup_req = int(req_saturation*ngroup/sat_fraction)
-    ngroup_max = int(100*ngroup/sat_fraction)
+    # jwst.integration_time() is not accurate for the purpose of
+    # calculating the max ngroup before saturation (NIRCam non-RAPID)
+    # Do it this way to replicate the ETC's output
+    dt_integ = (
+        integration_time(inst, subarray, readout, 3) -
+        integration_time(inst, subarray, readout, 2)
+    )
+    sat_fraction = 100 * pixel_rate * dt_integ / full_well
+    ngroup_req = int(req_saturation/sat_fraction)
+    ngroup_max = int(100.0/sat_fraction)
 
     saturation = format_text(
         f"{sat_fraction:.1f}%",

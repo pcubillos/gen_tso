@@ -2557,9 +2557,15 @@ def server(input, output, session):
             return
 
         req_saturation = saturation_fraction.get()
-        sat_time = jwst.integration_time(inst, subarray, readout, ngroup)
-        sat_fraction = 100 * pixel_rate * sat_time / full_well
-        ngroup_req = int(req_saturation*ngroup/sat_fraction)
+        # jwst.integration_time() is not accurate for the purpose of
+        # calculating the max ngroup before saturation (for NIRCam non-RAPID)
+        # Do it this way to replicate the ETC's output
+        dt_integ = (
+            jwst.integration_time(inst, subarray, readout, 3) -
+            jwst.integration_time(inst, subarray, readout, 2)
+        )
+        sat_fraction = 100 * pixel_rate * dt_integ / full_well
+        ngroup_req = int(req_saturation/sat_fraction)
 
         if mode == 'target_acq':
             choices = detector.get_constrained_val('groups', subarray=subarray)
