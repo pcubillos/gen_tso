@@ -34,7 +34,10 @@ import pyratbay.constants as pc
 import requests
 
 from ..utils import ROOT
-from .catalogs import load_targets, load_trexolists, load_programs, load_aliases
+from .catalogs import (
+    load_targets, load_trexolists, load_programs, load_aliases,
+    _group_by_target,
+)
 from . import utils as u
 from . import target as tar
 from .target import Target
@@ -198,31 +201,25 @@ def update_exoplanet_archive(from_scratch=False):
 
 def _load_jwst_names(grouped=False):
     """
+    Keep track of JWST target aliases from programs to cross-check
     from gen_tso.catalogs import load_trexolists, load_programs
+    from gen_tso.catalogs import *
     """
-    trexo_data = load_trexolists(grouped=grouped)
-    observations = load_programs(grouped=grouped)
+    trexo_data = load_trexolists(grouped=False)
+    observations = load_programs(grouped=False)
     if not grouped:
-        jwst_names = np.unique(trexo_data['target'])
+        jwst_names = np.unique([obs['target'] for obs in trexo_data])
         known_targets = np.unique([obs['target'] for obs in observations])
         jwst_names = np.union1d(jwst_names, known_targets).tolist()
         return jwst_names
 
-    # Keep track of JWST target aliases from programs to cross-check:
-    jwst_aliases = [
-        np.unique(jwst_target['target']).tolist()
-        for jwst_target in trexo_data
-    ]
-
-    # Match against my own program list:
+    # grouped by target
+    all_obs = trexo_data + observations
+    observations = _group_by_target(all_obs)
+    jwst_aliases = []
     for obs_group in observations:
         names = np.unique([obs['target'] for obs in obs_group]).tolist()
-        for i,aliases in enumerate(jwst_aliases):
-            if np.any(np.isin(names, aliases)):
-                jwst_aliases[i] = np.unique(names + aliases).tolist()
-                break
-        else:
-            jwst_aliases.append(names)
+        jwst_aliases.append(names)
 
     return jwst_aliases
 
@@ -285,6 +282,9 @@ def curate_aliases():
     sorted_names = sorted(list(aka))
     with open(f'{ROOT}data/target_aliases.txt', 'w') as f:
         for name in sorted_names:
+            # TBD: catch this, programatically
+            if name == 'LP 261-75 C':
+                continue
             aliases = sorted(aka[name])
             str_aliases = ','.join(aliases)
             f.write(f'{name}:{str_aliases}\n')
@@ -298,7 +298,7 @@ def fetch_trexolist():
     >>> cat.fetch_trexolist()
     """
     # Fetch the data:
-    url = "https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/03_trexolists.csv"
+    url = "https://www.stsci.edu/~nnikolov/TrExoLiSTS/JWST/03_trexolists_extended.csv"
     query_parameters = {}
     response = requests.get(url, params=query_parameters)
 

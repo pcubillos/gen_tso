@@ -43,7 +43,7 @@ from .utils import (
     get_host,
     get_letter,
 )
-from .catalogs import load_programs
+from .catalogs import load_programs, Catalog
 
 
 def _extract_html_text(html):
@@ -163,7 +163,7 @@ def fetch_jwst_programs(programs, apt_command=None, output_path=None):
     >>> from gen_tso.utils import KNOWN_PROGRAMS
     >>>
     >>> # Fetch all known TSO programs
-    >>> apt_command = '/Applications/APT\\ 2024.7.1/bin/apt'
+    >>> apt_command = '/Applications/APT\\ 2025.1/bin/apt'
     >>> programs = KNOWN_PROGRAMS
     >>> cat.fetch_jwst_programs(programs, apt_command)
     >>>
@@ -651,6 +651,14 @@ def parse_program(pid, path=None, to_csv=None):
                 observation['event'] = guess_event_type(observation)
                 observations.append(observation)
 
+    # Cross check with NASA catalog to identify planets
+    targets = [
+        target for target in Catalog().targets
+        if target.is_transiting
+    ]
+    for obs in observations:
+        obs['planets'] = get_planet_letters(obs, targets)
+
     # Write to CSV file
     if to_csv is not None:
         fieldnames = {key for obs in observations for key in obs.keys()}
@@ -688,7 +696,8 @@ def _planet_from_label(text):
         label = text.replace(' + ', '+')
         idx = label.index('+')
         planet_letters = [label[idx-1], label[idx+1]]
-        return planet_letters
+        if planet_letters[0].isalpha() and planet_letters[1].isalpha():
+            return planet_letters
 
     # Regular expression to match single letters surrounded by spaces
     pattern = r'(?<=\s)[a-zA-Z](?=\s)'
@@ -814,6 +823,8 @@ def get_planet_letters(obs, targets, verbose=False):
     # Start with the exceptions, hardcoded patching:
     if pid=='5191':
         return ['b', 'c']
+    if pid=='5177':
+        return ['b']
     if pid=='8739':
         return ['b']
     if pid=='2420' and obs_id=='5' and visit=='1':
