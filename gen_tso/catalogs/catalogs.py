@@ -250,14 +250,18 @@ def _add_planet_info(observations):
     planets_file = f'{ROOT}data/programs/planets_per_program.json'
     with open(planets_file, "r") as f:
         planet_data = json.load(f)
+
+    known_obs = []
     for obs in observations:
         pid = obs['pid']
         obs_id = obs['observation']
-        obs['planets'] = []
         key = f'{pid}_{obs_id}'
+        known_obs.append(key)
         if key in planet_data:
             for var, value in planet_data[key].items():
                 obs[var] = value
+
+    return observations
 
 
 def _group_by_target(observations):
@@ -393,19 +397,18 @@ def load_trexolists(grouped=False, trexo_file=None):
         obs['cycle'] = str(data['Cycle'])
         obs['proprietary_period'] = int(data['ProprietaryPeriod'])
 
-        target = str(data['Planet_Name_NN'])
+        target = str(data['hostname_nn'])
         obs['target'] = u.normalize_name(target)
         obs['target_in_program'] = target
+        obs['planets'] = data['letter_nn'].split('+')
+        obs['event'] = data['Event'].lower().replace('phasec', 'phase curve')
 
         obs['observation'] = str(data['Observation'])
-        obs['visit'] = str(data['Visit'])
+        obs['visit'] = '1'
         obs['status'] = str(data['Status'])
-
         coordinates = data['EquatorialCoordinates'].split()
         obs['ra'] = ':'.join(coordinates[0:3])
         obs['dec'] = ':'.join(coordinates[3:6])
-
-        obs['event'] = data['Event'].lower().replace('phasec', 'phase curve')
 
         mode = str(data['ObservingMode'])
         disperser = obs['disperser'] = str(data['GratingGrism'])
@@ -420,6 +423,7 @@ def load_trexolists(grouped=False, trexo_file=None):
             disperser = 'unknown'
             filter = 'None'
         elif inst == 'MIRI':
+            # disperser will be fixed below by _add_planet_info()
             disperser = 'None'
             filter = mode
             mode = 'Imaging TS'
@@ -429,6 +433,7 @@ def load_trexolists(grouped=False, trexo_file=None):
             if '_' in data['Subarray']:
                 disperser = f'DHS0,{disperser}'
                 # hard-coded, known up to Cycle4:
+                # will be fixed below by _add_planet_info()
                 filter = f'F150W2,{filter}'
         elif inst == 'NIRSPEC':
             filter = nirspec_filter[disperser]
@@ -439,12 +444,6 @@ def load_trexolists(grouped=False, trexo_file=None):
         obs['subarray'] = str(data['Subarray'])
         obs['readout'] = str(data['ReadoutPattern'])
         obs['groups'] = int(data['Groups'])
-
-        start = data['PhaseStart']
-        obs['phase_start'] = np.nan if start=='N/A' else float(start)
-        end = data['PhaseEnd']
-        obs['phase_end'] = np.nan if end=='N/A' else float(end)
-        obs['duration'] = float(data['Hours'])
 
         window = str(data['PlanWindow'])
         if window == 'X':
@@ -457,6 +456,8 @@ def load_trexolists(grouped=False, trexo_file=None):
             obs['plan_window'] = f"{start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}"
         else:
             obs['plan_window'] = window
+
+        obs['duration'] = float(data['Hours'])
 
         date = data['StartTime']
         if date == 'X':
@@ -471,7 +472,7 @@ def load_trexolists(grouped=False, trexo_file=None):
 
         observations.append(obs)
 
-    _add_planet_info(observations)
+    observations = _add_planet_info(observations)
 
     if grouped:
         return _group_by_target(observations)
@@ -525,8 +526,8 @@ def load_programs(grouped=False, csv_file=None):
             elif key in date_keys:
                 date_format = "%Y-%m-%d %H:%M:%S"
                 obs[key] = datetime.strptime(val, date_format)
-
-    _add_planet_info(observations)
+            elif key == 'planets':
+                obs[key] = eval(obs[key])
 
     if grouped:
         return _group_by_target(observations)
