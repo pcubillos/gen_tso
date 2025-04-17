@@ -43,7 +43,7 @@ from .utils import (
     get_host,
     get_letter,
 )
-from .catalogs import load_programs
+from .catalogs import load_programs, Catalog
 
 
 def _extract_html_text(html):
@@ -650,6 +650,14 @@ def parse_program(pid, path=None, to_csv=None):
                     observation['phase_duration'] = obs_duration
                 observation['event'] = guess_event_type(observation)
                 observations.append(observation)
+
+    # Cross check with NASA catalog to identify planets
+    targets = [
+        target for target in Catalog().targets
+        if target.is_transiting
+    ]
+    for obs in observations:
+        obs['planets'] = get_planet_letters(obs, targets)
 
     # Write to CSV file
     if to_csv is not None:
