@@ -65,7 +65,7 @@ from gen_tso.export_script import (
 
 
 def load_catalog():
-    catalog = cat.Catalog(custom_targets='user_planet_data.txt')
+    catalog = cat.Catalog()
     is_jwst = np.array([target.is_jwst_planet for target in catalog.targets])
     is_transit = np.array([target.is_transiting for target in catalog.targets])
     is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
@@ -2038,6 +2038,8 @@ def server(input, output, session):
         ui.update_text('log_g', value=log_g)
         ui.update_select('magnitude_band', selected=band)
         ui.update_text('magnitude', value=magnitude)
+        if t_dur == '':
+            t_dur = '0.0'
         ui.update_text('t_dur', value=t_dur)
 
         delete_catalog = {
