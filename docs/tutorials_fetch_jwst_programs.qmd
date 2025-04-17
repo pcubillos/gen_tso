@@ -37,7 +37,7 @@ The executable will be located inside the `bin` subfolder. We will need to
 get the absolute path to it, It should be something like:
 
 ```bash
-/Applications/APT\\ 2024.7.1/bin/apt
+/Applications/APT\\ 2025.1/bin/apt
 ```
 
 The following script shows how to fetch the APT and status for the programs:
@@ -74,7 +74,7 @@ from gen_tso.utils import KNOWN_PROGRAMS
 
 
 # Path to APT executable:
-apt_command = '/home/user/ast/apt/APT_2024.5.2/APT'
+apt_command = '/home/user/ast/apt/APT_2025.1/APT'
 
 # Fetch all TSO programs:
 programs = KNOWN_PROGRAMS
@@ -241,7 +241,8 @@ observations[98]
   'PhaseEnd': '0.96275'},
  'period': 4.05527999,
  'phase_start': 0.957615,
- 'phase_duration': 0.10850052304279982}
+ 'phase_duration': 0.10850052304279982,
+ 'planets': ['b']}
 ```
 :::
 
@@ -297,7 +298,8 @@ observations[0]
   'PhaseEnd': '0.967900'},
  'period': 3.8681382,
  'phase_start': 0.962514,
- 'phase_duration': 0.0890824772841191}
+ 'phase_duration': 0.0890824772841191,
+ 'planets': ['b']}
 ```
 :::
 
@@ -317,7 +319,7 @@ not stored in there.
 
 ```python
 from gen_tso import catalogs as cat
-from gen_tso.utils import KNOWN_PROGRAMS, ROOTS
+from gen_tso.utils import KNOWN_PROGRAMS, ROOT
 
 # Default csv file
 to_csv = f'{ROOT}data/programs/jwst_tso_programs.csv'
@@ -348,10 +350,6 @@ observations = cat.load_programs()
 
 # Use the catalog to cross check with NASA target names
 catalog = cat.Catalog()
-targets = [
-    target for target in catalog.targets
-    if target.is_transiting
-]
 
 # List all phase curve programs
 ntotal = 0
@@ -359,7 +357,7 @@ print(' N      Program  Obs  Target        Status')
 print('---------------  -------------------------')
 for obs in observations:
     event = obs['event']
-    host = cat.get_observation_host(obs, targets)
+    host = cat.get_observation_host(obs, catalog.targets)
     # Host not yet in NASA Exoplanet Archive
     if host is None:
         host = obs['target']
@@ -381,7 +379,7 @@ for obs in observations:
  4     ERS 1366   11  WASP-43       Executed
  5      GO 1729    1  WASP-121      Executed
  6      GO 1803    1  GJ 1214       Executed
- 7      GO 2008    1  HD 80606      Implementation
+ 7      GO 2008    1  HD 80606      Executed
  8      GO 2158    1  NGTS-10       Executed
  9      GO 2159    1  K2-141        Executed
 10      GO 2347    1  K2-141        Executed
@@ -405,7 +403,7 @@ for obs in observations:
 28      GO 5268    1  WASP-76       Executed
 29      GO 7255    1  KELT-9        Implementation
 30      GO 7255    2  KELT-9        Implementation
-31      GO 8739    1  BD+05 4868    Implementation
+31      GO 8739    1  BD+05 4868 A  Implementation
 32      GO 8864    1  TOI-1807      Implementation
 33      GO 8864    2  TOI-2260      Implementation
 34      GO 8864    3  TOI-431       Implementation
@@ -508,31 +506,25 @@ observations = cat.load_programs()
 
 # Will need to cross check with NASA catalog of transiting planets
 catalog = cat.Catalog()
-targets = [
-    target for target in catalog.targets
-    if target.is_transiting
-]
 
 # Find the planet (by host name, labels, or phase constraints)
 for obs in observations:
-    obs['planets'] = cat.get_planet_letters(obs, targets)
+    obs['planets'] = cat.get_planet_letters(obs, catalog.targets)
 
 
 # Show planets in multi-planet systems
 print('PID   Obs  Target        Planets     Event type')
 print('-----------------------------------------------')
 for obs in observations:
-    host = cat.get_observation_host(obs, targets)
+    host = cat.get_observation_host(obs, catalog.targets)
     pid = obs['pid']
     oid = obs['observation']
     target = obs['target']
     all_planets = [
          target.planet
-         for target in targets
+         for target in catalog.targets
          if target.host == host
     ]
-    if len(all_planets) == 0:
-        print(f"{pid}  {oid:>3}  {target:12s}  Couldn't determine planet, target not in NASA database")
 
     if len(all_planets) > 1:
         event = obs['event']
@@ -549,16 +541,11 @@ PID   Obs  Target        Planets     Event type
 1177    9  TRAPPIST-1    ['b']       eclipse
 1177   10  TRAPPIST-1    ['b']       eclipse
 1177   11  TRAPPIST-1    ['b']       eclipse
-1201  101  TRAPPIST-1    ['f']       transit
-1201  102  TRAPPIST-1    ['f']       transit
-1201  103  TRAPPIST-1    ['f']       transit
-1201  104  TRAPPIST-1    ['f']       transit
-1201  105  TRAPPIST-1    ['f']       transit
-1201  111  TRAPPIST-1    ['d']       transit
-1201  112  TRAPPIST-1    ['d']       transit
-1201  301  L 98-59       ['c']       transit
-1201  302  L 98-59       ['c']       transit
-1201  311  L 98-59       ['d']       transit
+1185    8  WASP-107      ['b']       transit
+1185    9  WASP-107      ['b']       transit
+1201    8  WASP-107      ['b']       transit
+1201    9  WASP-107      ['b']       eclipse
+1201  502  WASP-107      ['b']       eclipse
 ...
 6193    1  TOI-700       ['d']       transit
 6193    2  TOI-700       ['e']       transit
@@ -579,7 +566,6 @@ PID   Obs  Target        Planets     Event type
 8004    2  TOI-431       ['d']       transit
 8004    3  HIP 9618      ['b']       transit
 8004    4  HIP 9618      ['b']       transit
-8739    1  BD+05 4868    Couldn't determine planet, target not in NASA database
 8864    3  TOI-431       ['b']       phase curve
 9025    3  WASP-84       ['b']       transit
 ```
