@@ -31,6 +31,12 @@ def parse_depth_source(input, spectra, teq_text=None, rprs_text=None, depth_text
     transit_depth_script = ""
 
     if model_type == 'Input':
+        if depth_label is None:
+            alter = 'flat transit' if obs_geometry=='transit' else 'blackbody'
+            return  f"""
+    # NOTE!  Need to upload a {obs_geometry}-depth spectrum to simulate a TSO
+    # or alternatively select a {alter} model
+"""
         model = spectra[obs_geometry][depth_label]
         filename = model['filename']
         units = model['units']
