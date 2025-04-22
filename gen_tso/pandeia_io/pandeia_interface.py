@@ -395,8 +395,8 @@ def saturation_level(reports, get_max=False):
     >>> # ngroup staying below 80% of saturation:
     >>> req_fraction = 80.0
     >>> dt_integ = (
-    >>>     jwst.integration_time(inst, subarray, readout, 3) -
-    >>>     jwst.integration_time(inst, subarray, readout, 2)
+    >>>     jwst.integration_time(inst, subarray, readout, ngroup=3) -
+    >>>     jwst.integration_time(inst, subarray, readout, ngroup=2)
     >>> )
     >>> sat_fraction = 100 * pixel_rate * dt_integ / full_well
     >>> ngroup_req = int(req_fraction/sat_fraction)
@@ -1256,8 +1256,8 @@ def _print_pandeia_saturation(
     # calculating the max ngroup before saturation (NIRCam non-RAPID)
     # Do it this way to replicate the ETC's output
     dt_integ = (
-        integration_time(inst, subarray, readout, 3) -
-        integration_time(inst, subarray, readout, 2)
+        integration_time(inst, subarray, readout, ngroup=3) -
+        integration_time(inst, subarray, readout, ngroup=2)
     )
     # Saturation fraction for a single group
     single_sat_fraction = 100 * pixel_rate * dt_integ / full_well

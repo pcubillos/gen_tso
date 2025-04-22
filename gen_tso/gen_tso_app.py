@@ -2563,8 +2563,8 @@ def server(input, output, session):
         # calculating the max ngroup before saturation (for NIRCam non-RAPID)
         # Do it this way to replicate the ETC's output
         dt_integ = (
-            jwst.integration_time(inst, subarray, readout, 3) -
-            jwst.integration_time(inst, subarray, readout, 2)
+            jwst.integration_time(inst, subarray, readout, ngroup=3) -
+            jwst.integration_time(inst, subarray, readout, ngroup=2)
         )
         sat_fraction = 100 * pixel_rate * dt_integ / full_well
         ngroup_req = int(req_saturation/sat_fraction)
