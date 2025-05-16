@@ -245,7 +245,7 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
 
 def _add_planet_info(observations):
     """
-    If data exists, add planet letter info to a list of observations
+    Add planet letter info to a list of observations
     and other corrections
     """
     planets_file = f'{ROOT}data/programs/planets_per_program.json'
