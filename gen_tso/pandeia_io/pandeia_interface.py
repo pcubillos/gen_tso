@@ -7,6 +7,9 @@ __all__ = [
     'bin_search_exposure_time',
     'integration_time',
     'saturation_level',
+    'extract_flux_rate',
+    'estimate_flux_rate',
+    'groups_below_saturation',
     'get_sed_list',
     'find_closest_sed',
     'make_scene',
@@ -24,6 +27,7 @@ __all__ = [
     'tso_print',
 ]
 
+from collections.abc import Iterable
 import copy
 from decimal import Decimal
 import json
@@ -39,7 +43,14 @@ from pyratbay.tools import u
 import prompt_toolkit
 
 from ..utils import format_text
-from .pandeia_defaults import get_throughputs, _photo_modes
+from .pandeia_defaults import (
+    _photo_modes,
+    _load_flux_rate_splines,
+    get_sed_types,
+    get_throughputs,
+    make_saturation_label,
+)
+sed_types = get_sed_types()
 
 
 def read_noise_variance(report, ins_config):
@@ -335,7 +346,7 @@ def integration_time(instrument, subarray, readout, ngroup):
     return integration_time
 
 
-def saturation_level(reports, get_max=False):
+def extract_flux_rate(reports, get_max=False):
     """
     Compute saturation values for a given perform_calculation output.
 
@@ -368,7 +379,7 @@ def saturation_level(reports, get_max=False):
     >>> result = pando.perform_calculation(
     >>>     ngroup=2, nint=1, readout=readout, filter='f444w',
     >>> )
-    >>> pixel_rate, full_well = jwst.saturation_level(result)
+    >>> pixel_rate, full_well = jwst.extract_flux_rate(result)
     >>>
     >>> # Now I can calculate the saturation level for any integration time:
     >>> # (for the given filter and scene)
@@ -390,7 +401,7 @@ def saturation_level(reports, get_max=False):
     >>> result = pando.perform_calculation(
     >>>     ngroup=2, nint=1, readout=readout, filter='f444w',
     >>> )
-    >>> pixel_rate, full_well = jwst.saturation_level(result)
+    >>> pixel_rate, full_well = jwst.extract_flux_rate(result)
     >>>
     >>> # ngroup staying below 80% of saturation:
     >>> req_fraction = 80.0
@@ -429,6 +440,226 @@ def saturation_level(reports, get_max=False):
         idx = np.argmax(brightest_pixel_rate*full_well)
         return brightest_pixel_rate[idx], full_well[idx]
     return brightest_pixel_rate, full_well
+
+
+def saturation_level(reports, get_max=False):
+    """
+    Deprecated. Use `extract_flux_rate()` instead.
+    """
+    import warnings
+    warnings.warn(
+        "saturation_level() is deprecated and will be removed in a "
+        "future release. Use extract_flux_rate() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return extract_flux_rate(reports, get_max)
+
+
+def estimate_flux_rate(
+        sed_type, sed_model, ks_mag,
+        mode, aperture, disperser, filter, subarray, order='',
+    ):
+    """
+    Estimate a detector's brightest-pixel flux rate and the full well
+    for a given source and an instrumental configuration,
+    based on pre-tabulated Ks-bands magnitudes.
+
+    Parameters
+    ----------
+    sed_type: String
+        Type of model: 'phoenix', 'k93models', or 'bt_settl'.
+    sed_model:
+        The SED model required for each sed_type, see
+        jwst.get_sed_list(), jwst.find_closest_sed() or jwst.find_nearby_seds()
+    ks_mag: float
+        Magnitude of the star in the Ks band.
+    mode: String
+        The observing mode for the JWST instrument.
+    aperture: String
+        Aperture configuration for the given instrument.
+    disperser: String
+        Disperser/grating for the given instrument.
+    filter: String
+        Filter for the given instrument.
+    subarray: String
+        Subarray mode for the given instrument.
+    order: Integer
+        For NIRISS SOSS only, the spectral order.
+
+    Returns
+    -------
+    brightest_pixel_rate: Float
+        e- per second rate at the brightest pixel.
+    full_well: Float
+        Number of e- counts to saturate the detector.
+
+    Example
+    -------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> ks_mag = 8.0
+    >>> flux_rate, full_well = jwst.estimate_flux_rate(
+    >>>     sed_type, sed_model, ks_mag,
+    >>>     mode='lw_tsgrism', aperture='lw',
+    >>>     disperser='grism', filter='f444w', subarray='subgrism64',
+    >>> )
+    >>> print(flux_rate, full_well)
+    1796.190365030732 58100.0
+    """
+    sed_label = f'{sed_type}_{sed_model}'
+    obs_label = make_saturation_label(
+        mode, aperture, disperser, filter, subarray, order, sed_label,
+    )
+    flux_rate_spline, full_well = _load_flux_rate_splines(obs_label)
+
+    if flux_rate_spline is None:
+        return None, None
+
+    pixel_rate = 10**flux_rate_spline(ks_mag)
+    return pixel_rate, full_well
+
+
+def groups_below_saturation(
+        req_saturation,
+        instrument=None, subarray=None, readout=None,
+        flux_rate=None, full_well=None,
+        mode=None, aperture=None, disperser=None, filter=None, order=None,
+        sed_type=None, sed_model=None, ks_mag=None,
+        reports=None,
+    ):
+    """
+    Calculate the maximum number of groups below a give saturation level
+    for the given configuration.
+
+    Parameters
+    ----------
+    req_saturation: Float or 1D float iterable
+        Required saturation level in percent.
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    flux_rate: Float
+        e- per second rate at the brightest pixel.
+    full_well: Float
+        Number of e- counts to saturate the detector.
+    mode: String
+        The observing mode for the JWST instrument.
+    aperture: String
+        Aperture configuration for the given instrument.
+    disperser: String
+        Disperser/grating for the given instrument.
+    filter: String
+        Filter for the given instrument.
+    order: Integer
+        For NIRISS SOSS only, the spectral order.
+    sed_type: String
+        Type of SED model: 'phoenix', 'k93models', or 'bt_settl'.
+    sed_model:
+        The SED model required for each sed_type, see
+        jwst.get_sed_list(), jwst.find_closest_sed() or jwst.find_nearby_seds()
+    ks_mag: float
+        Magnitude of the star in the Ks band.
+    reports: Dictionary or list of dictionaries
+        Either a pandeia's perform_calculation() output dictionary
+        or a tso_calculation output dictionary.
+
+    Returns
+    -------
+    ngroup: Integeer
+        Number of groups per integration to keep the saturation fraction
+        of the brightest pixel rate below req_saturation.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # Use a pandeia report as input:
+    >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> report = pando.perform_calculation(ngroup=2, nint=1)
+    >>> ngroup = jwst.groups_below_saturation([80, 100], reports=report)
+    >>> print(ngroup)
+    [104, 131]
+
+    >>> # Use instrument and source variables as input:
+    >>> inst = 'nircam'
+    >>> mode = 'lw_tsgrism'
+    >>> disperser = 'grismr'
+    >>> filter = 'f444w'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'rapid'
+    >>> aperture = 'lw'
+    >>>
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> ks_mag = 8.351
+    >>>
+    >>> ngroup = jwst.groups_below_saturation(
+    >>>     req_saturation=80.0,
+    >>>     instrument=inst, mode=mode, disperser=disperser, filter=filter,
+    >>>     subarray=subarray, readout=readout, aperture=aperture,
+    >>>     sed_type=sed_type, sed_model=sed_model, ks_mag=ks_mag,
+    >>>
+    >>> )
+    >>> print(ngroup)
+    104
+    """
+    if isinstance(req_saturation, Iterable):
+        req_saturations = req_saturation
+    else:
+        req_saturations = [req_saturation]
+
+    if reports is not None:
+        flux_rate, full_well = extract_flux_rate(reports, get_max=True)
+        # Unpack instrumental configuration values:
+        if not isinstance(reports, list):
+            reports = [reports]
+        if 'report_in' in reports[0]:
+            report = reports[0]['report_in']
+        else:
+            report = reports[0]
+        config = report['input']['configuration']
+        instrument = config['instrument']['instrument']
+        subarray = config['detector']['subarray']
+        readout = config['detector']['readout_pattern']
+
+    if flux_rate is None:
+        flux_rate, full_well = extract_flux_rate(
+            sed_type, sed_model, ks_mag,
+            mode, aperture, disperser, filter, subarray, order,
+        )
+
+    are_undefined = (
+        instrument is None,
+        subarray is None,
+        readout is None,
+        flux_rate is None,
+        full_well is None,
+    )
+    if np.any(are_undefined):
+        raise ValueError('Not all required inputs are defined')
+
+    dt_1group = integration_time(instrument, subarray, readout, ngroup=1)
+    dt_2group = integration_time(instrument, subarray, readout, ngroup=2)
+    dt = dt_2group - dt_1group
+
+    sat_1group = flux_rate * dt_1group / full_well
+    sat_dt = flux_rate * dt / full_well
+
+    ngroups = []
+    for saturation in req_saturations:
+        m = 1 + (saturation/100.0 - sat_1group) / sat_dt
+        ngroups.append(int(m))
+
+    if not isinstance(req_saturation, Iterable):
+        ngroups = ngroups[0]
+    return ngroups
 
 
 def get_sed_list(source):
@@ -524,13 +755,15 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     Parameters
     ----------
     sed_type: String
-        Type of model: 'phoenix', 'k93models', 'blackbody', 'input', or 'flat'
+        Type of model:
+        - 'phoenix', 'k93models',
+        - 'blackbody', 'input', or 'flat'
     sed_model:
         The SED model required for each sed_type:
-        - phoenix or k93models: the model key (see get_sed_list)
+        - phoenix, k93models: the model key (see get_sed_list)
         - blackbody: the effective temperature (K)
         - input: dict with 'wl' and 'flux' keys containing the
-                 wavelength (un) and SED spectrum (mJy).
+          wavelength (un) and SED spectrum (mJy).
         - flat: the unit ('flam' or 'fnu')
     norm_band: String
         Band over which to normalize the spectrum.
@@ -567,11 +800,14 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     >>> norm_magnitude = 8.637
     >>> scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
     """
+    if sed_type == 'kurucz':
+        sed_type = 'k93models'
+
     sed = {'sed_type': sed_type}
 
     if sed_type == 'flat':
         sed['unit'] = sed_model
-    elif sed_type in ['phoenix', 'k93models', 'bt_settl']:
+    elif sed_type in sed_types:
         sed['key'] = sed_model
     elif sed_type == 'blackbody':
         sed['temp'] = sed_model
@@ -661,7 +897,7 @@ def extract_sed(scene, wl_range=None):
     )
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
     if normalization.type == 'none':
-        if sed_model.sed_type in ['phoenix', 'k93models', 'bt_settl']:
+        if sed_model.sed_type in sed_types:
             # Convert wavelengths from A to um:
             wave *= 1e-4  # pc.A / pc.um
         if sed_model.sed_type == 'blackbody':
@@ -922,41 +1158,38 @@ def simulate_tso(
     --------
     >>> import gen_tso.pandeia_io as jwst
     >>> import matplotlib.pyplot as plt
-
-    >>> scene = jwst.make_scene(
+    >>>
+    >>> # A NIRSpec/BOTS simulation
+    >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    >>> pando.set_scene(
     >>>     sed_type='phoenix', sed_model='k5v',
     >>>     norm_band='2mass,ks', norm_magnitude=8.351,
     >>> )
-
-    >>> # NIRSpec BOTS spectra
-    >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
-    >>> pando.calc['scene'] = [scene]
     >>> disperser='g395h'
     >>> filter='f290lp'
-    >>> readout='nrsrapid'
     >>> subarray='sub2048'
-    >>> ngroup = 16
-
+    >>> readout='nrsrapid'
+    >>> pando.set_config(disperser, filter, subarray, readout)
+    >>> ngroup = pando.saturation_fraction(fraction=80.0)
+    >>>
     >>> transit_dur = 2.71
     >>> obs_dur = 6.0
     >>> obs_type = 'transit'
     >>> depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
-
+    >>>
     >>> tso = pando.tso_calculation(
-    >>>     obs_type, transit_dur, obs_dur, depth_model,
-    >>>     ngroup, disperser, filter, subarray, readout,
+    >>>     obs_type, transit_dur, obs_dur, depth_model, ngroup,
     >>> )
 
     >>> bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
     >>>    tso, n_obs=1, resolution=300.0, noiseless=False,
     >>> )
-
+    >>>
     >>> plt.figure(10)
     >>> plt.clf()
-    >>> plt.plot(depth_model[0], depth_model[1], c='orange')
-    >>> plt.plot(tso['wl'], tso['depth_spectrum'], c='orangered')
-    >>> plt.errorbar(bin_wl, bin_spec, bin_err, fmt='ok', ms=4, mfc='w')
-    >>> plt.xlim(2.8, 5.3)
+    >>> plt.plot(depth_model[0], depth_model[1], c='salmon')
+    >>> plt.errorbar(bin_wl, bin_spec, bin_err, fmt='o', c='xkcd:blue', ms=4, mfc='w')
+    >>> plt.xlim(2.85, 5.2)
     """
     dt_in = tso['time_in']
     dt_out = tso['time_out']
@@ -1223,7 +1456,7 @@ def _print_pandeia_saturation(
     >>> )
 
     >>> # Directly print from input values:
-    >>> pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+    >>> pixel_rate, full_well = jwst.extract_flux_rate(tso, get_max=True)
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
     >>> readout = 'rapid'
@@ -1241,7 +1474,7 @@ def _print_pandeia_saturation(
     """
     # parse reports
     if reports is not None:
-        pixel_rate, full_well = saturation_level(reports, get_max=True)
+        pixel_rate, full_well = extract_flux_rate(reports, get_max=True)
         # This is a TSO dict
         if 'report_in' in reports[0]:
             report = reports[0]['report_in']
@@ -1252,25 +1485,20 @@ def _print_pandeia_saturation(
         subarray = config['detector']['subarray']
         readout = config['detector']['readout_pattern']
 
-    # jwst.integration_time() is not accurate for the purpose of
-    # calculating the max ngroup before saturation (NIRCam non-RAPID)
-    # Do it this way to replicate the ETC's output
-    dt_integ = (
-        integration_time(inst, subarray, readout, ngroup=3) -
-        integration_time(inst, subarray, readout, ngroup=2)
-    )
-    # Saturation fraction for a single group
-    single_sat_fraction = 100 * pixel_rate * dt_integ / full_well
-    ngroup_req = int(req_saturation/single_sat_fraction)
-    ngroup_max = int(100.0/single_sat_fraction)
-
-    sat_fraction = ngroup * single_sat_fraction
+    sat_time = integration_time(inst, subarray, readout, ngroup)
+    sat_fraction = 100.0 * pixel_rate * sat_time / full_well
     saturation = format_text(
         f"{sat_fraction:.1f}%",
         np.round(sat_fraction, decimals=1)>np.round(req_saturation, decimals=1),
         sat_fraction>=100,
         format,
     )
+
+    ngroup_req, ngroup_max = groups_below_saturation(
+        [req_saturation, 100.0],
+        inst, subarray, readout, pixel_rate, full_well,
+    )
+
     ngroup_req = format_text(
         f"{ngroup_req:d}", ngroup_req==2, ngroup_req<2, format,
     )
@@ -1532,7 +1760,7 @@ def _print_pandeia_report(reports, format=None):
 
     # Saturation
     reports = report_in + report_out
-    pixel_rate, full_well = saturation_level(reports, get_max=True)
+    pixel_rate, full_well = extract_flux_rate(reports, get_max=True)
     saturation_report = _print_pandeia_saturation(
         inst, subarray, readout, ngroup, pixel_rate, full_well,
         format=format,

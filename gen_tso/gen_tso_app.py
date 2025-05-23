@@ -84,7 +84,7 @@ phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
 kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
 sed_dict = {
     'phoenix': phoenix_dict,
-    'kurucz': kurucz_dict,
+    'k93models': kurucz_dict,
 }
 
 bands_dict = {
@@ -460,12 +460,12 @@ app_ui = ui.page_fluid(
                 ui.input_select(
                     id="sed_type",
                     label=ui.output_ui('stellar_sed_label'),
-                    choices=[
-                        "phoenix",
-                        "kurucz",
-                        "blackbody",
-                        "input",
-                    ],
+                    choices={
+                        "phoenix": "phoenix",
+                        "k93models": "kurucz (k93models)",
+                        "blackbody": "blackbody",
+                        "input": "input",
+                    },
                     selected='phoenix',
                 ),
                 ui.input_select(
@@ -1170,7 +1170,7 @@ def server(input, output, session):
         sat_label = make_saturation_label(
             mode, aperture, disperser, filter, subarray, order, sed_label,
         )
-        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+        pixel_rate, full_well = jwst.extract_flux_rate(tso, get_max=True)
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate=pixel_rate,
             full_well=full_well,
@@ -1294,8 +1294,6 @@ def server(input, output, session):
         norm_band = tso['norm_band']
         norm_mag = str(tso['norm_mag'])
         sed_type = tso['sed_type']
-        if sed_type == 'k93models':
-            sed_type = 'kurucz'
 
         if name != current_target:
             if name not in cache_target:
@@ -2559,14 +2557,9 @@ def server(input, output, session):
             return
 
         req_saturation = saturation_fraction.get()
-        # jwst.integration_time() is not accurate for the purpose of
-        # calculating the max ngroup before saturation (for NIRCam non-RAPID)
-        # Do it this way to replicate the ETC's output
-        dt_integ = (
-            jwst.integration_time(inst, subarray, readout, ngroup=3) -
-            jwst.integration_time(inst, subarray, readout, ngroup=2)
-        sat_fraction = 100 * pixel_rate * dt_integ / full_well
-        ngroup_req = int(req_saturation/sat_fraction)
+        ngroup_req = jwst.groups_below_saturation(
+            req_saturation, inst, subarray, readout, pixel_rate, full_well,
+        )
 
         if mode == 'target_acq':
             choices = detector.get_constrained_val('groups', subarray=subarray)
