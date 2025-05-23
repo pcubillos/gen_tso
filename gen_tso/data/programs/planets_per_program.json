@@ -226,6 +226,9 @@
         "disperser": "CLEAR,GRISMR",
         "filter": "WLP4,F444W"
     },
+    "2488_1": {
+        "event": "phase curve"
+    },
     "2512_21": {
         "category": "GO",
         "pid": "2512",

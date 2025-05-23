@@ -84,7 +84,7 @@ def get_auto_sed(input):
 
 
 def get_saturation_values(
-        inst, mode, aperture, disperser, filter, subarray, order,
+        mode, aperture, disperser, filter, subarray, order,
         sed_label, norm_mag,
         cache_saturation,
     ):
@@ -92,7 +92,7 @@ def get_saturation_values(
     Get pixel_rate and full_well from instrumental settings.
     """
     sat_label = make_saturation_label(
-        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        mode, aperture, disperser, filter, subarray, order, sed_label,
     )
 
     sed_items = sat_label.split('_')
@@ -306,7 +306,7 @@ def parse_sed(input, spectra, target_acq_mag=None):
         norm_band = 'gaia,g'
         norm_magnitude = target_acq_mag
 
-    if sed_type in ['phoenix', 'kurucz']:
+    if sed_type in sed_dict:
         if target_acq_mag is None:
             sed_model = input.sed.get()
         else:

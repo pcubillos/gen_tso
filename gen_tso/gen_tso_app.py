@@ -1168,7 +1168,7 @@ def server(input, output, session):
 
         # Update report
         sat_label = make_saturation_label(
-            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+            mode, aperture, disperser, filter, subarray, order, sed_label,
         )
         pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
         cache_saturation[sat_label] = dict(
@@ -1325,7 +1325,7 @@ def server(input, output, session):
                 tso['t_eff']!=input.t_eff.get() or
                 tso['log_g'] != input.log_g.get()
             )
-            if sed_type in ['kurucz', 'phoenix']:
+            if sed_type in sed_dict:
                 if reset_sed:
                     preset_sed.set(tso['sed_model'])
                 else:
@@ -2082,7 +2082,7 @@ def server(input, output, session):
     @reactive.event(input.sed_type, input.t_eff, input.log_g, update_sed_flag)
     def choose_sed():
         sed_type = input.sed_type.get()
-        if sed_type in ['phoenix', 'kurucz']:
+        if sed_type in sed_dict:
             choices, selected = get_auto_sed(input)
             if preset_sed.get() is not None:
                 selected = preset_sed.get()
@@ -2459,7 +2459,7 @@ def server(input, output, session):
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         sat_label = make_saturation_label(
-            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+            mode, aperture, disperser, filter, subarray, order, sed_label,
         )
 
         pando = jwst.PandeiaCalculation(inst, mode)
@@ -2524,10 +2524,10 @@ def server(input, output, session):
     def ngroup_from_saturation_fraction():
         config = parse_instrument(
             input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
-            'subarray', 'readout', 'order', 'ngroup', 'detector',
+            'subarray', 'readout', 'order', 'detector',
         )
         inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
-        order, ngroup, detector = config[7:]
+        order, detector = config[7:]
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
@@ -2552,7 +2552,7 @@ def server(input, output, session):
             return
 
         pixel_rate, full_well = get_saturation_values(
-            inst, mode, aperture, disperser, filter, subarray, order,
+            mode, aperture, disperser, filter, subarray, order,
             sed_label, norm_mag, cache_saturation,
         )
         if pixel_rate is None:
@@ -2565,7 +2565,6 @@ def server(input, output, session):
         dt_integ = (
             jwst.integration_time(inst, subarray, readout, ngroup=3) -
             jwst.integration_time(inst, subarray, readout, ngroup=2)
-        )
         sat_fraction = 100 * pixel_rate * dt_integ / full_well
         ngroup_req = int(req_saturation/sat_fraction)
 
@@ -2816,7 +2815,7 @@ def server(input, output, session):
             input, spectra, target_acq_mag=target_acq_mag,
         )
         pixel_rate, full_well = get_saturation_values(
-            inst, mode, aperture, disperser, filter, subarray, order,
+            mode, aperture, disperser, filter, subarray, order,
             sed_label, norm_mag, cache_saturation,
         )
         if pixel_rate is not None:

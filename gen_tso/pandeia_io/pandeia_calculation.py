@@ -515,7 +515,7 @@ class PandeiaCalculation():
                 if not isinstance(order, list):
                     order = [order]
             sat_guess_label = make_saturation_label(
-                inst, mode, aperture, disperser,
+                mode, aperture, disperser,
                 filter, subarray, order,
                 sed_label,
             )

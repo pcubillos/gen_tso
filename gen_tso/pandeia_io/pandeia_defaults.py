@@ -997,28 +997,30 @@ def make_detector_label(
 
 
 def make_saturation_label(
-        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        mode, aperture, disperser, filter, subarray,
+        order='', sed_label='',
     ):
     """
     Make a label of unique saturation setups to identify when and
     when not the saturation level can be estimated.
     """
-    sat_label = f'{mode}_{filter}'
     if mode == 'bots':
-        sat_label = f'{sat_label}_{disperser}_{subarray}'
+        sat_label = f'_{disperser}_{subarray}'
     elif mode == 'soss':
         order = f'_O{order[0]}' if len(order)==1 else ''
-        sat_label = f'{sat_label}{order}'
+        sat_label = f'{order}'
     elif mode == 'sw_tsgrism':
-        sat_label = f'{sat_label}_{aperture}_{subarray}'
+        sat_label = f'_{aperture}_{subarray}'
     elif mode == 'sw_ts':
-        sat_label = f'{sat_label}_{aperture}'
+        sat_label = f'_{aperture}'
     elif mode == 'mrs_ts':
-        sat_label = f'{sat_label}_{disperser}'
-    elif mode == 'target_acq' and inst == 'niriss':
-        sat_label = f'{sat_label}_{aperture}'
+        sat_label = f'_{disperser}'
+    elif mode == 'target_acq':
+        sat_label = f'_{aperture}'
+    else:
+         sat_label = ''
 
-    sat_label = f'{sat_label}_{sed_label}'
+    sat_label = f'{mode}_{filter}{sat_label}_{sed_label}'
     return sat_label
 
 
@@ -1108,7 +1110,7 @@ def _load_flux_rate_splines(obs_label=None):
                                 aperture = ''
                             filter = filter.replace('None', '')
                             inst_label = make_saturation_label(
-                                inst, mode, aperture, disperser, filter,
+                                mode, aperture, disperser, filter,
                                 subarray, order, ''
                             )
                             if obs_label is not None and inst_label != i_label:
