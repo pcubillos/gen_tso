@@ -20,12 +20,15 @@ flux_rate_splines, full_wells = _load_flux_rate_splines()
 # Catalog of stellar SEDs:
 p_keys, p_models, p_teff, p_logg = jwst.get_sed_list('phoenix')
 k_keys, k_models, k_teff, k_logg = jwst.get_sed_list('k93models')
+b_keys, b_models, b_teff, b_logg = jwst.get_sed_list('bt_settl')
 
 phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
 kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
+bt_settl_dict = {key:model for key,model in zip(b_keys, b_models)}
 sed_dict = {
     'phoenix': phoenix_dict,
-    'kurucz': kurucz_dict,
+    'k93models': kurucz_dict,
+    'bt_settl': bt_settl_dict,
 }
 
 bands_dict = {
@@ -71,8 +74,6 @@ def get_auto_sed(input):
     """
     sed_type = input.sed_type()
     sed_models = sed_dict[sed_type]
-    if sed_type == 'kurucz':
-        sed_type = 'k93models'
 
     try:
         t_eff = float(input.t_eff.get())
@@ -322,9 +323,6 @@ def parse_sed(input, spectra, target_acq_mag=None):
         if model_label not in spectra['sed']:
             return None, None, None, None, None
         sed_model = spectra['sed'][model_label]
-
-    if sed_type == 'kurucz':
-        sed_type = 'k93models'
 
     # Make a label
     band_name = bands_dict[norm_band].split()[0]

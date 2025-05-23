@@ -4,6 +4,7 @@
 __all__ = [
     'get_instruments',
     'get_modes',
+    'get_sed_types',
     '_spec_modes',
     '_photo_modes',
     '_acq_modes',
@@ -101,6 +102,22 @@ def get_modes(instrument, type=None):
         modes += _acq_modes
 
     return modes
+
+
+def get_sed_types():
+    """
+    Get the list of SED models.
+
+    Returns
+    -------
+    instruments: 1D list of strings
+        JWST instruments
+    """
+    return [
+        'phoenix',
+        'k93models',
+        #'bt_settl',
+    ]
 
 
 
@@ -1094,6 +1111,7 @@ def _load_flux_rate_splines(obs_label=None):
         flux_rate_data[inst] = rates
 
     aper_modes = _photo_modes + ['sw_tsgrism', 'mrs_ts']
+    sed_types = get_sed_types()
 
     flux_rates = {}
     full_wells = {}
@@ -1115,26 +1133,18 @@ def _load_flux_rate_splines(obs_label=None):
                             )
                             if obs_label is not None and inst_label != i_label:
                                 continue
-                            for i,rate in enumerate(sed_rates['phoenix']):
-                                log_rate = np.log10(rate)
-                                sed = sed_rates['p_names'][i]
-                                label = f'{inst_label}phoenix_{sed}'
-                                if obs_label is None:
-                                    flux_rates[label] = CubicSpline(mag, log_rate)
-                                    full_wells[label] = sed_rates['full_well']
-                                elif label == obs_label:
-                                    return CubicSpline(mag, log_rate), sed_rates['full_well']
+                            for sed_type in get_sed_types():
+                                name = sed_type[0] + '_names'
+                                for i,rate in enumerate(sed_rates[sed_type]):
+                                    log_rate = np.log10(rate)
+                                    sed = sed_rates[name][i]
+                                    label = f'{inst_label}{sed_type}_{sed}'
+                                    if obs_label is None:
+                                        flux_rates[label] = CubicSpline(mag, log_rate)
+                                        full_wells[label] = sed_rates['full_well']
+                                    elif label == obs_label:
+                                        return CubicSpline(mag, log_rate), sed_rates['full_well']
 
-
-                            for i,rate in enumerate(sed_rates['k93models']):
-                                log_rate = np.log10(rate)
-                                sed = sed_rates['k_names'][i]
-                                label = f'{inst_label}kurucz_{sed}'
-                                if obs_label is None:
-                                    flux_rates[label] = CubicSpline(mag, log_rate)
-                                    full_wells[label] = sed_rates['full_well']
-                                elif label == obs_label:
-                                    return CubicSpline(mag, log_rate), sed_rates['full_well']
     # Model not found
     if obs_label is not None:
         return None, None
