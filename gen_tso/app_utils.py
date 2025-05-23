@@ -7,6 +7,7 @@ from gen_tso import pandeia_io as jwst
 from gen_tso.pandeia_io.pandeia_defaults import (
     _load_flux_rate_splines,
     get_detector,
+    get_sed_types,
     make_saturation_label,
 )
 
@@ -18,18 +19,14 @@ throughputs = jwst.get_throughputs()
 flux_rate_splines, full_wells = _load_flux_rate_splines()
 
 # Catalog of stellar SEDs:
-p_keys, p_models, p_teff, p_logg = jwst.get_sed_list('phoenix')
-k_keys, k_models, k_teff, k_logg = jwst.get_sed_list('k93models')
-b_keys, b_models, b_teff, b_logg = jwst.get_sed_list('bt_settl')
+sed_dict = {}
+for sed_type in get_sed_types():
+    sed_keys, sed_models, _, _ = jwst.get_sed_list(sed_type)
+    sed_dict[sed_type] = {
+        key: model
+        for key,model in zip(sed_keys, sed_models)
+    }
 
-phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
-kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
-bt_settl_dict = {key:model for key,model in zip(b_keys, b_models)}
-sed_dict = {
-    'phoenix': phoenix_dict,
-    'k93models': kurucz_dict,
-    'bt_settl': bt_settl_dict,
-}
 
 bands_dict = {
     '2mass,j': 'J mag',

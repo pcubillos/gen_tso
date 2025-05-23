@@ -35,6 +35,7 @@ import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
     _load_flux_rate_splines,
     get_detector,
+    get_sed_types,
     make_obs_label,
     make_saturation_label,
     make_save_label,
@@ -77,15 +78,13 @@ catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 nplanets = len(catalog.targets)
 
 # Catalog of stellar SEDs:
-p_keys, p_models, p_teff, p_logg = jwst.get_sed_list('phoenix')
-k_keys, k_models, k_teff, k_logg = jwst.get_sed_list('k93models')
-
-phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
-kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
-sed_dict = {
-    'phoenix': phoenix_dict,
-    'k93models': kurucz_dict,
-}
+sed_dict = {}
+for sed_type in get_sed_types():
+    sed_keys, sed_models, _, _ = jwst.get_sed_list(sed_type)
+    sed_dict[sed_type] = {
+        key: model
+        for key,model in zip(sed_keys, sed_models)
+    }
 
 bands_dict = {
     '2mass,j': 'J mag',
@@ -1333,7 +1332,8 @@ def server(input, output, session):
 
         if target_focus == 'acquisition':
             selected = tso['sed_model']
-            ui.update_select('ta_sed', choices=phoenix_dict, selected=selected)
+            choices = sed_dict['phoenix']
+            ui.update_select('ta_sed', choices=choices, selected=selected)
             target = catalog.get_target(name, is_transit=None, is_confirmed=None)
             selected = cache_acquisition[target.host]['selected']
         # The observation
@@ -2967,7 +2967,8 @@ def server(input, output, session):
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
         chosen_sed = jwst.find_closest_sed(t_eff, log_g, sed_type='phoenix')
-        ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
+        choices = sed_dict['phoenix']
+        ui.update_select('ta_sed', choices=choices, selected=chosen_sed)
 
         deselect_targets = {'event': 'deselectAllShapes'}
         select_acq_target = {
