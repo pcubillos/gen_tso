@@ -630,7 +630,7 @@ def groups_below_saturation(
         readout = config['detector']['readout_pattern']
 
     if flux_rate is None:
-        flux_rate, full_well = extract_flux_rate(
+        flux_rate, full_well = estimate_flux_rate(
             sed_type, sed_model, ks_mag,
             mode, aperture, disperser, filter, subarray, order,
         )
@@ -655,7 +655,10 @@ def groups_below_saturation(
     ngroups = []
     for saturation in req_saturations:
         m = 1 + (saturation/100.0 - sat_1group) / sat_dt
-        ngroups.append(int(m))
+        if np.isfinite(m):
+            ngroups.append(int(m))
+        else:
+            ngroups.append(0)
 
     if not isinstance(req_saturation, Iterable):
         ngroups = ngroups[0]

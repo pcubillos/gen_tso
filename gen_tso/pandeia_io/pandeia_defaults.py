@@ -1110,7 +1110,6 @@ def _load_flux_rate_splines(obs_label=None):
         flux_rate_data[inst] = rates
 
     aper_modes = _photo_modes + ['sw_tsgrism', 'mrs_ts']
-    sed_types = get_sed_types()
 
     flux_rates = {}
     full_wells = {}
