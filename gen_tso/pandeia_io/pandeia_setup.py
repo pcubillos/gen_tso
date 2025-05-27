@@ -23,6 +23,7 @@ stsci_url = 'https://archive.stsci.edu/hlsps/reference-atlases/'
 syn1 = 'hlsp_reference-atlases_hst_multi_everything_multi_v16_sed.tar'
 syn4 = 'hlsp_reference-atlases_hst_multi_kurucz-1993-atlas_multi_v2_synphot4.tar'
 syn5 = 'hlsp_reference-atlases_hst_multi_pheonix-models_multi_v3_synphot5.tar'
+syno = 'hlsp_reference-atlases_hst_multi_other-spectra_multi_v2_sed.tar'
 
 
 def check_latest_pandeia_version():
@@ -99,6 +100,7 @@ def check_pysynphot():
         'throughput': os.path.exists(f'{cdbs_path}/comp'),
         'Kurucz SED': os.path.exists(f'{cdbs_path}/grid/k93models/'),
         'PHOENIX SED': os.path.exists(f'{cdbs_path}/grid/phoenix/'),
+        'BT Settl SED': os.path.exists(f'{cdbs_path}/grid/phoenixBTS11_15/'),
     }
 
     lost = []
@@ -202,6 +204,7 @@ def update_synphot_files(force_update=False):
         'throughput': os.path.exists(f'{synphot_path}/comp'),
         'Kurucz SED': os.path.exists(f'{synphot_path}/grid/k93models/'),
         'PHOENIX SED': os.path.exists(f'{synphot_path}/grid/phoenix/'),
+        'BT Settl SED': os.path.exists(f'{synphot_path}/grid/phoenixBTS11_15/'),
     }
 
     warnings = []
@@ -209,6 +212,8 @@ def update_synphot_files(force_update=False):
         warnings.append(fetch_synphot_files('k93models', synphot_path))
     if not atlases['PHOENIX SED'] or force_update:
         warnings.append(fetch_synphot_files('phoenix', synphot_path))
+    if not atlases['BT Settl SED'] or force_update:
+        warnings.append(fetch_synphot_files('bt_settl', synphot_path))
     if not atlases['throughput'] or force_update:
         warnings.append(fetch_synphot_files('throughput', synphot_path))
 
@@ -218,14 +223,15 @@ def update_synphot_files(force_update=False):
 
 def fetch_synphot_files(synphot_file, synphot_path=None):
     """
-    Download Kurucz or PHOENIX SED tar files from STScI.
-    Unzip tar file.
-    Place k93models/ or phoenix/ folder into $PYSYN_CDBS/trds/grid/
+    - Download Kurucz, PHOENIX, BT-Settl SED tar files from STScI.
+    - Unzip tar file.
+    - Place data to respective subfolders in $PYSYN_CDBS/trds/grid/
+    - Remove tmp downloaded files
 
     Parameters
     ----------
     sed: String
-        Select from 'k93models', 'phoenix', or 'throughput'.
+        Select from 'k93models', 'phoenix', 'bt_settl', or 'throughput'.
 
     Returns
     -------
@@ -246,6 +252,8 @@ def fetch_synphot_files(synphot_file, synphot_path=None):
         url = f'{stsci_url}{syn4}'
     elif synphot_file == 'phoenix':
         url = f'{stsci_url}{syn5}'
+    elif synphot_file == 'bt_settl':
+        url = f'{stsci_url}{syno}'
     elif synphot_file == 'throughput':
         url = f'{stsci_url}{syn1}'
     else:
@@ -272,10 +280,18 @@ def fetch_synphot_files(synphot_file, synphot_path=None):
         shutil.rmtree(tmp_dir)
     with tarfile.open(tmp_tar_file, "r") as tar:
         tar.extractall(path=tmp_dir)
-    shutil.copytree(
-        f'{tmp_dir}/grp/redcat/trds/', synphot_path,
-        dirs_exist_ok=True,
-    )
+
+    if synphot_file == 'bt_settl':
+        shutil.copytree(
+            f'{tmp_dir}/grp/redcat/trds/source',
+            f'{synphot_path}/grid/phoenixBTS11_15',
+            dirs_exist_ok=True,
+        )
+    else:
+        shutil.copytree(
+            f'{tmp_dir}/grp/redcat/trds/', synphot_path,
+            dirs_exist_ok=True,
+        )
     shutil.rmtree(tmp_dir)
     os.remove(tmp_tar_file)
     print(f'{synphot_file} files updated!')
