@@ -74,7 +74,7 @@ def get_latest_pandeia_release():
                 if '/' in version:
                     version = version[0:version.index('/')]
                 return version.strip()
-    # hard-coded default, need to be kept up to date manually:
+    # Fail-safe, hard-coded JWST default, need to be kept up to date manually:
     return '2025.3'
 
 

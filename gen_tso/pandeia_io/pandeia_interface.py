@@ -12,6 +12,7 @@ __all__ = [
     'groups_below_saturation',
     'get_sed_list',
     'find_closest_sed',
+    'find_nearby_seds',
     'make_scene',
     'extract_sed',
     'blackbody_eclipse_depth',
@@ -672,7 +673,7 @@ def get_sed_list(source):
     Parameters
     ----------
     source: String
-        SED source: 'phoenix' or 'k93models'
+        SED source: 'phoenix', 'k93models', or 'bt_settl'.
 
     Returns
     -------
@@ -688,23 +689,28 @@ def get_sed_list(source):
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
-    >>> # PHOENIX models
-    >>> keys, names, teff, log_g = jwst.get_sed_list('phoenix')
     >>> # Kurucz models
     >>> keys, names, teff, log_g = jwst.get_sed_list('k93models')
+    >>> # PHOENIX models
+    >>> keys, names, teff, log_g = jwst.get_sed_list('phoenix')
+    >>> # BT-Settl models
+    >>> keys, names, teff, log_g = jwst.get_sed_list('bt_settl')
     """
     sed_path = sed.default_refdata_directory
     with open(f'{sed_path}/sed/{source}/spectra.json', 'r') as f:
         info = json.load(f)
     names = np.array([model['display_string'] for model in info.values()])
+
     if source == 'bt_settl':
         teff = np.array([model.split()[1] for model in names], dtype=float)
         log_g = np.array([model.split()[2] for model in names], dtype=float)
     else:
         teff = np.array([model['teff'] for model in info.values()])
         log_g = np.array([model['log_g'] for model in info.values()])
+
     keys = np.array(list(info.keys()))
     tsort = np.argsort(teff)[::-1]
+
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
 
 
@@ -749,6 +755,112 @@ def find_closest_sed(teff, logg, sed_type='phoenix'):
     )
     idx = np.argmin(cost)
     return keys[idx]
+
+
+def find_nearby_seds(teff, dt=200.0, sed_type='all'):
+    """
+    Show all SED models with temperatures in range teff +/- dt.
+    Highlight the closest(s) one(s) to teff with asterisks.
+    Return the parameters of the closest SED.
+
+    Parameters
+    ----------
+    teff: float
+        Target effective temperature.
+    dt: float
+        Temperature range around teff to explore.
+    sed_type: String or iterable of strings.
+        Select one from 'phoenix', 'k93models', or 'bt_settl'.
+        Or, select 'all' to consider all SED types.
+        Or, provide a list with the SED types to consider.
+
+    Returns
+    -------
+    model: Tuple
+        A tuple with the (sed type, sed key, temperature, log_g) of
+        the model closes to teff  Note there can be multiple models at
+        same distance from teff, only one is returned.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # Kurucz models
+    >>> sed = jwst.find_nearby_seds(teff=5100.0, dt=700, sed_type='k93models')
+    SED key      teff  logg  SED type
+    -----------  ----------  -----------
+    'k4v'        4560   4.5  'k93models'
+    'g5i'        4850   1.1  'k93models'
+    'k0v'        5250   4.5  'k93models'  **
+    'g8v'        5570   4.5  'k93models'
+    'g5v'        5770   4.5  'k93models'
+
+    >>> # All models
+    >>> sed = jwst.find_nearby_seds(teff=3600.0, dt=200, sed_type='all')
+    SED key      teff  logg  SED type
+    -----------  ----------  -----------
+    'm3.5-3400'  3400   5.0  'bt_settl'
+    'm2v'        3500   4.6  'k93models'  **
+    'm2i'        3500   0.0  'phoenix'    **
+    'm5v'        3500   5.0  'phoenix'    **
+    'm2.5'       3500   5.0  'bt_settl'   **
+    'm2v'        3500   4.5  'phoenix'    **
+    'k5i'        3750   0.5  'phoenix'
+    'm0v'        3750   4.5  'phoenix'
+    'm0iii'      3750   1.5  'phoenix'
+    'm0i'        3750   0.0  'phoenix'
+
+    >>> # PHOENIX + BT-Settl models
+    >>> sed = jwst.find_nearby_seds(
+    >>>     teff=3320.0, dt=250, sed_type=['phoenix', 'bt_settl'],
+    >>> )
+    SED key      teff  logg  SED type
+    -----------  ----------  -----------
+    'm4.5-3100'  3100   5.0  'bt_settl'
+    'm4.5-3200'  3200   5.0  'bt_settl'
+    'm3.5-3300'  3300   5.0  'bt_settl'   **
+    'm3.5-3400'  3400   5.0  'bt_settl'
+    'm2.5'       3500   5.0  'bt_settl'
+    'm5v'        3500   5.0  'phoenix'
+    'm2i'        3500   0.0  'phoenix'
+    'm2v'        3500   4.5  'phoenix'
+    """
+    sed_types = get_sed_types()
+    if sed_type == 'any' or sed_type=='all':
+        sed_type = sed_types
+    elif isinstance(sed_type, str):
+        sed_type = [sed_type]
+
+    for type in sed_type:
+        if type not in sed_types:
+            raise ValueError(
+                f'Invalid sed_type {repr(sed_type)}, select from {sed_types}'
+            )
+
+    models = []
+    for sed_t in sed_type:
+        keys, names, models_teff, logg = get_sed_list(sed_t)
+        nmodels = len(keys)
+        for i in range(nmodels):
+            if np.abs(models_teff[i]-teff) <= dt:
+                model = (str(sed_t), keys[i], models_teff[i], logg[i])
+                models.append(model)
+
+    temps = [model[2] for model in models]
+    i_min = np.argmin(np.abs(np.array(temps)-teff))
+    dt_min = np.abs(temps[i_min]-teff)
+    closest_model = models[i_min]
+
+    isort = np.argsort(temps)
+    models = [models[i] for i in isort]
+    print('SED key      teff  logg  SED type')
+    print('-----------  ----------  -----------')
+    for model in models:
+         sed, key, temp, logg = model
+         suff = '  **' if np.abs(temp-teff)==dt_min else ''
+         print(f'{repr(str(key)):11}  {temp:4.0f}   {logg:.1f}  {repr(sed):11}{suff}')
+
+    return closest_model
 
 
 def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
