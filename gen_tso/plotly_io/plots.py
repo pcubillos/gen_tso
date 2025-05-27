@@ -132,7 +132,7 @@ def plotly_filters(
 
     show_all_subarrays = {
         'lrsslitless': 'slitlessprism',
-        'sw_tsgrism': 'sub40stripe1_dhs',
+        'sw_tsgrism': 'sub41s1_2-spectra',
         'lw_tsgrism': 'subgrism64',
         'bots': 'sub2048',
         'soss': 'substrip256',
@@ -177,7 +177,10 @@ def plotly_filters(
             if hide and 'prism' not in filter:
                 visible[i] = 'legendonly'
     elif mode_name in ['lw_tsgrism', 'sw_tsgrism']:
-        nircam_visibles = ['f070w', 'f090w', 'f150w2', 'f322w2', 'f444w']
+        nircam_visibles = [
+            'f070w', 'f090w', 'f150w2', 'f200w',
+            'f322w2', 'f444w',
+        ]
         for i,filter in enumerate(all_filters[inst_name].keys()):
             if filter != filter_name and filter not in nircam_visibles:
                 visible[i] = 'legendonly'
