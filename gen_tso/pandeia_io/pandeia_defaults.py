@@ -116,9 +116,8 @@ def get_sed_types():
     return [
         'phoenix',
         'k93models',
-        #'bt_settl',
+        'bt_settl',
     ]
-
 
 
 # Spectra extraction apertures (arcsec) based on values reported in:
@@ -1134,7 +1133,9 @@ def _load_flux_rate_splines(obs_label=None):
                             if obs_label is not None and inst_label != i_label:
                                 continue
                             for sed_type in get_sed_types():
-                                name = sed_type[0] + '_names'
+                                if sed_type not in sed_rates:
+                                    continue
+                                name = f'{sed_type}_names'
                                 for i,rate in enumerate(sed_rates[sed_type]):
                                     log_rate = np.log10(rate)
                                     sed = sed_rates[name][i]

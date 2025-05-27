@@ -462,6 +462,7 @@ app_ui = ui.page_fluid(
                     choices={
                         "phoenix": "phoenix",
                         "k93models": "kurucz (k93models)",
+                        "bt_settl": "BT-Settl MLT (bt_settl)",
                         "blackbody": "blackbody",
                         "input": "input",
                     },
