@@ -1694,6 +1694,12 @@ def server(input, output, session):
                 placeholder='select a folder',
                 width='100%',
             ),
+            ui.input_checkbox(
+                id="is_light",
+                label="Remove '2d' and '3d' fields (much smaller file size)",
+                value=True,
+                width='100%',
+            ),
             ui.input_action_button(
                 id='tso_save_button',
                 label='Save to file',
@@ -1723,8 +1729,8 @@ def server(input, output, session):
         if savefile.suffix == '':
             savefile = savefile.parent / f'{savefile.name}.pickle'
 
-        with open(savefile, 'wb') as handle:
-            pickle.dump(tso_run['tso'], handle, protocol=4)
+        is_light = input.is_light.get()
+        jwst.save_tso(savefile, tso_run['tso'], lightweight=is_light)
         ui.modal_remove()
         ui.notification_show(
             f"TSO model saved to file: '{savefile}'",
@@ -2122,10 +2128,12 @@ def server(input, output, session):
 
         icons = [
             sed_icon,
+            #fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
             'Bookmark SED',
+            #'Clear all SED bookmarks',
             'Upload SED',
         ]
         return cs.label_tooltip_button(
@@ -2134,6 +2142,7 @@ def server(input, output, session):
             tooltips=texts,
             button_ids=['sed_bookmark', 'upload_sed']
         )
+
 
     @reactive.Effect
     @reactive.event(input.sed_bookmark)
