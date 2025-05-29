@@ -194,10 +194,33 @@ archivePrefix = {arXiv},
 We welcome your feedback or inquiries, please raise issues on the [Github repository](https://github.com/pcubillos/gen_tso/issues) or refer them to: <br>
 Patricio Cubillos (`patricio.cubillos[at]oeaw.ac.at`)
 
+---
+
 Find more information in the links below:
 
-- [Installation](install.qmd)
-- [Getting Started](get_started.qmd)
-- [Tutorials](tutorials.qmd)
-- [API Reference](api)
+<div style="display: flex; justify-content: center; gap: 3.5rem; margin: 2rem 0; text-align: center; font-weight: bold; font-size: 1.1rem;">
+
+  <a href="install.html" style="text-decoration: none; color: #666666;">
+      <i class="fa-solid fa-download" style="font-size: 3.5rem; color: #4169E1;"></i><br>
+      Install
+  </a>
+
+  <a href="get_started.html" style="text-decoration: none; color: #666666;">
+      <i class="fa-solid fa-rocket" style="font-size: 3.5rem; color: #4169E1;"></i><br>
+      Tutorials
+  </a>
+
+  <a href="tutorials.html" style="text-decoration: none; color: #666666;">
+      <i class="fa-solid fa-book" style="font-size: 3.5rem; color: #4169E1;"></i><br>
+      Tutorials
+  </a>
+
+  <a href="api.html" style="text-decoration: none; color: #666666;">
+      <i class="fa-solid fa-code" style="font-size: 3.5rem; color: #4169E1;"></i><br>
+      API
+  </a>
+
+</div>
+
+---
 
