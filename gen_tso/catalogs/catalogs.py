@@ -195,7 +195,7 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
 
     Parameters
     ----------
-    databases: String
+    database: String
         nea_data.txt or tess_data.txt
 
     Returns

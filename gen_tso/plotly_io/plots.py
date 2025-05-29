@@ -104,7 +104,7 @@ def plotly_filters(
         Instrument to plot/highlight
     mode_name: String
         Mode to plot/highlight
-    subarray: String
+    subarray_name: String
         Subarray to plot the passband.
     filter_name: String
         Filter to plot.
