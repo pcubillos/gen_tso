@@ -35,6 +35,7 @@ import gen_tso.catalogs.utils as u
 from gen_tso.pandeia_io.pandeia_defaults import (
     _load_flux_rate_splines,
     get_detector,
+    get_sed_types,
     make_obs_label,
     make_saturation_label,
     make_save_label,
@@ -77,15 +78,13 @@ catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 nplanets = len(catalog.targets)
 
 # Catalog of stellar SEDs:
-p_keys, p_models, p_teff, p_logg = jwst.get_sed_list('phoenix')
-k_keys, k_models, k_teff, k_logg = jwst.get_sed_list('k93models')
-
-phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
-kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
-sed_dict = {
-    'phoenix': phoenix_dict,
-    'kurucz': kurucz_dict,
-}
+sed_dict = {}
+for sed_type in get_sed_types():
+    sed_keys, sed_models, _, _ = jwst.get_sed_list(sed_type)
+    sed_dict[sed_type] = {
+        key: model
+        for key,model in zip(sed_keys, sed_models)
+    }
 
 bands_dict = {
     '2mass,j': 'J mag',
@@ -460,12 +459,13 @@ app_ui = ui.page_fluid(
                 ui.input_select(
                     id="sed_type",
                     label=ui.output_ui('stellar_sed_label'),
-                    choices=[
-                        "phoenix",
-                        "kurucz",
-                        "blackbody",
-                        "input",
-                    ],
+                    choices={
+                        "phoenix": "phoenix",
+                        "k93models": "kurucz (k93models)",
+                        "bt_settl": "BT-Settl MLT (bt_settl)",
+                        "blackbody": "blackbody",
+                        "input": "input",
+                    },
                     selected='phoenix',
                 ),
                 ui.input_select(
@@ -1168,9 +1168,9 @@ def server(input, output, session):
 
         # Update report
         sat_label = make_saturation_label(
-            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+            mode, aperture, disperser, filter, subarray, order, sed_label,
         )
-        pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+        pixel_rate, full_well = jwst.extract_flux_rate(tso, get_max=True)
         cache_saturation[sat_label] = dict(
             brightest_pixel_rate=pixel_rate,
             full_well=full_well,
@@ -1294,8 +1294,6 @@ def server(input, output, session):
         norm_band = tso['norm_band']
         norm_mag = str(tso['norm_mag'])
         sed_type = tso['sed_type']
-        if sed_type == 'k93models':
-            sed_type = 'kurucz'
 
         if name != current_target:
             if name not in cache_target:
@@ -1325,7 +1323,7 @@ def server(input, output, session):
                 tso['t_eff']!=input.t_eff.get() or
                 tso['log_g'] != input.log_g.get()
             )
-            if sed_type in ['kurucz', 'phoenix']:
+            if sed_type in sed_dict:
                 if reset_sed:
                     preset_sed.set(tso['sed_model'])
                 else:
@@ -1335,7 +1333,8 @@ def server(input, output, session):
 
         if target_focus == 'acquisition':
             selected = tso['sed_model']
-            ui.update_select('ta_sed', choices=phoenix_dict, selected=selected)
+            choices = sed_dict['phoenix']
+            ui.update_select('ta_sed', choices=choices, selected=selected)
             target = catalog.get_target(name, is_transit=None, is_confirmed=None)
             selected = cache_acquisition[target.host]['selected']
         # The observation
@@ -1695,6 +1694,12 @@ def server(input, output, session):
                 placeholder='select a folder',
                 width='100%',
             ),
+            ui.input_checkbox(
+                id="is_light",
+                label="Remove '2d' and '3d' fields (much smaller file size)",
+                value=True,
+                width='100%',
+            ),
             ui.input_action_button(
                 id='tso_save_button',
                 label='Save to file',
@@ -1724,8 +1729,8 @@ def server(input, output, session):
         if savefile.suffix == '':
             savefile = savefile.parent / f'{savefile.name}.pickle'
 
-        with open(savefile, 'wb') as handle:
-            pickle.dump(tso_run['tso'], handle, protocol=4)
+        is_light = input.is_light.get()
+        jwst.save_tso(savefile, tso_run['tso'], lightweight=is_light)
         ui.modal_remove()
         ui.notification_show(
             f"TSO model saved to file: '{savefile}'",
@@ -2082,7 +2087,7 @@ def server(input, output, session):
     @reactive.event(input.sed_type, input.t_eff, input.log_g, update_sed_flag)
     def choose_sed():
         sed_type = input.sed_type.get()
-        if sed_type in ['phoenix', 'kurucz']:
+        if sed_type in sed_dict:
             choices, selected = get_auto_sed(input)
             if preset_sed.get() is not None:
                 selected = preset_sed.get()
@@ -2123,10 +2128,12 @@ def server(input, output, session):
 
         icons = [
             sed_icon,
+            #fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
             'Bookmark SED',
+            #'Clear all SED bookmarks',
             'Upload SED',
         ]
         return cs.label_tooltip_button(
@@ -2135,6 +2142,7 @@ def server(input, output, session):
             tooltips=texts,
             button_ids=['sed_bookmark', 'upload_sed']
         )
+
 
     @reactive.Effect
     @reactive.event(input.sed_bookmark)
@@ -2459,7 +2467,7 @@ def server(input, output, session):
 
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         sat_label = make_saturation_label(
-            inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+            mode, aperture, disperser, filter, subarray, order, sed_label,
         )
 
         pando = jwst.PandeiaCalculation(inst, mode)
@@ -2524,10 +2532,10 @@ def server(input, output, session):
     def ngroup_from_saturation_fraction():
         config = parse_instrument(
             input, 'instrument', 'mode', 'aperture', 'disperser', 'filter',
-            'subarray', 'readout', 'order', 'ngroup', 'detector',
+            'subarray', 'readout', 'order', 'detector',
         )
         inst, mode, aperture, disperser, filter, subarray, readout = config[0:7]
-        order, ngroup, detector = config[7:]
+        order, detector = config[7:]
 
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
@@ -2552,22 +2560,16 @@ def server(input, output, session):
             return
 
         pixel_rate, full_well = get_saturation_values(
-            inst, mode, aperture, disperser, filter, subarray, order,
+            mode, aperture, disperser, filter, subarray, order,
             sed_label, norm_mag, cache_saturation,
         )
         if pixel_rate is None:
             return
 
         req_saturation = saturation_fraction.get()
-        # jwst.integration_time() is not accurate for the purpose of
-        # calculating the max ngroup before saturation (for NIRCam non-RAPID)
-        # Do it this way to replicate the ETC's output
-        dt_integ = (
-            jwst.integration_time(inst, subarray, readout, ngroup=3) -
-            jwst.integration_time(inst, subarray, readout, ngroup=2)
+        ngroup_req = jwst.groups_below_saturation(
+            req_saturation, inst, subarray, readout, pixel_rate, full_well,
         )
-        sat_fraction = 100 * pixel_rate * dt_integ / full_well
-        ngroup_req = int(req_saturation/sat_fraction)
 
         if mode == 'target_acq':
             choices = detector.get_constrained_val('groups', subarray=subarray)
@@ -2816,7 +2818,7 @@ def server(input, output, session):
             input, spectra, target_acq_mag=target_acq_mag,
         )
         pixel_rate, full_well = get_saturation_values(
-            inst, mode, aperture, disperser, filter, subarray, order,
+            mode, aperture, disperser, filter, subarray, order,
             sed_label, norm_mag, cache_saturation,
         )
         if pixel_rate is not None:
@@ -2975,7 +2977,8 @@ def server(input, output, session):
         t_eff = target_list[2][idx]
         log_g = target_list[3][idx]
         chosen_sed = jwst.find_closest_sed(t_eff, log_g, sed_type='phoenix')
-        ui.update_select('ta_sed', choices=phoenix_dict, selected=chosen_sed)
+        choices = sed_dict['phoenix']
+        ui.update_select('ta_sed', choices=choices, selected=chosen_sed)
 
         deselect_targets = {'event': 'deselectAllShapes'}
         select_acq_target = {

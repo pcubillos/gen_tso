@@ -7,6 +7,7 @@ from gen_tso import pandeia_io as jwst
 from gen_tso.pandeia_io.pandeia_defaults import (
     _load_flux_rate_splines,
     get_detector,
+    get_sed_types,
     make_saturation_label,
 )
 
@@ -18,15 +19,14 @@ throughputs = jwst.get_throughputs()
 flux_rate_splines, full_wells = _load_flux_rate_splines()
 
 # Catalog of stellar SEDs:
-p_keys, p_models, p_teff, p_logg = jwst.get_sed_list('phoenix')
-k_keys, k_models, k_teff, k_logg = jwst.get_sed_list('k93models')
+sed_dict = {}
+for sed_type in get_sed_types():
+    sed_keys, sed_models, _, _ = jwst.get_sed_list(sed_type)
+    sed_dict[sed_type] = {
+        key: model
+        for key,model in zip(sed_keys, sed_models)
+    }
 
-phoenix_dict = {key:model for key,model in zip(p_keys, p_models)}
-kurucz_dict = {key:model for key,model in zip(k_keys, k_models)}
-sed_dict = {
-    'phoenix': phoenix_dict,
-    'kurucz': kurucz_dict,
-}
 
 bands_dict = {
     '2mass,j': 'J mag',
@@ -71,8 +71,6 @@ def get_auto_sed(input):
     """
     sed_type = input.sed_type()
     sed_models = sed_dict[sed_type]
-    if sed_type == 'kurucz':
-        sed_type = 'k93models'
 
     try:
         t_eff = float(input.t_eff.get())
@@ -84,7 +82,7 @@ def get_auto_sed(input):
 
 
 def get_saturation_values(
-        inst, mode, aperture, disperser, filter, subarray, order,
+        mode, aperture, disperser, filter, subarray, order,
         sed_label, norm_mag,
         cache_saturation,
     ):
@@ -92,7 +90,7 @@ def get_saturation_values(
     Get pixel_rate and full_well from instrumental settings.
     """
     sat_label = make_saturation_label(
-        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        mode, aperture, disperser, filter, subarray, order, sed_label,
     )
 
     sed_items = sat_label.split('_')
@@ -306,7 +304,7 @@ def parse_sed(input, spectra, target_acq_mag=None):
         norm_band = 'gaia,g'
         norm_magnitude = target_acq_mag
 
-    if sed_type in ['phoenix', 'kurucz']:
+    if sed_type in sed_dict:
         if target_acq_mag is None:
             sed_model = input.sed.get()
         else:
@@ -322,9 +320,6 @@ def parse_sed(input, spectra, target_acq_mag=None):
         if model_label not in spectra['sed']:
             return None, None, None, None, None
         sed_model = spectra['sed'][model_label]
-
-    if sed_type == 'kurucz':
-        sed_type = 'k93models'
 
     # Make a label
     band_name = bands_dict[norm_band].split()[0]

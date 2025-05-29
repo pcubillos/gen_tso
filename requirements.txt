@@ -3,7 +3,7 @@ pandeia.engine>=2025.3
 numpy>=1.17
 scipy<1.15
 requests>=2.19.1
-astroquery
+astroquery>=0.4.8
 astropy>=5.3.0
 pandas
 plotly

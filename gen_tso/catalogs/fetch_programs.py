@@ -210,10 +210,10 @@ def update_jwst_programs():
         _fetch_programs(programs, tmp_path, 'status')
 
         # Find observations that failed since last update
-        programs = load_programs()
+        observations = load_programs()
         pid = ''
         to_update = []
-        for obs in programs:
+        for obs in observations:
             if obs['pid'] != pid:
                 pid = obs['pid']
                 status = parse_status(pid, path=tmp_path)

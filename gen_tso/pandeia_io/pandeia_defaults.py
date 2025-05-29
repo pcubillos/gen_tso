@@ -4,6 +4,7 @@
 __all__ = [
     'get_instruments',
     'get_modes',
+    'get_sed_types',
     '_spec_modes',
     '_photo_modes',
     '_acq_modes',
@@ -102,6 +103,21 @@ def get_modes(instrument, type=None):
 
     return modes
 
+
+def get_sed_types():
+    """
+    Get the list of SED models.
+
+    Returns
+    -------
+    instruments: 1D list of strings
+        JWST instruments
+    """
+    return [
+        'phoenix',
+        'k93models',
+        'bt_settl',
+    ]
 
 
 # Spectra extraction apertures (arcsec) based on values reported in:
@@ -997,28 +1013,30 @@ def make_detector_label(
 
 
 def make_saturation_label(
-        inst, mode, aperture, disperser, filter, subarray, order, sed_label,
+        mode, aperture, disperser, filter, subarray,
+        order='', sed_label='',
     ):
     """
     Make a label of unique saturation setups to identify when and
     when not the saturation level can be estimated.
     """
-    sat_label = f'{mode}_{filter}'
     if mode == 'bots':
-        sat_label = f'{sat_label}_{disperser}_{subarray}'
+        sat_label = f'_{disperser}_{subarray}'
     elif mode == 'soss':
         order = f'_O{order[0]}' if len(order)==1 else ''
-        sat_label = f'{sat_label}{order}'
+        sat_label = f'{order}'
     elif mode == 'sw_tsgrism':
-        sat_label = f'{sat_label}_{aperture}_{subarray}'
+        sat_label = f'_{aperture}_{subarray}'
     elif mode == 'sw_ts':
-        sat_label = f'{sat_label}_{aperture}'
+        sat_label = f'_{aperture}'
     elif mode == 'mrs_ts':
-        sat_label = f'{sat_label}_{disperser}'
-    elif mode == 'target_acq' and inst == 'niriss':
-        sat_label = f'{sat_label}_{aperture}'
+        sat_label = f'_{disperser}'
+    elif mode == 'target_acq':
+        sat_label = f'_{aperture}'
+    else:
+         sat_label = ''
 
-    sat_label = f'{sat_label}_{sed_label}'
+    sat_label = f'{mode}_{filter}{sat_label}_{sed_label}'
     return sat_label
 
 
@@ -1108,31 +1126,25 @@ def _load_flux_rate_splines(obs_label=None):
                                 aperture = ''
                             filter = filter.replace('None', '')
                             inst_label = make_saturation_label(
-                                inst, mode, aperture, disperser, filter,
+                                mode, aperture, disperser, filter,
                                 subarray, order, ''
                             )
                             if obs_label is not None and inst_label != i_label:
                                 continue
-                            for i,rate in enumerate(sed_rates['phoenix']):
-                                log_rate = np.log10(rate)
-                                sed = sed_rates['p_names'][i]
-                                label = f'{inst_label}phoenix_{sed}'
-                                if obs_label is None:
-                                    flux_rates[label] = CubicSpline(mag, log_rate)
-                                    full_wells[label] = sed_rates['full_well']
-                                elif label == obs_label:
-                                    return CubicSpline(mag, log_rate), sed_rates['full_well']
+                            for sed_type in get_sed_types():
+                                if sed_type not in sed_rates:
+                                    continue
+                                name = f'{sed_type}_names'
+                                for i,rate in enumerate(sed_rates[sed_type]):
+                                    log_rate = np.log10(rate)
+                                    sed = sed_rates[name][i]
+                                    label = f'{inst_label}{sed_type}_{sed}'
+                                    if obs_label is None:
+                                        flux_rates[label] = CubicSpline(mag, log_rate)
+                                        full_wells[label] = sed_rates['full_well']
+                                    elif label == obs_label:
+                                        return CubicSpline(mag, log_rate), sed_rates['full_well']
 
-
-                            for i,rate in enumerate(sed_rates['k93models']):
-                                log_rate = np.log10(rate)
-                                sed = sed_rates['k_names'][i]
-                                label = f'{inst_label}kurucz_{sed}'
-                                if obs_label is None:
-                                    flux_rates[label] = CubicSpline(mag, log_rate)
-                                    full_wells[label] = sed_rates['full_well']
-                                elif label == obs_label:
-                                    return CubicSpline(mag, log_rate), sed_rates['full_well']
     # Model not found
     if obs_label is not None:
         return None, None

@@ -43,7 +43,7 @@ KNOWN_PROGRAMS = [
     6193, 6284, 6456, 6457, 6491, 6543,
     6932, 6978, 7073, 7188, 7251, 7255, 7407, 7675, 7683, 7686, 7849,
     7875, 7953, 7982, 8004, 8017, 8233, 8309, 8597, 8696, 8739, 8864,
-    8877, 9025, 9033, 9095, 9101
+    8877, 9025, 9033, 9095, 9101, 9235,
 ]
 
 
@@ -74,7 +74,7 @@ def get_latest_pandeia_release():
                 if '/' in version:
                     version = version[0:version.index('/')]
                 return version.strip()
-    # hard-coded default, need to be kept up to date manually:
+    # Fail-safe, hard-coded JWST default, need to be kept up to date manually:
     return '2025.3'
 
 

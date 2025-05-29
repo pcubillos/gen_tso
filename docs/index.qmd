@@ -8,7 +8,11 @@ page-navigation: true
 
 ---
 
-### Gen TSO: A general TSO simulator for exoplanets with JWST
+### Gen TSO
+
+<div style="margin-top: -0.6em; font-weight: bold; font-size: 1.3rem;">
+A general TSO simulator for exoplanets with JWST
+</div>
 
 `Gen TSO` is a graphical interface to simulate JWST time-series
 observations (TSO) of exoplanets.  Gen TSO connects together:
@@ -34,6 +38,8 @@ for known exoplanets.
 
 ---
 
+### Install
+
 `Gen TSO` is a Python3.9+ package available via the PyPI repository:
 
 ```bash
@@ -46,6 +52,8 @@ tso
 ```
 
 ---
+
+### JWST observing modes
 
 These are the available TSO modes for each instrument:
 
@@ -194,10 +202,41 @@ archivePrefix = {arXiv},
 We welcome your feedback or inquiries, please raise issues on the [Github repository](https://github.com/pcubillos/gen_tso/issues) or refer them to: <br>
 Patricio Cubillos (`patricio.cubillos[at]oeaw.ac.at`)
 
+---
+
 Find more information in the links below:
 
-- [Installation](install.qmd)
-- [Getting Started](get_started.qmd)
-- [Tutorials](tutorials.qmd)
-- [API Reference](api)
+<div style="display: flex; justify-content: center; gap: 2rem; margin: 2rem 0; text-align: center; font-weight: bold; font-size: 1.1rem;">
+
+  <div style="border: 2px solid #cccccc; border-radius: 12px; padding: 1rem; text-align: center; width: 135px;">
+  <a href="install.html" style="text-decoration: none; color: #777777;">
+    <i class="fa-solid fa-download" style="font-size: 3.5rem; color: #444444;"></i><br>
+    <strong>Install</strong>
+  </a>
+  </div>
+
+  <div style="border: 2px solid #cccccc; border-radius: 12px; padding: 1rem; text-align: center; width: 135px;">
+  <a href="get_started.html" style="text-decoration: none; color: #777777;">
+      <i class="fa-solid fa-rocket" style="font-size: 3.5rem; color: #444444;"></i><br>
+      Get Started
+  </a>
+  </div>
+
+  <div style="border: 2px solid #cccccc; border-radius: 12px; padding: 1rem; text-align: center; width: 135px;">
+  <a href="tutorials.html" style="text-decoration: none; color: #777777;">
+      <i class="fa-solid fa-book" style="font-size: 3.5rem; color: #444444;"></i><br>
+      Tutorials
+  </a>
+  </div>
+
+  <div style="border: 2px solid #cccccc; border-radius: 12px; padding: 1rem; text-align: center; width: 135px;">
+  <a href="api.html" style="text-decoration: none; color: #777777;">
+      <i class="fa-solid fa-code" style="font-size: 3.5rem; color: #444444;"></i><br>
+      API
+  </a>
+  </div>
+
+</div>
+
+---
 

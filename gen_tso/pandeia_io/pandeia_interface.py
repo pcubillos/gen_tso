@@ -7,13 +7,18 @@ __all__ = [
     'bin_search_exposure_time',
     'integration_time',
     'saturation_level',
+    'extract_flux_rate',
+    'estimate_flux_rate',
+    'groups_below_saturation',
     'get_sed_list',
     'find_closest_sed',
+    'find_nearby_seds',
     'make_scene',
     'extract_sed',
     'blackbody_eclipse_depth',
     'set_depth_scene',
     'get_bandwidths',
+    'save_tso',
     'simulate_tso',
     '_get_tso_wl_range',
     '_get_tso_depth_range',
@@ -24,9 +29,11 @@ __all__ = [
     'tso_print',
 ]
 
+from collections.abc import Iterable
 import copy
 from decimal import Decimal
 import json
+import pickle
 import random
 
 import numpy as np
@@ -39,7 +46,14 @@ from pyratbay.tools import u
 import prompt_toolkit
 
 from ..utils import format_text
-from .pandeia_defaults import get_throughputs, _photo_modes
+from .pandeia_defaults import (
+    _photo_modes,
+    _load_flux_rate_splines,
+    get_sed_types,
+    get_throughputs,
+    make_saturation_label,
+)
+sed_types = get_sed_types()
 
 
 def read_noise_variance(report, ins_config):
@@ -335,7 +349,7 @@ def integration_time(instrument, subarray, readout, ngroup):
     return integration_time
 
 
-def saturation_level(reports, get_max=False):
+def extract_flux_rate(reports, get_max=False):
     """
     Compute saturation values for a given perform_calculation output.
 
@@ -368,7 +382,7 @@ def saturation_level(reports, get_max=False):
     >>> result = pando.perform_calculation(
     >>>     ngroup=2, nint=1, readout=readout, filter='f444w',
     >>> )
-    >>> pixel_rate, full_well = jwst.saturation_level(result)
+    >>> pixel_rate, full_well = jwst.extract_flux_rate(result)
     >>>
     >>> # Now I can calculate the saturation level for any integration time:
     >>> # (for the given filter and scene)
@@ -390,7 +404,7 @@ def saturation_level(reports, get_max=False):
     >>> result = pando.perform_calculation(
     >>>     ngroup=2, nint=1, readout=readout, filter='f444w',
     >>> )
-    >>> pixel_rate, full_well = jwst.saturation_level(result)
+    >>> pixel_rate, full_well = jwst.extract_flux_rate(result)
     >>>
     >>> # ngroup staying below 80% of saturation:
     >>> req_fraction = 80.0
@@ -431,6 +445,229 @@ def saturation_level(reports, get_max=False):
     return brightest_pixel_rate, full_well
 
 
+def saturation_level(reports, get_max=False):
+    """
+    Deprecated. Use `extract_flux_rate()` instead.
+    """
+    import warnings
+    warnings.warn(
+        "saturation_level() is deprecated and will be removed in a "
+        "future release. Use extract_flux_rate() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return extract_flux_rate(reports, get_max)
+
+
+def estimate_flux_rate(
+        sed_type, sed_model, ks_mag,
+        mode, aperture, disperser, filter, subarray, order='',
+    ):
+    """
+    Estimate a detector's brightest-pixel flux rate and the full well
+    for a given source and an instrumental configuration,
+    based on pre-tabulated Ks-bands magnitudes.
+
+    Parameters
+    ----------
+    sed_type: String
+        Type of model: 'phoenix', 'k93models', or 'bt_settl'.
+    sed_model:
+        The SED model required for each sed_type, see
+        jwst.get_sed_list(), jwst.find_closest_sed() or jwst.find_nearby_seds()
+    ks_mag: float
+        Magnitude of the star in the Ks band.
+    mode: String
+        The observing mode for the JWST instrument.
+    aperture: String
+        Aperture configuration for the given instrument.
+    disperser: String
+        Disperser/grating for the given instrument.
+    filter: String
+        Filter for the given instrument.
+    subarray: String
+        Subarray mode for the given instrument.
+    order: Integer
+        For NIRISS SOSS only, the spectral order.
+
+    Returns
+    -------
+    brightest_pixel_rate: Float
+        e- per second rate at the brightest pixel.
+    full_well: Float
+        Number of e- counts to saturate the detector.
+
+    Example
+    -------
+    >>> import gen_tso.pandeia_io as jwst
+
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> ks_mag = 8.0
+    >>> flux_rate, full_well = jwst.estimate_flux_rate(
+    >>>     sed_type, sed_model, ks_mag,
+    >>>     mode='lw_tsgrism', aperture='lw',
+    >>>     disperser='grism', filter='f444w', subarray='subgrism64',
+    >>> )
+    >>> print(flux_rate, full_well)
+    1796.190365030732 58100.0
+    """
+    sed_label = f'{sed_type}_{sed_model}'
+    obs_label = make_saturation_label(
+        mode, aperture, disperser, filter, subarray, order, sed_label,
+    )
+    flux_rate_spline, full_well = _load_flux_rate_splines(obs_label)
+
+    if flux_rate_spline is None:
+        return None, None
+
+    pixel_rate = 10**flux_rate_spline(ks_mag)
+    return pixel_rate, full_well
+
+
+def groups_below_saturation(
+        req_saturation,
+        instrument=None, subarray=None, readout=None,
+        flux_rate=None, full_well=None,
+        mode=None, aperture=None, disperser=None, filter=None, order=None,
+        sed_type=None, sed_model=None, ks_mag=None,
+        reports=None,
+    ):
+    """
+    Calculate the maximum number of groups below a give saturation level
+    for the given configuration.
+
+    Parameters
+    ----------
+    req_saturation: Float or 1D float iterable
+        Required saturation level in percent.
+    instrument: String
+        Which instruments (miri, nircam, niriss, or nirspec).
+    subarray: String
+        Subarray mode for the given instrument.
+    readout: String
+        Readout pattern mode for the given instrument.
+    flux_rate: Float
+        e- per second rate at the brightest pixel.
+    full_well: Float
+        Number of e- counts to saturate the detector.
+    mode: String
+        The observing mode for the JWST instrument.
+    aperture: String
+        Aperture configuration for the given instrument.
+    disperser: String
+        Disperser/grating for the given instrument.
+    filter: String
+        Filter for the given instrument.
+    order: Integer
+        For NIRISS SOSS only, the spectral order.
+    sed_type: String
+        Type of SED model: 'phoenix', 'k93models', or 'bt_settl'.
+    sed_model:
+        The SED model required for each sed_type, see
+        jwst.get_sed_list(), jwst.find_closest_sed() or jwst.find_nearby_seds()
+    ks_mag: float
+        Magnitude of the star in the Ks band.
+    reports: Dictionary or list of dictionaries
+        Either a pandeia's perform_calculation() output dictionary
+        or a tso_calculation output dictionary.
+
+    Returns
+    -------
+    ngroup: Integeer
+        Number of groups per integration to keep the saturation fraction
+        of the brightest pixel rate below req_saturation.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # Use a pandeia report as input:
+    >>> pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    >>> pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+    >>> report = pando.perform_calculation(ngroup=2, nint=1)
+    >>> ngroup = jwst.groups_below_saturation([80, 100], reports=report)
+    >>> print(ngroup)
+    [104, 131]
+
+    >>> # Use instrument and source variables as input:
+    >>> inst = 'nircam'
+    >>> mode = 'lw_tsgrism'
+    >>> disperser = 'grismr'
+    >>> filter = 'f444w'
+    >>> subarray = 'subgrism64'
+    >>> readout = 'rapid'
+    >>> aperture = 'lw'
+    >>>
+    >>> sed_type = 'phoenix'
+    >>> sed_model = 'k5v'
+    >>> ks_mag = 8.351
+    >>>
+    >>> ngroup = jwst.groups_below_saturation(
+    >>>     req_saturation=80.0,
+    >>>     instrument=inst, mode=mode, disperser=disperser, filter=filter,
+    >>>     subarray=subarray, readout=readout, aperture=aperture,
+    >>>     sed_type=sed_type, sed_model=sed_model, ks_mag=ks_mag,
+    >>>
+    >>> )
+    >>> print(ngroup)
+    104
+    """
+    if isinstance(req_saturation, Iterable):
+        req_saturations = req_saturation
+    else:
+        req_saturations = [req_saturation]
+
+    if reports is not None:
+        flux_rate, full_well = extract_flux_rate(reports, get_max=True)
+        # Unpack instrumental configuration values:
+        if not isinstance(reports, list):
+            reports = [reports]
+        if 'report_in' in reports[0]:
+            report = reports[0]['report_in']
+        else:
+            report = reports[0]
+        config = report['input']['configuration']
+        instrument = config['instrument']['instrument']
+        subarray = config['detector']['subarray']
+        readout = config['detector']['readout_pattern']
+
+    if flux_rate is None:
+        flux_rate, full_well = estimate_flux_rate(
+            sed_type, sed_model, ks_mag,
+            mode, aperture, disperser, filter, subarray, order,
+        )
+
+    are_undefined = (
+        instrument is None,
+        subarray is None,
+        readout is None,
+        flux_rate is None,
+        full_well is None,
+    )
+    if np.any(are_undefined):
+        raise ValueError('Not all required inputs are defined')
+
+    dt_1group = integration_time(instrument, subarray, readout, ngroup=1)
+    dt_2group = integration_time(instrument, subarray, readout, ngroup=2)
+    dt = dt_2group - dt_1group
+
+    sat_1group = flux_rate * dt_1group / full_well
+    sat_dt = flux_rate * dt / full_well
+
+    ngroups = []
+    for saturation in req_saturations:
+        m = 1 + (saturation/100.0 - sat_1group) / sat_dt
+        if np.isfinite(m):
+            ngroups.append(int(m))
+        else:
+            ngroups.append(0)
+
+    if not isinstance(req_saturation, Iterable):
+        ngroups = ngroups[0]
+    return ngroups
+
+
 def get_sed_list(source):
     """
     Load list of available PHOENIX or Kurucz stellar SED models
@@ -438,7 +675,7 @@ def get_sed_list(source):
     Parameters
     ----------
     source: String
-        SED source: 'phoenix' or 'k93models'
+        SED source: 'phoenix', 'k93models', or 'bt_settl'.
 
     Returns
     -------
@@ -454,23 +691,28 @@ def get_sed_list(source):
     Examples
     --------
     >>> import gen_tso.pandeia_io as jwst
-    >>> # PHOENIX models
-    >>> keys, names, teff, log_g = jwst.get_sed_list('phoenix')
     >>> # Kurucz models
     >>> keys, names, teff, log_g = jwst.get_sed_list('k93models')
+    >>> # PHOENIX models
+    >>> keys, names, teff, log_g = jwst.get_sed_list('phoenix')
+    >>> # BT-Settl models
+    >>> keys, names, teff, log_g = jwst.get_sed_list('bt_settl')
     """
     sed_path = sed.default_refdata_directory
     with open(f'{sed_path}/sed/{source}/spectra.json', 'r') as f:
         info = json.load(f)
     names = np.array([model['display_string'] for model in info.values()])
+
     if source == 'bt_settl':
         teff = np.array([model.split()[1] for model in names], dtype=float)
         log_g = np.array([model.split()[2] for model in names], dtype=float)
     else:
         teff = np.array([model['teff'] for model in info.values()])
         log_g = np.array([model['log_g'] for model in info.values()])
+
     keys = np.array(list(info.keys()))
     tsort = np.argsort(teff)[::-1]
+
     return keys[tsort], names[tsort], teff[tsort], log_g[tsort]
 
 
@@ -517,6 +759,112 @@ def find_closest_sed(teff, logg, sed_type='phoenix'):
     return keys[idx]
 
 
+def find_nearby_seds(teff, dt=200.0, sed_type='all'):
+    """
+    Show all SED models with temperatures in range teff +/- dt.
+    Highlight the closest(s) one(s) to teff with asterisks.
+    Return the parameters of the closest SED.
+
+    Parameters
+    ----------
+    teff: float
+        Target effective temperature.
+    dt: float
+        Temperature range around teff to explore.
+    sed_type: String or iterable of strings.
+        Select one from 'phoenix', 'k93models', or 'bt_settl'.
+        Or, select 'all' to consider all SED types.
+        Or, provide a list with the SED types to consider.
+
+    Returns
+    -------
+    model: Tuple
+        A tuple with the (sed type, sed key, temperature, log_g) of
+        the model closes to teff  Note there can be multiple models at
+        same distance from teff, only one is returned.
+
+    Examples
+    --------
+    >>> import gen_tso.pandeia_io as jwst
+    >>>
+    >>> # Kurucz models
+    >>> sed = jwst.find_nearby_seds(teff=5100.0, dt=700, sed_type='k93models')
+    SED key      teff  logg  SED type
+    -----------  ----------  -----------
+    'k4v'        4560   4.5  'k93models'
+    'g5i'        4850   1.1  'k93models'
+    'k0v'        5250   4.5  'k93models'  **
+    'g8v'        5570   4.5  'k93models'
+    'g5v'        5770   4.5  'k93models'
+
+    >>> # All models
+    >>> sed = jwst.find_nearby_seds(teff=3600.0, dt=200, sed_type='all')
+    SED key      teff  logg  SED type
+    -----------  ----------  -----------
+    'm3.5-3400'  3400   5.0  'bt_settl'
+    'm2v'        3500   4.6  'k93models'  **
+    'm2i'        3500   0.0  'phoenix'    **
+    'm5v'        3500   5.0  'phoenix'    **
+    'm2.5'       3500   5.0  'bt_settl'   **
+    'm2v'        3500   4.5  'phoenix'    **
+    'k5i'        3750   0.5  'phoenix'
+    'm0v'        3750   4.5  'phoenix'
+    'm0iii'      3750   1.5  'phoenix'
+    'm0i'        3750   0.0  'phoenix'
+
+    >>> # PHOENIX + BT-Settl models
+    >>> sed = jwst.find_nearby_seds(
+    >>>     teff=3320.0, dt=250, sed_type=['phoenix', 'bt_settl'],
+    >>> )
+    SED key      teff  logg  SED type
+    -----------  ----------  -----------
+    'm4.5-3100'  3100   5.0  'bt_settl'
+    'm4.5-3200'  3200   5.0  'bt_settl'
+    'm3.5-3300'  3300   5.0  'bt_settl'   **
+    'm3.5-3400'  3400   5.0  'bt_settl'
+    'm2.5'       3500   5.0  'bt_settl'
+    'm5v'        3500   5.0  'phoenix'
+    'm2i'        3500   0.0  'phoenix'
+    'm2v'        3500   4.5  'phoenix'
+    """
+    sed_types = get_sed_types()
+    if sed_type == 'any' or sed_type=='all':
+        sed_type = sed_types
+    elif isinstance(sed_type, str):
+        sed_type = [sed_type]
+
+    for type in sed_type:
+        if type not in sed_types:
+            raise ValueError(
+                f'Invalid sed_type {repr(sed_type)}, select from {sed_types}'
+            )
+
+    models = []
+    for sed_t in sed_type:
+        keys, names, models_teff, logg = get_sed_list(sed_t)
+        nmodels = len(keys)
+        for i in range(nmodels):
+            if np.abs(models_teff[i]-teff) <= dt:
+                model = (str(sed_t), keys[i], models_teff[i], logg[i])
+                models.append(model)
+
+    temps = [model[2] for model in models]
+    i_min = np.argmin(np.abs(np.array(temps)-teff))
+    dt_min = np.abs(temps[i_min]-teff)
+    closest_model = models[i_min]
+
+    isort = np.argsort(temps)
+    models = [models[i] for i in isort]
+    print('SED key      teff  logg  SED type')
+    print('-----------  ----------  -----------')
+    for model in models:
+         sed, key, temp, logg = model
+         suff = '  **' if np.abs(temp-teff)==dt_min else ''
+         print(f'{repr(str(key)):11}  {temp:4.0f}   {logg:.1f}  {repr(sed):11}{suff}')
+
+    return closest_model
+
+
 def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     """
     Create a stellar point-source scene dictionary for use in Pandeia.
@@ -524,13 +872,15 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     Parameters
     ----------
     sed_type: String
-        Type of model: 'phoenix', 'k93models', 'blackbody', 'input', or 'flat'
+        Type of model:
+        - 'phoenix', 'k93models',
+        - 'blackbody', 'input', or 'flat'
     sed_model:
         The SED model required for each sed_type:
-        - phoenix or k93models: the model key (see get_sed_list)
+        - phoenix, k93models: the model key (see get_sed_list)
         - blackbody: the effective temperature (K)
         - input: dict with 'wl' and 'flux' keys containing the
-                 wavelength (un) and SED spectrum (mJy).
+          wavelength (un) and SED spectrum (mJy).
         - flat: the unit ('flam' or 'fnu')
     norm_band: String
         Band over which to normalize the spectrum.
@@ -567,11 +917,14 @@ def make_scene(sed_type, sed_model, norm_band=None, norm_magnitude=None):
     >>> norm_magnitude = 8.637
     >>> scene = jwst.make_scene(sed_type, sed_model, norm_band, norm_magnitude)
     """
+    if sed_type == 'kurucz':
+        sed_type = 'k93models'
+
     sed = {'sed_type': sed_type}
 
     if sed_type == 'flat':
         sed['unit'] = sed_model
-    elif sed_type in ['phoenix', 'k93models', 'bt_settl']:
+    elif sed_type in sed_types:
         sed['key'] = sed_model
     elif sed_type == 'blackbody':
         sed['temp'] = sed_model
@@ -661,7 +1014,7 @@ def extract_sed(scene, wl_range=None):
     )
     wave, flux = normalization.normalize(sed_model.wave, sed_model.flux)
     if normalization.type == 'none':
-        if sed_model.sed_type in ['phoenix', 'k93models', 'bt_settl']:
+        if sed_model.sed_type in sed_types:
             # Convert wavelengths from A to um:
             wave *= 1e-4  # pc.A / pc.um
         if sed_model.sed_type == 'blackbody':
@@ -884,6 +1237,33 @@ def get_bandwidths(inst, mode, aperture, filter):
     return wl0, band_width, min_wl, max_wl
 
 
+def save_tso(filename, tso, lightweight=True):
+    """
+    Save a TSO output to a pickle file.
+
+    Parameters
+    ----------
+    filename : String
+        The path where the TSO object will be saved.
+    tso : dict
+        The TSO object to be saved. This should be a dictionary-like
+        structure as returned by pando.tso_calculation().
+    lightweight : bool
+        If True, remove the '2d' and '3d' fields from 'report_out' and
+        'report_in' to reduce the file size.
+        The original `tso` object is not modified.
+    """
+    tso_copy = copy.deepcopy(tso)
+    if lightweight:
+        for rep in ['report_out', 'report_in']:
+            report = tso_copy[rep]
+            report.pop('2d', None)
+            report.pop('3d', None)
+
+    with open(filename, 'wb') as handle:
+        pickle.dump(tso_copy, handle, protocol=4)
+
+
 def simulate_tso(
         tso, n_obs=1, resolution=None, bins=None, noiseless=False,
     ):
@@ -922,41 +1302,38 @@ def simulate_tso(
     --------
     >>> import gen_tso.pandeia_io as jwst
     >>> import matplotlib.pyplot as plt
-
-    >>> scene = jwst.make_scene(
+    >>>
+    >>> # A NIRSpec/BOTS simulation
+    >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
+    >>> pando.set_scene(
     >>>     sed_type='phoenix', sed_model='k5v',
     >>>     norm_band='2mass,ks', norm_magnitude=8.351,
     >>> )
-
-    >>> # NIRSpec BOTS spectra
-    >>> pando = jwst.PandeiaCalculation('nirspec', 'bots')
-    >>> pando.calc['scene'] = [scene]
     >>> disperser='g395h'
     >>> filter='f290lp'
-    >>> readout='nrsrapid'
     >>> subarray='sub2048'
-    >>> ngroup = 16
-
+    >>> readout='nrsrapid'
+    >>> pando.set_config(disperser, filter, subarray, readout)
+    >>> ngroup = pando.saturation_fraction(fraction=80.0)
+    >>>
     >>> transit_dur = 2.71
     >>> obs_dur = 6.0
     >>> obs_type = 'transit'
     >>> depth_model = np.loadtxt('WASP80b_transit.dat', unpack=True)
-
+    >>>
     >>> tso = pando.tso_calculation(
-    >>>     obs_type, transit_dur, obs_dur, depth_model,
-    >>>     ngroup, disperser, filter, subarray, readout,
+    >>>     obs_type, transit_dur, obs_dur, depth_model, ngroup,
     >>> )
 
     >>> bin_wl, bin_spec, bin_err, bin_widths = jwst.simulate_tso(
     >>>    tso, n_obs=1, resolution=300.0, noiseless=False,
     >>> )
-
+    >>>
     >>> plt.figure(10)
     >>> plt.clf()
-    >>> plt.plot(depth_model[0], depth_model[1], c='orange')
-    >>> plt.plot(tso['wl'], tso['depth_spectrum'], c='orangered')
-    >>> plt.errorbar(bin_wl, bin_spec, bin_err, fmt='ok', ms=4, mfc='w')
-    >>> plt.xlim(2.8, 5.3)
+    >>> plt.plot(depth_model[0], depth_model[1], c='salmon')
+    >>> plt.errorbar(bin_wl, bin_spec, bin_err, fmt='o', c='xkcd:blue', ms=4, mfc='w')
+    >>> plt.xlim(2.85, 5.2)
     """
     dt_in = tso['time_in']
     dt_out = tso['time_out']
@@ -1223,7 +1600,7 @@ def _print_pandeia_saturation(
     >>> )
 
     >>> # Directly print from input values:
-    >>> pixel_rate, full_well = jwst.saturation_level(tso, get_max=True)
+    >>> pixel_rate, full_well = jwst.extract_flux_rate(tso, get_max=True)
     >>> inst = 'nircam'
     >>> subarray = 'subgrism64'
     >>> readout = 'rapid'
@@ -1241,7 +1618,7 @@ def _print_pandeia_saturation(
     """
     # parse reports
     if reports is not None:
-        pixel_rate, full_well = saturation_level(reports, get_max=True)
+        pixel_rate, full_well = extract_flux_rate(reports, get_max=True)
         # This is a TSO dict
         if 'report_in' in reports[0]:
             report = reports[0]['report_in']
@@ -1252,25 +1629,20 @@ def _print_pandeia_saturation(
         subarray = config['detector']['subarray']
         readout = config['detector']['readout_pattern']
 
-    # jwst.integration_time() is not accurate for the purpose of
-    # calculating the max ngroup before saturation (NIRCam non-RAPID)
-    # Do it this way to replicate the ETC's output
-    dt_integ = (
-        integration_time(inst, subarray, readout, ngroup=3) -
-        integration_time(inst, subarray, readout, ngroup=2)
-    )
-    # Saturation fraction for a single group
-    single_sat_fraction = 100 * pixel_rate * dt_integ / full_well
-    ngroup_req = int(req_saturation/single_sat_fraction)
-    ngroup_max = int(100.0/single_sat_fraction)
-
-    sat_fraction = ngroup * single_sat_fraction
+    sat_time = integration_time(inst, subarray, readout, ngroup)
+    sat_fraction = 100.0 * pixel_rate * sat_time / full_well
     saturation = format_text(
         f"{sat_fraction:.1f}%",
         np.round(sat_fraction, decimals=1)>np.round(req_saturation, decimals=1),
         sat_fraction>=100,
         format,
     )
+
+    ngroup_req, ngroup_max = groups_below_saturation(
+        [req_saturation, 100.0],
+        inst, subarray, readout, pixel_rate, full_well,
+    )
+
     ngroup_req = format_text(
         f"{ngroup_req:d}", ngroup_req==2, ngroup_req<2, format,
     )
@@ -1532,7 +1904,7 @@ def _print_pandeia_report(reports, format=None):
 
     # Saturation
     reports = report_in + report_out
-    pixel_rate, full_well = saturation_level(reports, get_max=True)
+    pixel_rate, full_well = extract_flux_rate(reports, get_max=True)
     saturation_report = _print_pandeia_saturation(
         inst, subarray, readout, ngroup, pixel_rate, full_well,
         format=format,

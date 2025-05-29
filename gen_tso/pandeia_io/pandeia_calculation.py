@@ -7,7 +7,6 @@ __all__ = [
 
 from collections.abc import Iterable
 from itertools import product
-import pickle
 
 import numpy as np
 from pandeia.engine.calc_utils import (
@@ -20,21 +19,23 @@ from ..plotly_io.plots import response_boundaries
 from .pandeia_interface import (
     read_noise_variance,
     bin_search_exposure_time,
-    saturation_level,
+    extract_flux_rate,
+    estimate_flux_rate,
+    groups_below_saturation,
     integration_time,
     make_scene,
     set_depth_scene,
+    save_tso,
     simulate_tso,
     tso_print,
 )
 from .pandeia_defaults import (
     _spec_modes,
     _default_aperture_strategy,
-    _load_flux_rate_splines,
     generate_all_instruments,
+    get_sed_types,
     get_throughputs,
     get_detector,
-    make_saturation_label,
 )
 
 try:
@@ -43,11 +44,13 @@ try:
 except:
     print(
         "\n~~~  WARNING  ~~~"
-        "\n   Something went wrong with pandeia.engine."
+        "\n   Could not import pandeia.engine"
         "\n   Check that all databases are correctly installed:"
         "\n   https://pcubillos.github.io/gen_tso/install.html"
         "\n~~~  WARNING  ~~~\n\n"
     )
+
+sed_types = get_sed_types()
 
 
 class PandeiaCalculation():
@@ -420,7 +423,7 @@ class PandeiaCalculation():
             subarray=subarray, readout=readout,
             aperture=aperture, order=order,
         )
-        brightest_pixel_rate, full_well = saturation_level(reports, get_max)
+        brightest_pixel_rate, full_well = extract_flux_rate(reports, get_max)
         return brightest_pixel_rate, full_well
 
 
@@ -461,7 +464,6 @@ class PandeiaCalculation():
         >>> instrument = 'nircam'
         >>> mode = 'lw_tsgrism'
         >>> pando = jwst.PandeiaCalculation(instrument, mode)
-        >>> pando = jwst.PandeiaCalculation('niriss', 'soss')
         >>> pando.set_scene(
         >>>     sed_type='phoenix', sed_model='k5v',
         >>>     norm_band='2mass,ks', norm_magnitude=8.351,
@@ -472,10 +474,10 @@ class PandeiaCalculation():
         >>> print(ngroup)
         104
         >>>
-        >>> # Get saturation fraction (%) for 96 groups:
-        >>> fraction = pando.saturation_fraction(ngroup=91)
+        >>> # Get saturation fraction (%) for 90 groups:
+        >>> fraction = pando.saturation_fraction(ngroup=90)
         >>> print(fraction)
-        69.3642895274301
+        68.6075132017307
         """
         if fraction is not None and ngroup is not None:
             raise ValueError('Only one of fraction and ngroup must be defined')
@@ -483,58 +485,51 @@ class PandeiaCalculation():
             raise ValueError('At least one of fraction and ngroup must be defined')
 
         config = self.calc['configuration']
+        scene = self.calc['scene'][0]['spectrum']
         inst = config['instrument']['instrument']
         readout = config['detector']['readout_pattern']
         subarray = config['detector']['subarray']
+        mode = config['instrument']['mode']
+        aperture = config['instrument']['aperture']
+        disperser = config['instrument']['disperser']
+        filter = config['instrument']['filter']
+        order = self.calc['strategy']['order'] if mode=='soss' else None
+        if not isinstance(order, list):
+            order = [order]
+
+        from_report = (
+            (flux_rate is None or full_well is None) and
+            hasattr(self, 'report')
+        )
+        if from_report:
+            report = self.report
+            flux_rate, full_well = extract_flux_rate(report, get_max=True)
+
+        can_guess = (
+            (flux_rate is None or full_well is None) and
+            scene['sed']['sed_type'] in sed_types and
+            scene['normalization']['bandpass'] == '2mass,ks'
+        )
         # If flux rate values are not known, try to guess them:
-        if flux_rate is None or full_well is None:
-            scene = self.calc['scene'][0]['spectrum']
+        if can_guess:
             sed_type = scene['sed']['sed_type']
-            if sed_type == 'k93models':
-                sed_type = 'kurucz'
-
-            if sed_type not in ['phoenix', 'kurucz']:
-                print('Error, can only guess for phoenix or kurucz SEDs')
-                return
-            norm_band = scene['normalization']['bandpass']
-            if norm_band != '2mass,ks':
-                print('Error, can only guess for Ks band ("2mass,ks")')
-                return
-
-            norm_magnitude = scene['normalization']['norm_flux']
             sed_model = scene['sed']['key']
-            sed_label = f'{sed_type}_{sed_model}'
-
-            mode = config['instrument']['mode']
-            aperture = config['instrument']['aperture']
-            disperser = config['instrument']['disperser']
-            filter = config['instrument']['filter']
-            order = None
-            if mode == 'soss':
-                order = self.calc['strategy']['order']
-                if not isinstance(order, list):
-                    order = [order]
-            sat_guess_label = make_saturation_label(
-                inst, mode, aperture, disperser,
-                filter, subarray, order,
-                sed_label,
+            ks_mag = scene['normalization']['norm_flux']
+            flux_rate, full_well = estimate_flux_rate(
+                sed_type, sed_model, ks_mag,
+                mode, aperture, disperser, filter, subarray, order,
             )
 
-            flux_rate_func, full_well = _load_flux_rate_splines(sat_guess_label)
-            if flux_rate_func is None:
-                print(
-                    'Error, no flux_rate spline for configuration '
-                    f'label: {repr(sat_guess_label)}'
-                )
-                return
-            flux_rate = 10**flux_rate_func(norm_magnitude)
+        if flux_rate is None or full_well is None:
+            return
 
         # The calculation
         if fraction is not None:
-            # search for ngroup below fraction
-            sat_time = integration_time(inst, subarray, readout, ngroup=1)
-            sat_frac_1g = 100 * flux_rate * sat_time / full_well
-            ngroup = int(fraction/sat_frac_1g)
+            ngroup = groups_below_saturation(
+                req_saturation=fraction,
+                instrument=inst, subarray=subarray, readout=readout,
+                flux_rate=flux_rate, full_well=full_well,
+            )
             return ngroup
 
         if ngroup is not None:
@@ -1070,21 +1065,22 @@ class PandeiaCalculation():
         return simulate_tso(self.tso, n_obs, resolution, bins, noiseless)
 
 
-    def save_tso(self, filename=None, tso=None):
+    def save_tso(self, filename, tso=None, lightweight=True):
         """
-        Save TSO to pickle file.
+        Save a TSO output to a pickle file.
+
+        Parameters
+        ----------
+        filename: String
+            The path where the TSO object will be saved.
+        tso: dict
+            The TSO object to be saved.  If not specified, assume the latest
+            TSO computed by this PandeiaCalculation object.
+        lightweight: bool
+            If True, remove the '2d' and '3d' fields from 'report_out' and
+            'report_in' to reduce the file size.
         """
         if tso is None:
             tso = self.tso
-        if filename is None:
-            mode = self.mode
-            filter = self.calc['configuration']['instrument']['filter']
-            if self.instrument in ['miri', 'niriss'] and mode != 'target_acq':
-                filter = ''
-            else:
-                filter = f'_{filter}'
-            filename = f'tso_{self.instrument}_{self.mode}{filter}.pickle'
-            print(f'Saving latest TSO run to: {repr(filename)}')
-        with open(filename, 'wb') as handle:
-            pickle.dump(self.tso, handle, protocol=4)
+        save_tso(filename, tso, lightweight)
 

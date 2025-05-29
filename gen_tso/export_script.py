@@ -11,6 +11,9 @@ from gen_tso.app_utils import (
     parse_obs,
     parse_sed,
 )
+from gen_tso.pandeia_io.pandeia_defaults import (
+    make_save_label,
+)
 
 
 warning_template = (
@@ -19,7 +22,9 @@ warning_template = (
 )
 
 
-def parse_depth_source(input, spectra, teq_text=None, rprs_text=None, depth_text=None):
+def parse_depth_source(
+        input, spectra, teq_text=None, rprs_text=None, depth_text=None,
+    ):
     """
     Parse transit/eclipse model name based on current state.
     Calculate or extract model.
@@ -190,11 +195,20 @@ def export_script_fixed_values(
     import gen_tso.utils as u
 """
 
+    filename = make_save_label(
+        name.replace(' ','_'), inst, mode, aperture, disperser, filter,
+    )
+    save_tso = f"""
+    # Save to file (set lightweight=False to keep '2d'/'3d' fields)
+    filename = {repr(filename)}
+    pando.save_tso(filename, lightweight=True)
+"""
+
     if 'np.' in script:
         imports += "    import numpy as np\n"
     if 'ps.' in script:
         imports += "    import pyratbay.spectrum as ps\n"
-    script = imports + script
+    script = imports + script + save_tso
     return textwrap.dedent(script)
 
 
@@ -410,12 +424,22 @@ def export_script_calculated_values(
     import gen_tso.pandeia_io as jwst
     import gen_tso.utils as u
 """
+
+    filename = make_save_label(
+        name.replace(' ','_'), inst, mode, aperture, disperser, filter,
+    )
+    save_tso = f"""\n
+    # Save to file (set lightweight=False to keep '2d'/'3d' fields)
+    filename = {repr(filename)}
+    pando.save_tso(filename, lightweight=True)
+"""
+
     if 'cat.' in script:
         imports += "    import gen_tso.catalogs as cat\n"
     if 'ps.' in script:
         imports += "    import pyratbay.spectrum as ps\n"
     if 'np.' in script:
         imports += "    import numpy as np\n"
-    script = imports + script
+    script = imports + script + save_tso
 
     return textwrap.dedent(script)

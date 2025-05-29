@@ -22,7 +22,7 @@ endef
 export CREATE_OBJECTS_INV
 
 QRENDERER_STYLE_FILE=qrenderer.scss
-QRENDERER_STYLE_URL=https://raw.githubusercontent.com/has2k1/qrenderer/main/doc/qrenderer.scss
+QRENDERER_STYLE_URL=https://github.com/has2k1/qrenderer/tree/main/qrenderer/stylesheets/qrenderer.scss
 
 help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)

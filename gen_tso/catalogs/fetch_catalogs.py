@@ -25,7 +25,7 @@ import warnings
 
 from astropy.coordinates import SkyCoord
 import numpy as np
-from astroquery.simbad import Simbad as simbad
+from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 from astropy.table import Table
 from astropy.units import arcsec, deg
@@ -577,7 +577,7 @@ def fetch_nea_aliases(targets):
     >>> targets = ['WASP-8 b', 'KELT-7', 'HD 189733']
     >>> host_aliases, planet_aliases = cat.fetch_nea_aliases(targets)
 
-    >>> host_aliases, planet_aliases = cat.fetch_nea_aliases('WASP-999')
+    >>> host_aliases, planet_aliases = cat.fetch_nea_aliases('WASP-00')
     """
     if isinstance(targets, str):
         targets = [targets]
@@ -655,55 +655,73 @@ def fetch_nea_aliases(targets):
     return host_aliases_list, planet_aliases_list
 
 
-def fetch_simbad_aliases(target, verbose=True):
+def fetch_simbad_aliases(targets):
     """
-    Fetch target aliases and Ks magnitude as known by Simbad.
+    Fetch target aliases and Ks-band magnitude from the Simbad database.
+
+    Parameters
+    ----------
+    targets: string or iterable of strings
+        Name or list of names of astronomical targets to query in SIMBAD.
+
+    Returns
+    -------
+    aliases: list of lists of str
+        A list containing the Simbad aliases (list) for each target.
+        If a target is not found, the corresponding list is empty.
+    ks_mag: 1D float array
+        Ks-band magnitude for each targets.
+        If a target is not found, the corresponding magnitude is a np.nan.
 
     Examples
     --------
     >>> from gen_tso.catalogs.update_catalogs import fetch_simbad_aliases
-    >>> aliases, ks_mag = fetch_simbad_aliases('WASP-69b')
+    >>> # Single-planet search
+    >>> aliases, ks_mag = fetch_simbad_aliases('WASP-80')
+    >>> print(aliases[0], ks_mag[0], sep='\n')
+    ['Gaia DR3 4223507222112425344', 'StKM 2-1435', ..., 'NAME Petra']
+    8.35099983215332
+
+    >>> # Batch search
+    >>> targets = ['Kepler-138', 'TOI-270', 'WASP-39']
+    >>> aliases, ks_mag = fetch_simbad_aliases(targets)
+    >>> print(ks_mag)
+    [ 9.50599957  8.2510004  10.20199966]
+
+    >>> # Not-found/non-existing targets returns
+    >>> aliases, ks_mag = fetch_simbad_aliases('WASP-0')
+    >>> print(aliases[0], ks_mag[0], sep='\n')
+    []
+    nan
     """
-    simbad.reset_votable_fields()
-    simbad.remove_votable_fields('coordinates')
-    simbad.add_votable_fields("otype", "otypes", "ids")
-    simbad.add_votable_fields("flux(K)")
-    #simbad.add_votable_fields("fe_h")
+    if isinstance(targets, str):
+        targets = [targets]
+    Simbad.reset_votable_fields()
+    Simbad.add_votable_fields("otype", "ids", 'K')
 
-    host_alias = []
-    kmag = np.nan
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        simbad_info = simbad.query_object(target)
-    if simbad_info is None:
-        if verbose:
-            print(f'no Simbad entry for target {repr(target)}')
-        return host_alias, kmag
+    query = Simbad.query_objects(targets)
+    kmag = np.array(query['K'])
 
-    object_type = simbad_info['OTYPE'].value.data[0]
-    if 'Planet' in object_type:
-        if target[-1].isalpha():
-            host = target[:-1]
-        elif '.' in target:
-            end = target.rindex('.')
-            host = target[:end]
-        else:
-            #target_id = simbad_info['MAIN_ID'].value.data[0]
-            return host_alias, kmag
-        # go after star
-        simbad_info = simbad.query_object(host)
-        if simbad_info is None:
-            if verbose:
-                print(f'Simbad host {repr(host)} not found')
-            return host_alias, kmag
+    host_aliases = []
+    for host in query:
+        aliases = host['ids'].split('|')
+        # Object not found:
+        if host['otype'] == '':
+            host_aliases.append([])
+            continue
+        # Symbad thinks that some hosts are planets:
+        if host['otype'] == 'Pl':
+            aliases = []
+            for alias in host['ids'].split('|'):
+                if u.is_candidate(alias) or u.is_letter(alias):
+                    alias = u.get_host(alias)
+                elif alias[-1] == 'b':
+                    alias = alias[:-1]
+                aliases.append(alias)
+        host_aliases.append(aliases)
 
-    host_info = simbad_info['IDS'].value.data[0]
-    host_alias = host_info.split('|')
-    kmag = simbad_info['FLUX_K'].value.data[0]
-    # fetch metallicity?
-    if not np.isfinite(kmag):
-        kmag = np.nan
-    return host_alias, kmag
+    return host_aliases, kmag
+
 
 
 def fetch_vizier_ks(target, verbose=True):
@@ -798,24 +816,34 @@ def fetch_aliases(hosts, output_file=None, known_aliases=None):
     jwst_aliases = _load_jwst_names(grouped=True)
     jwst_names = np.concatenate(jwst_aliases)
 
-    aliases = {}
+    # Ensure I have the NEA-named host name:
     nhosts = len(hosts)
+    host_names = np.array(hosts).tolist()
     for i in range(nhosts):
         if len(host_aliases[i]) == 0:
             continue
-        # Isolate host-planet(s) aliases
-        stars = np.unique(list(host_aliases[i].values()))
         hosts_aka = u.invert_aliases(host_aliases[i])
-        for host, h_aliases in hosts_aka.items():
+        for nea_host, h_aliases in hosts_aka.items():
             if hosts[i] in h_aliases:
-                host_name = host
+                host_names[i] = nea_host
                 break
 
+    # Get aliases from Simbad:
+    simbad_aliases, simbad_kmags = fetch_simbad_aliases(host_names)
+
+    aliases = {}
+    nhosts = len(hosts)
+    for i in range(nhosts):
+        host_name = host_names[i]
+        if len(host_aliases[i]) == 0:
+            continue
+        # Isolate host-planet(s) aliases
         h_aliases = [
             alias
             for alias,host in host_aliases[i].items()
-            if host == host_name
+            if host == host_names[i]
         ]
+        stars = np.unique(list(host_aliases[i].values()))
         if len(stars) == 1:
             p_aliases = planet_aliases[i].copy()
         else:
@@ -832,9 +860,8 @@ def fetch_aliases(hosts, output_file=None, known_aliases=None):
             j_alias = np.array(h_aliases)[in_jwst]
 
         # Complement with Simbad aliases:
-        s_aliases, kmag = fetch_simbad_aliases(host_name, verbose=False)
         new_aliases = []
-        for alias in s_aliases:
+        for alias in simbad_aliases[i]:
             alias = re.sub(r'\s+', ' ', alias)
             is_new = (
                 alias in jwst_names or
@@ -1001,8 +1028,6 @@ def fetch_tess_aliases(new_targets=None):
         known_tess = []
 
     # New TESS hosts that are not in confirmed list
-    with open(f'{ROOT}data/nea_aliases.pickle', 'rb') as handle:
-        nea_aliases = pickle.load(handle)
     hosts = np.unique([
         target.host
         for target in candidates
@@ -1051,10 +1076,6 @@ def crosscheck_tess_candidates(ncpu=None):
     if ncpu is None:
         ncpu = mp.cpu_count()
 
-    candidates = load_targets('tess_candidates_tmp.txt')
-    targets = load_targets()
-    confirmed_planets = [target.planet for target in targets]
-
     planet_aliases = {}
     host_aliases = {}
     # previously known aliases
@@ -1079,7 +1100,9 @@ def crosscheck_tess_candidates(ncpu=None):
         planet_aliases.update(system['planet_aliases'])
         for alias in system['host_aliases']:
             host_aliases[alias] = host
+
     # Identity alias for targets without aliases
+    candidates = load_targets('tess_candidates_tmp.txt')
     for target in candidates:
         if target.host not in host_aliases:
             host_aliases[target.host] = target.host
@@ -1088,14 +1111,19 @@ def crosscheck_tess_candidates(ncpu=None):
     aka = u.invert_aliases(host_aliases)
 
     # Cross-check with confirmed targets:
+    confirmed_planets = [target.planet for target in load_targets()]
     candidates = [
         target for target in candidates
         if planet_aliases[target.planet] not in confirmed_planets
     ]
+    # Make sure names are NEA names:
+    for i,target in enumerate(candidates):
+        target.host = host_aliases[target.host]
+        target.planet = planet_aliases[target.planet]
 
 
-    # Now I need to collect the Ks_magnitudes:
-    # Zeroth idea, check if I already had the Ks mag:
+    # Now I need to collect the Ks-band magnitudes:
+    # Zeroth idea, check if I already have the Ks mag:
     if os.path.exists(f'{ROOT}data/tess_data.txt'):
         known_candidates = load_targets('tess_data.txt')
         known_hosts = [target.host for target in known_candidates]
@@ -1106,19 +1134,14 @@ def crosscheck_tess_candidates(ncpu=None):
 
     # First idea, search in simbad using best known alias to get Ks magnitude
     catalogs = ['2MASS', 'Gaia DR3', 'Gaia DR2', 'TOI']
-    k = 0
+    names = [
+        u.select_alias(aka[target.host], catalogs)
+        for i,target in enumerate(candidates)
+    ]
+    aliases, kmags = fetch_simbad_aliases(names)
     for i,target in enumerate(candidates):
-        target.host = host_aliases[target.host]
-        target.planet = planet_aliases[target.planet]
-
-        if np.isfinite(target.ks_mag):
-            continue
-
-        name = u.select_alias(aka[target.host], catalogs)
-        aliases, kmag = fetch_simbad_aliases(name, verbose=False)
-        if np.isfinite(kmag):
-            k += 1
-            target.ks_mag = kmag
+        if not np.isfinite(target.ks_mag) and np.isfinite(kmags[i]):
+            target.ks_mag = kmags[i]
 
     # Plan B, batch search in vizier/2MASS catalog:
     hosts = np.array([
@@ -1307,7 +1330,7 @@ def fetch_gaia_targets(
         target = targets[idx]
 
     return (
-            targets['DESIGNATION'].data.data[sep_isort],
+            targets['designation'].data.data[sep_isort],
             targets['phot_g_mean_mag'].data.data[sep_isort],
             targets['teff_gspphot'].data.data[sep_isort],
             targets['logg_gspphot'].data.data[sep_isort],
