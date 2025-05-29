@@ -18,6 +18,7 @@ __all__ = [
     'blackbody_eclipse_depth',
     'set_depth_scene',
     'get_bandwidths',
+    'save_tso',
     'simulate_tso',
     '_get_tso_wl_range',
     '_get_tso_depth_range',
@@ -32,6 +33,7 @@ from collections.abc import Iterable
 import copy
 from decimal import Decimal
 import json
+import pickle
 import random
 
 import numpy as np
@@ -1233,6 +1235,33 @@ def get_bandwidths(inst, mode, aperture, filter):
     min_wl = np.amin(band_wl[response_mask])
     max_wl = np.amax(band_wl[response_mask])
     return wl0, band_width, min_wl, max_wl
+
+
+def save_tso(filename, tso, lightweight=True):
+    """
+    Save a TSO output to a pickle file.
+
+    Parameters
+    ----------
+    filename : String
+        The path where the TSO object will be saved.
+    tso : dict
+        The TSO object to be saved. This should be a dictionary-like
+        structure as returned by pando.tso_calculation().
+    lightweight : bool
+        If True, remove the '2d' and '3d' fields from 'report_out' and
+        'report_in' to reduce the file size.
+        The original `tso` object is not modified.
+    """
+    tso_copy = copy.deepcopy(tso)
+    if lightweight:
+        for rep in ['report_out', 'report_in']:
+            report = tso_copy[rep]
+            report.pop('2d', None)
+            report.pop('3d', None)
+
+    with open(filename, 'wb') as handle:
+        pickle.dump(tso_copy, handle, protocol=4)
 
 
 def simulate_tso(

@@ -7,7 +7,6 @@ __all__ = [
 
 from collections.abc import Iterable
 from itertools import product
-import pickle
 
 import numpy as np
 from pandeia.engine.calc_utils import (
@@ -26,6 +25,7 @@ from .pandeia_interface import (
     integration_time,
     make_scene,
     set_depth_scene,
+    save_tso,
     simulate_tso,
     tso_print,
 )
@@ -1065,21 +1065,22 @@ class PandeiaCalculation():
         return simulate_tso(self.tso, n_obs, resolution, bins, noiseless)
 
 
-    def save_tso(self, filename=None, tso=None):
+    def save_tso(self, filename, tso=None, lightweight=True):
         """
-        Save TSO to pickle file.
+        Save a TSO output to a pickle file.
+
+        Parameters
+        ----------
+        filename: String
+            The path where the TSO object will be saved.
+        tso: dict
+            The TSO object to be saved.  If not specified, assume the latest
+            TSO computed by this PandeiaCalculation object.
+        lightweight: bool
+            If True, remove the '2d' and '3d' fields from 'report_out' and
+            'report_in' to reduce the file size.
         """
         if tso is None:
             tso = self.tso
-        if filename is None:
-            mode = self.mode
-            filter = self.calc['configuration']['instrument']['filter']
-            if self.instrument in ['miri', 'niriss'] and mode != 'target_acq':
-                filter = ''
-            else:
-                filter = f'_{filter}'
-            filename = f'tso_{self.instrument}_{self.mode}{filter}.pickle'
-            print(f'Saving latest TSO run to: {repr(filename)}')
-        with open(filename, 'wb') as handle:
-            pickle.dump(self.tso, handle, protocol=4)
+        save_tso(filename, tso, lightweight)
 
