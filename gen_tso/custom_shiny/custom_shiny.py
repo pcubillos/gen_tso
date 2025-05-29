@@ -64,6 +64,7 @@ def label_tooltip_button(
         tooltips = [tooltips]
         button_ids = [button_ids]
 
+    # TBD: if icon is None, make a ui.output_ui('id')
     icon_buttons = [
         ui.tooltip(
             ui.input_action_link(
