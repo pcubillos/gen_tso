@@ -4,7 +4,6 @@
 import json
 import os
 from pathlib import Path
-import pickle
 import sys
 import textwrap
 from datetime import timedelta, datetime
@@ -94,6 +93,7 @@ bands_dict = {
     'johnson,v': 'V mag',
 }
 instruments = np.unique([det.instrument for det in detectors])
+pairings = get_detector('nircam', 'sw_ts', detectors).pairings
 
 modes = {}
 for inst in instruments:
@@ -613,8 +613,8 @@ app_ui = ui.page_fluid(
                     ui.input_select(
                         id="pairing",
                         label="LW Pairing",
-                        choices=detectors[8].pairings,
-                        selected=list(detectors[8].pairings)[1],
+                        choices=pairings,
+                        selected=list(pairings)[1],
                     ),
                 ),
                 ui.panel_conditional(
@@ -636,7 +636,7 @@ app_ui = ui.page_fluid(
                     ),
                 ),
                 ui.panel_conditional(
-                    "!['lrsslitless', 'mrs_ts'].includes(input.mode)",
+                    "!['lrsslitless', 'lrsslit', 'mrs_ts'].includes(input.mode)",
                     ui.input_select(
                         id="filter",
                         label="Filter",

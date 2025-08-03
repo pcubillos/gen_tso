@@ -81,7 +81,7 @@ def read_noise_variance(report, ins_config):
         read_noise = noise[aperture]
         return read_noise
 
-    if report_config['mode'] == 'mrs_ts':
+    if report_config['mode'] in ['mrs_ts', 'lrsslit']:
         aperture = report_config['aperture']
         aperture = ins_config['aperture_config'][aperture]['detector']
     else:

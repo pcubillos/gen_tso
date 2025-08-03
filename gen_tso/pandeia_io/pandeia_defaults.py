@@ -35,7 +35,7 @@ inst_names = {
 }
 
 spec_dict = {
-    'miri': ['lrsslitless', 'mrs_ts'],
+    'miri': ['lrsslitless', 'lrsslit', 'mrs_ts'],
     'nircam': ['lw_tsgrism', 'sw_tsgrism'],
     'niriss': ['soss'],
     'nirspec': ['bots'],
@@ -120,7 +120,7 @@ def get_sed_types():
     ]
 
 
-# Spectra extraction apertures (arcsec) based on values reported in:
+# Spectral extraction apertures (arcsec) based on values reported in:
 # Ahrer et al. (2023)    NIRCam/LW
 # Alderson et al. (2023) NIRSpec/G395H
 # Bouwman et al. (2024)  MIRI/LRS
@@ -129,6 +129,10 @@ _default_aperture_strategy = {
     'lrsslitless': dict(
         aperture_size = 0.6,
         sky_annulus = [1.0, 2.5],
+    ),
+    'lrsslit': dict(
+        aperture_size = 0.88,
+        sky_annulus = [0.88, 1.4],
     ),
     'mrs_ts': dict(
         aperture_size = 0.6,
@@ -627,8 +631,8 @@ class Detector:
         if mode == 'mrs_ts':
             disperser_label = self.dispersers[disperser]
             label = f'{inst} / MRS / {disperser_label}'
-        elif mode == 'lrsslitless':
-            label = f'{inst} / LRS'
+        elif mode in ['lrsslit', 'lrsslitless']:
+            label = f'{inst} / LRS / {mode[3:].upper()}'
         elif mode == 'imaging_ts':
             filter_label = self.filters[filter]
             label = f'{inst} / {filter_label}'
@@ -761,7 +765,7 @@ def generate_all_instruments():
         constraints = inst['constraints']
 
         aperture_label = 'Aperture'
-        if mode == 'lrsslitless':
+        if mode in ['lrsslit', 'lrsslitless']:
             disperser_label = 'Disperser'
             filter_label = ''
             filters = {'': ''}
@@ -947,7 +951,7 @@ def make_save_label(
     if mode == 'target_acq':
         return f'tso{target}_{inst}_{mode}.pickle'
     # Shorter miri and nircam mode names:
-    mode = mode.replace('lrsslitless', 'lrs').replace('mrs_ts', 'mrs')
+    mode = mode.replace('mrs_ts', 'mrs')
     mode = mode.replace('w_tsgrism', 'w_grism')
     mode = mode.replace('w_ts', 'w_imaging')
 
@@ -955,7 +959,7 @@ def make_save_label(
         return f'tso{target}_{inst}_{mode}_{aperture}.pickle'
     elif mode == 'imaging_ts':
         return f'tso{target}_{inst}_{mode}_{filter}.pickle'
-    elif mode in ['lrs', 'soss']:
+    elif mode in ['lrsslit', 'lrsslitless', 'soss']:
         return f'tso{target}_{inst}_{mode}.pickle'
     elif mode == 'bots':
         return f'tso{target}_{inst}_{mode}_{disperser}.pickle'
@@ -986,8 +990,8 @@ def make_detector_label(
 
     if mode == 'mrs_ts':
         return f'MIRI MRS {disperser.upper()}'
-    if mode == 'lrsslitless':
-        return 'MIRI LRS'
+    if mode in ['lrsslit', 'lrsslitless']:
+        return f'MIRI {mode.upper()}'
     if mode == 'imaging_ts':
         return f'MIRI {filter.upper()}'
 

@@ -51,7 +51,7 @@ def get_throughput(input, evaluate=False):
     if key not in throughputs[obs_type][inst][mode]:
         return None
 
-    if mode == 'lrsslitless':
+    if mode in ['lrsslitless', 'lrsslit']:
         filter = 'None'
     elif mode == 'mrs_ts':
         filter = disperser
