@@ -1196,7 +1196,7 @@ def set_depth_scene(scene, obs_type, depth_model, wl_range=None):
 
 def get_bandwidths(inst, mode, aperture, filter):
     """
-    Calculate passband bandwidth properties.
+    Calculate passband bandwidth properties for photometry modes
     See https://jwst-docs.stsci.edu/jwst-near-infrared-camera/nircam-instrumentation/nircam-filters
 
     Returns
@@ -1628,6 +1628,7 @@ def _print_pandeia_saturation(
         inst = config['instrument']['instrument']
         subarray = config['detector']['subarray']
         readout = config['detector']['readout_pattern']
+        ngroup = config['detector']['ngroup']
 
     sat_time = integration_time(inst, subarray, readout, ngroup)
     sat_fraction = 100.0 * pixel_rate * sat_time / full_well

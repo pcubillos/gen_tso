@@ -690,7 +690,7 @@ def get_throughputs(type=None, inst=None, mode=None):
     >>> # All available throughputs
     >>> throughputs = jwst.get_throughputs()
     >>> # All throughputs for NIRSpec
-    >>> throughputs = jwst.get_throughputs('nirspec')
+    >>> throughputs = jwst.get_throughputs(inst='nirspec')
     """
     if mode is not None:
         if inst is None:
