@@ -58,8 +58,11 @@ def get_latest_pandeia_release():
     Fetch latest pandeia.engine version for JWST from their website
     """
     url = 'https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+News'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (compatible; MyBot/0.1; +https://example.com/bot)'
+    }
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=headers)
         status_code = response.status_code
     except:
         status_code = 0
@@ -75,7 +78,7 @@ def get_latest_pandeia_release():
                     version = version[0:version.index('/')]
                 return version.strip()
     # Fail-safe, hard-coded JWST default, need to be kept up to date manually:
-    return '2025.3'
+    return '2025.7'
 
 
 def get_version_advice(package, latest_version=None):
