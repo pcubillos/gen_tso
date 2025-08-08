@@ -360,6 +360,10 @@
         "disperser": "CLEAR,GRISMR",
         "filter": "WLP4,F322W2"
     },
+    "6284_3": {
+        "disperser": "CLEAR,GRISMR",
+        "filter": "WLP4,F322W2"
+    },
     "6284_2": {
         "disperser": "CLEAR,GRISMR",
         "filter": "WLP4,F444W"
@@ -523,11 +527,6 @@
             "b"
         ],
         "missing": true
-    },
-    "8696_1": {
-        "planets": [
-            ".01"
-        ]
     },
     "8864_4": {
         "planets": [
