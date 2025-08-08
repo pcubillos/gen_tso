@@ -360,6 +360,10 @@
         "disperser": "CLEAR,GRISMR",
         "filter": "WLP4,F322W2"
     },
+    "6284_3": {
+        "disperser": "CLEAR,GRISMR",
+        "filter": "WLP4,F322W2"
+    },
     "6284_2": {
         "disperser": "CLEAR,GRISMR",
         "filter": "WLP4,F444W"
@@ -428,7 +432,7 @@
         "duration": 31.61,
         "date_start": null,
         "date_end": null,
-        "plan_window": "not yet assigned",
+        "plan_window": "2026-11-12 - 2026-11-12",
         "proprietary_period": 12,
         "label": "Partial Phase Curve",
         "special_reqs": "['PeriodZeroPhase', 'TimeSeriesObservation']",
@@ -474,7 +478,7 @@
         "duration": 20.42,
         "date_start": null,
         "date_end": null,
-        "plan_window": "not yet assigned",
+        "plan_window": "2026-09-29 - 2026-09-29",
         "proprietary_period": 12,
         "label": " : planet_niriss",
         "special_reqs": "['OrientRange', 'PeriodZeroPhase', 'TimeSeriesObservation']",
@@ -511,7 +515,7 @@
         "duration": 21.13,
         "date_start": null,
         "date_end": null,
-        "plan_window": "not yet assigned",
+        "plan_window": "2026-10-08 - 2026-10-08",
         "proprietary_period": 12,
         "label": " : planet_nirspec",
         "special_reqs": "['PeriodZeroPhase', 'TimeSeriesObservation']",
@@ -524,17 +528,7 @@
         ],
         "missing": true
     },
-    "8696_1": {
-        "planets": [
-            ".01"
-        ]
-    },
     "8864_4": {
-        "planets": [
-            ".01"
-        ]
-    },
-    "9025_4": {
         "planets": [
             ".01"
         ]

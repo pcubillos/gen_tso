@@ -5,27 +5,47 @@ import numpy as np
 import gen_tso.pandeia_io as jwst
 
 
+# These are the most important tests where I check that Gen TSO
+# reproduces the ETC calculations
+
 # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# Spectroscopy
-def test_perform_calculation_miri_lrs():
+# Spectroscopy  (workbook 261611)
+def test_perform_calculation_miri_lrsslitless():
     pando = jwst.PandeiaCalculation('miri', 'lrsslitless')
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
 
     ngroup = 34
     nint = 1379
-
     report = pando.perform_calculation(
         ngroup, nint,
     )
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    # ETC background 2572 e/s
-    np.testing.assert_allclose(rep['sn'], 2216.8585)
-    np.testing.assert_allclose(rep['extracted_flux'], 2789.8679)
+    np.testing.assert_allclose(rep['sn'], 2216.858286)
+    np.testing.assert_allclose(rep['extracted_flux'], 2789.8673)
     np.testing.assert_allclose(rep['extracted_noise'], 1.258478, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 28412.383)
+    np.testing.assert_allclose(rep['brightest_pixel'], 28412.377)
     np.testing.assert_allclose(rep['fraction_saturation'], 0.793349, rtol=1e-6)
+
+
+def test_perform_calculation_miri_lrsslit():
+    pando = jwst.PandeiaCalculation('miri', 'lrsslit')
+    pando.set_scene('phoenix', 'k2v', '2mass,ks', 10.055)
+
+    ngroup = 8
+    nint = 713
+    report = pando.perform_calculation(
+        ngroup, nint,
+    )
+
+    rep = report['scalar']
+    # Differ from ETC because background is not exactly the same
+    np.testing.assert_allclose(rep['sn'], 606.9103022719474)
+    np.testing.assert_allclose(rep['extracted_flux'], 306.7919211072417)
+    np.testing.assert_allclose(rep['extracted_noise'], 0.5054979623163043)
+    np.testing.assert_allclose(rep['brightest_pixel'], 6393.106)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.7328961195941236)
 
 
 def test_perform_calculation_miri_mrs():
@@ -41,10 +61,10 @@ def test_perform_calculation_miri_mrs():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 2133.817392)
-    np.testing.assert_allclose(rep['extracted_flux'], 256.712868)
+    np.testing.assert_allclose(rep['sn'], 2133.8171597)
+    np.testing.assert_allclose(rep['extracted_flux'], 256.7128099)
     np.testing.assert_allclose(rep['extracted_noise'], 0.120307, rtol=1e-5)
-    np.testing.assert_allclose(rep['brightest_pixel'], 172.1364)
+    np.testing.assert_allclose(rep['brightest_pixel'], 172.13635)
     np.testing.assert_allclose(rep['fraction_saturation'], 0.123334, rtol=1e-6)
 
 
@@ -62,14 +82,14 @@ def test_perform_calculation_nirspec_bots():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 5909.431001)
-    np.testing.assert_allclose(rep['extracted_flux'], 6184.164104)
-    np.testing.assert_allclose(rep['extracted_noise'], 1.046491, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 3975.6643)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.77238, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 5909.949946609753)
+    np.testing.assert_allclose(rep['extracted_flux'], 6185.192697986513)
+    np.testing.assert_allclose(rep['extracted_noise'], 1.04657277199, rtol=1e-6)
+    np.testing.assert_allclose(rep['brightest_pixel'], 3976.0142)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.7724477, rtol=1e-6)
 
 
-def test_perform_calculation_niriss_soss():
+def test_perform_calculation_niriss_soss_96():
     pando = jwst.PandeiaCalculation('niriss', 'soss')
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
 
@@ -83,11 +103,32 @@ def test_perform_calculation_niriss_soss():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 11269.248655)
-    np.testing.assert_allclose(rep['extracted_flux'], 28856.874712)
-    np.testing.assert_allclose(rep['extracted_noise'], 2.560674, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 3191.468469)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.785101, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 11269.247048301882)
+    np.testing.assert_allclose(rep['extracted_flux'], 28856.867285530574)
+    np.testing.assert_allclose(rep['extracted_noise'], 2.560673944039491)
+    np.testing.assert_allclose(rep['brightest_pixel'], 3191.4676620684377)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.7851010448688357)
+
+
+def test_perform_calculation_niriss_soss_stripe204():
+    pando = jwst.PandeiaCalculation('niriss', 'soss')
+    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+
+    subarray = 'sub204stripe_soss'
+    ngroup = 32
+    nint = 1165
+
+    report = pando.perform_calculation(
+        ngroup, nint, subarray=subarray,
+    )
+
+    rep = report['scalar']
+    # Differ from ETC because background is not exactly the same
+    np.testing.assert_allclose(rep['sn'], 21117.856800942976)
+    np.testing.assert_allclose(rep['extracted_flux'], 28856.8671980996)
+    np.testing.assert_allclose(rep['extracted_noise'], 1.3664676046487376)
+    np.testing.assert_allclose(rep['brightest_pixel'], 3191.466522334738)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.798292159453329)
 
 
 def test_perform_calculation_nircam_lw_tsgrism():
@@ -108,11 +149,11 @@ def test_perform_calculation_nircam_lw_tsgrism():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 5663.236)
-    np.testing.assert_allclose(rep['extracted_flux'], 5197.943)
-    np.testing.assert_allclose(rep['extracted_noise'], 0.91784, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 2370.5251)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.694858, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 5663.234922906078)
+    np.testing.assert_allclose(rep['extracted_flux'], 5197.941289562555)
+    np.testing.assert_allclose(rep['extracted_noise'], 0.9178396023337207)
+    np.testing.assert_allclose(rep['brightest_pixel'], 2370.525)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.6948575619512088)
 
 
 def test_perform_calculation_nircam_sw_tsgrism():
@@ -121,10 +162,10 @@ def test_perform_calculation_nircam_sw_tsgrism():
 
     aperture = 'dhs0spec8'
     filter = 'f150w'
-    readout = 'rapid'
+    readout = 'dhs3'
     subarray = 'sub260s4_8-spectra'
-    ngroup = 80
-    nint = 90
+    ngroup = 30
+    nint = 62
 
     report = pando.perform_calculation(
         ngroup, nint,
@@ -134,22 +175,20 @@ def test_perform_calculation_nircam_sw_tsgrism():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 4108.861511)
-    np.testing.assert_allclose(rep['extracted_flux'], 2326.930432)
-    np.testing.assert_allclose(rep['extracted_noise'], 0.56632, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 485.7249)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.718261, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 3399.893684600709)
+    np.testing.assert_allclose(rep['extracted_flux'], 2326.9298324581123)
+    np.testing.assert_allclose(rep['extracted_noise'], 0.6844125282498038)
+    np.testing.assert_allclose(rep['brightest_pixel'], 485.7248)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.7900869454569583)
 
 
 
 # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# Photometry
+# Photometry (workbook 261613)
 def test_perform_calculation_nircam_sw_ts():
     pando = jwst.PandeiaCalculation('nircam', 'sw_ts')
     pando.set_scene('phoenix', 'k2v', '2mass,ks', 10.055)
 
-    # pando.show_config()
-    # pando.calc['strategy']
     filter = 'f212n'
     readout = 'rapid'
     subarray = 'sub160p'
@@ -163,11 +202,11 @@ def test_perform_calculation_nircam_sw_ts():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 10907.382669)
-    np.testing.assert_allclose(rep['extracted_flux'], 95399.94145)
-    np.testing.assert_allclose(rep['extracted_noise'], 8.746364, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 15469.766)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.640836, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 10907.381441388885)
+    np.testing.assert_allclose(rep['extracted_flux'], 95399.91842956156)
+    np.testing.assert_allclose(rep['extracted_noise'], 8.746363088354034)
+    np.testing.assert_allclose(rep['brightest_pixel'], 15469.762)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.6408357677853426)
 
 
 def test_perform_calculation_nircam_lw_ts():
@@ -187,11 +226,11 @@ def test_perform_calculation_nircam_lw_ts():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 9885.335196)
-    np.testing.assert_allclose(rep['extracted_flux'], 73134.053834)
-    np.testing.assert_allclose(rep['extracted_noise'], 7.398237, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 14831.356)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.782422, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 9885.3342620672)
+    np.testing.assert_allclose(rep['extracted_flux'], 73134.03817783193)
+    np.testing.assert_allclose(rep['extracted_noise'], 7.398236239564276)
+    np.testing.assert_allclose(rep['brightest_pixel'], 14831.353)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.7824214937405873)
 
 
 def test_perform_calculation_miri_imaging_ts():
@@ -210,15 +249,15 @@ def test_perform_calculation_miri_imaging_ts():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 9137.029043)
-    np.testing.assert_allclose(rep['extracted_flux'], 156471.800829)
-    np.testing.assert_allclose(rep['extracted_noise'], 17.12502, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 39420.387)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.670673, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 9724.465601868)
+    np.testing.assert_allclose(rep['extracted_flux'], 178300.55512741362)
+    np.testing.assert_allclose(rep['extracted_noise'], 18.335254853815655)
+    np.testing.assert_allclose(rep['brightest_pixel'], 39420.38)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.6706726435671684)
 
 
 # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-# Acquisition
+# Acquisition (workbook 261612)
 def test_perform_calculation_miri_target_acq():
     pando = jwst.PandeiaCalculation('miri', 'target_acq')
     pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
@@ -235,11 +274,11 @@ def test_perform_calculation_miri_target_acq():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 512.337046)
-    np.testing.assert_allclose(rep['extracted_flux'], 451308.813965)
-    np.testing.assert_allclose(rep['extracted_noise'], 880.882648, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 47220.953)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.387804, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 512.3369780799846)
+    np.testing.assert_allclose(rep['extracted_flux'], 451308.7021484374)
+    np.testing.assert_allclose(rep['extracted_noise'], 880.8825469513158)
+    np.testing.assert_allclose(rep['brightest_pixel'], 47220.94)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.3878040082233869)
 
 
 def test_perform_calculation_nircam_target_acq():
@@ -252,16 +291,16 @@ def test_perform_calculation_nircam_target_acq():
 
     report = pando.perform_calculation(
         ngroup, nint,
-        filter=filter, 
+        filter=filter,
     )
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 281.089612)
-    np.testing.assert_allclose(rep['extracted_flux'], 2667698.826546)
-    np.testing.assert_allclose(rep['extracted_noise'], 9490.563538, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 510198.7)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.483993, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 317.9818678861534)
+    np.testing.assert_allclose(rep['extracted_flux'], 2667698.154677334)
+    np.testing.assert_allclose(rep['extracted_noise'], 8389.466268662985)
+    np.testing.assert_allclose(rep['brightest_pixel'], 510198.56)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.48399305611921367)
 
 
 def test_perform_calculation_niriss_target_acq():
@@ -275,11 +314,11 @@ def test_perform_calculation_niriss_target_acq():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 406.413349)
-    np.testing.assert_allclose(rep['extracted_flux'], 469783.817383)
-    np.testing.assert_allclose(rep['extracted_noise'], 1155.926148, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 69039.62)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.52355, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 406.4132996199974)
+    np.testing.assert_allclose(rep['extracted_flux'], 469783.7031249999)
+    np.testing.assert_allclose(rep['extracted_noise'], 1155.9260082390383)
+    np.testing.assert_allclose(rep['brightest_pixel'], 69039.6)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.5235503118489584)
 
 
 def test_perform_calculation_nirspec_target_acq():
@@ -299,10 +338,10 @@ def test_perform_calculation_nirspec_target_acq():
 
     rep = report['scalar']
     # Differ from ETC because background is not exactly the same
-    np.testing.assert_allclose(rep['sn'], 76.970847)
-    np.testing.assert_allclose(rep['extracted_flux'], 526950.164062)
-    np.testing.assert_allclose(rep['extracted_noise'], 6846.100645, rtol=1e-6)
-    np.testing.assert_allclose(rep['brightest_pixel'], 283694.34)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.19588, rtol=1e-6)
+    np.testing.assert_allclose(rep['sn'], 76.96948861914326)
+    np.testing.assert_allclose(rep['extracted_flux'], 526935.5126953124)
+    np.testing.assert_allclose(rep['extracted_noise'], 6846.031098149417)
+    np.testing.assert_allclose(rep['brightest_pixel'], 283687.75)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.19587548030769228)
 
 

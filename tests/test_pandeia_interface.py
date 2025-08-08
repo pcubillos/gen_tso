@@ -14,62 +14,8 @@ os.chdir(ROOT+'../tests')
 # See tests/mocks/make_mocks.py for mocked data setup.
 
 
-def test_saturation_level_perform_calculation_single():
-    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
-        result = pickle.load(f)
-
-    pixel_rate, full_well = jwst.saturation_level(result)
-    expected_rate = 1300.2144775390625
-    expected_well = 58100.00422843957
-    np.testing.assert_allclose(pixel_rate, expected_rate)
-    np.testing.assert_allclose(full_well, expected_well)
-
-
-def test_saturation_level_perform_calculation_multi():
-    with open('mocks/perform_calculation_miri_mrs_ts.pkl', 'rb') as f:
-        result = pickle.load(f)
-
-    pixel_rate, full_well = jwst.saturation_level(result)
-    expected_rate = [
-        204.37779236, 109.17165375,  32.75593948,   4.55676889,
-    ]
-    expected_well = [
-        193654.99564498, 193655.00540975, 193655.004117  , 193654.99798687,
-    ]
-    np.testing.assert_allclose(pixel_rate, expected_rate)
-    np.testing.assert_allclose(full_well, expected_well)
-
-
-def test_saturation_level_tso_calculation_single():
-    with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
-        tso = pickle.load(f)
-
-    pixel_rate, full_well = jwst.saturation_level(tso)
-    expected_rate = [1261.23925781, 1300.21447754]
-    expected_well = [58100.00016363, 58100.00129109]
-    np.testing.assert_allclose(pixel_rate, expected_rate)
-    np.testing.assert_allclose(full_well, expected_well)
-
-
-def test_saturation_level_tso_calculation_multi():
-    with open('mocks/tso_calculation_miri_mrs_ts.pkl', 'rb') as f:
-        tso = pickle.load(f)
-
-    pixel_rate, full_well = jwst.saturation_level(tso)
-    expected_rate = [
-        198.24740601, 105.90003204,  31.80119514,   4.46783495,
-        204.37779236, 109.17165375,  32.75593948,   4.55676889,
-    ]
-    expected_well = [
-        193654.99147199, 193654.99886718, 193654.98493823, 193654.99820043,
-        193654.99564498, 193655.00540975, 193655.004117  , 193654.99798687,
-    ]
-    np.testing.assert_allclose(pixel_rate, expected_rate)
-    np.testing.assert_allclose(full_well, expected_well)
-
-
 @pytest.mark.skip(reason='TBD')
-def test_saturation_level_tso_calculation_get_max():
+def test_read_noise_variance():
     pass
 
 
@@ -191,6 +137,345 @@ def test_bin_search_exposure_time_bad_readout():
     assert exp_time == 0.0
 
 
+@pytest.mark.skip(reason='TBD')
+def test_integration_time():
+    pass
+
+
+def test_extract_flux_rate_perform_calculation_single():
+    with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
+        result = pickle.load(f)
+
+    pixel_rate, full_well = jwst.extract_flux_rate(result)
+    expected_rate = 1300.2144775390625
+    expected_well = 58100.00422843957
+    np.testing.assert_allclose(pixel_rate, expected_rate)
+    np.testing.assert_allclose(full_well, expected_well)
+
+
+def test_extract_flux_rate_perform_calculation_multi():
+    with open('mocks/perform_calculation_miri_mrs_ts.pkl', 'rb') as f:
+        result = pickle.load(f)
+
+    pixel_rate, full_well = jwst.extract_flux_rate(result)
+    expected_rate = [
+        204.37779236, 109.17165375,  32.75593948,   4.55676889,
+    ]
+    expected_well = [
+        193654.99564498, 193655.00540975, 193655.004117  , 193654.99798687,
+    ]
+    np.testing.assert_allclose(pixel_rate, expected_rate)
+    np.testing.assert_allclose(full_well, expected_well)
+
+
+def test_extract_flux_rate_tso_calculation_single():
+    with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
+        tso = pickle.load(f)
+
+    pixel_rate, full_well = jwst.extract_flux_rate(tso)
+    expected_rate = [1261.23925781, 1300.21447754]
+    expected_well = [58100.00016363, 58100.00129109]
+    np.testing.assert_allclose(pixel_rate, expected_rate)
+    np.testing.assert_allclose(full_well, expected_well)
+
+
+def test_extract_flux_rate_tso_calculation_multi():
+    with open('mocks/tso_calculation_miri_mrs_ts.pkl', 'rb') as f:
+        tso = pickle.load(f)
+
+    pixel_rate, full_well = jwst.extract_flux_rate(tso)
+    expected_rate = [
+        198.24740601, 105.90003204,  31.80119514,   4.46783495,
+        204.37779236, 109.17165375,  32.75593948,   4.55676889,
+    ]
+    expected_well = [
+        193654.99147199, 193654.99886718, 193654.98493823, 193654.99820043,
+        193654.99564498, 193655.00540975, 193655.004117  , 193654.99798687,
+    ]
+    np.testing.assert_allclose(pixel_rate, expected_rate)
+    np.testing.assert_allclose(full_well, expected_well)
+
+
+@pytest.mark.skip(reason='TBD')
+def test_extract_flux_rate_tso_calculation_get_max():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_extract_flux_rate():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_estimate_flux_rate():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_groups_below_saturation():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_get_sed_list():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_find_closest_sed():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_find_nearby_seds():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_make_scene():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_extract_sed():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_blackbody_eclipse_depth():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_set_depth_scene():
+    pass
+
+
+def test_get_bandwidths_nirspec_spectro():
+    inst = 'nircam'
+    mode = 'lw_ts'
+    aper = 'lw'
+    filter = 'f250m'
+    wl0, bw, min_wl, max_wl = jwst.get_bandwidths(inst, mode, aper, filter)
+    np.testing.assert_allclose(wl0, 2.5032492904902526)
+    np.testing.assert_allclose(bw, 0.18093647144369174)
+    np.testing.assert_allclose(min_wl, 2.4099999999997896)
+    np.testing.assert_allclose(max_wl, 2.5949999999997693)
+
+
+def test_get_bandwidths_miri_photo():
+    inst = 'miri'
+    mode = 'imaging_ts'
+    aper = 'imager'
+    filter = 'f560w'
+    wl0, bw, min_wl, max_wl = jwst.get_bandwidths(inst, mode, aper, filter)
+    np.testing.assert_allclose(wl0, 5.635006830413706)
+    np.testing.assert_allclose(bw, 1.0006342537921697)
+    np.testing.assert_allclose(min_wl, 5.029999999999501)
+    np.testing.assert_allclose(max_wl, 6.204999999999371)
+
+
+@pytest.mark.skip(reason='TBD')
+def test_save_tso():
+    pass
+
+
+def test_simulate_tso_spectroscopy():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_tsgrism')
+    pando.set_scene('phoenix', 'k5v', '2mass,ks', 8.351)
+
+    disperser='grismr'
+    filter='f444w'
+    readout='rapid'
+    subarray='subgrism64'
+    ngroup = 14
+
+    transit_dur = 2.71
+    obs_dur = 6.01
+    obs_type = 'transit'
+    model_path = f'{ROOT}data/models/WASP80b_transit.dat'
+    depth_model = np.loadtxt(model_path, unpack=True)
+
+    tso = pando.tso_calculation(
+        obs_type, transit_dur, obs_dur, depth_model,
+        ngroup, disperser, filter, subarray, readout,
+    )
+
+    sim = jwst.simulate_tso(tso, n_obs=1, resolution=50.0, noiseless=True)
+    bin_wl, bin_spec, bin_err, bin_widths = sim
+
+    #print(' '.join([f'{val:.10e},' for val in bin_spec]))
+    #print(' '.join([f'{val:.10e},' for val in bin_err]))
+    expected_wl = [
+        3.76373232, 3.83976732, 3.91733838, 3.99647653, 4.07721343,
+        4.15958137, 4.24361332, 4.32934288, 4.41680435, 4.50603273,
+        4.59706369, 4.68993366, 4.7846798 , 4.88134   , 4.9642892,
+    ]
+    expected_depths = [
+        2.9196147533e-02, 2.9133292403e-02, 2.9080336314e-02, 2.9072502418e-02,
+        2.9099839002e-02, 2.9181665646e-02, 2.9334965459e-02, 2.9401305002e-02,
+        2.9380707088e-02, 2.9308734016e-02, 2.9250582642e-02, 2.9310178172e-02,
+        2.9331133145e-02, 2.9383420209e-02, 2.9416676413e-02,
+    ]
+    expected_errors = [
+        2.5216620191e-03, 9.7522860111e-05, 3.0456858027e-05, 2.8706507253e-05,
+        2.9208368639e-05, 2.9868139512e-05, 3.0767740663e-05, 3.3243328518e-05,
+        3.5617857052e-05, 3.8147765558e-05, 4.0227910565e-05, 4.3083460408e-05,
+        4.5791244642e-05, 4.9872653719e-05, 7.4568353154e-05,    ]
+    np.testing.assert_allclose(bin_wl, expected_wl)
+    np.testing.assert_allclose(bin_spec, expected_depths)
+    np.testing.assert_allclose(bin_err, expected_errors)
+
+    # In case you want to see:
+    if False:
+        import matplotlib.pyplot as plt
+        plt.figure(10)
+        plt.clf()
+        plt.plot(depth_model[0], depth_model[1], c='salmon')
+        plt.xlim(2.0, 15)
+        plt.errorbar(
+            bin_wl, bin_spec, yerr=bin_err, xerr=bin_widths,
+            fmt='o', color='xkcd:blue', mec='k', mew=1.0,
+        )
+        plt.xlim(3.7, 5.1)
+        plt.ylim(0.0287, 0.0298)
+
+
+def test_simulate_tso_photometry_nircam():
+    pando = jwst.PandeiaCalculation('nircam', 'lw_ts')
+    scene = jwst.make_scene('phoenix', 'k5v', '2mass,ks', 13.5)
+    pando.calc['scene'] = [scene]
+
+    filters = pando.get_configs('filters')
+    subarray = 'sub160p'
+    ngroup = 6
+    model_path = f'{ROOT}data/models/WASP80b_transit.dat'
+    depth_model = np.loadtxt(model_path, unpack=True)
+
+    transit_dur = 2.71
+    obs_dur = 6.0
+    obs_type = 'transit'
+
+    photo = []
+    depths = np.zeros(len(filters))
+    errors = np.zeros(len(filters))
+    wl0 = np.zeros(len(filters))
+    for i,filter in enumerate(filters):
+        tso = pando.tso_calculation(
+            obs_type, transit_dur, obs_dur, depth_model,
+            ngroup, filter=filter, subarray=subarray,
+        )
+        sim = jwst.simulate_tso(tso, n_obs=1, noiseless=True)
+        bin_wl, bin_spec, bin_err, bin_widths = sim
+        wl0[i] = bin_wl[0]
+        depths[i] = bin_spec[0]
+        errors[i] = bin_err[0]
+        photo.append(sim)
+
+    #print(' '.join([f'{val:.10e},' for val in depths]))
+    #print(' '.join([f'{val:.10e},' for val in errors]))
+    expected_wl = [
+       2.50043641, 2.74658655, 2.98917098, 3.10777101, 3.23666867,
+       3.35436687, 3.52803572, 3.61482427, 4.05288935, 4.07232472,
+       4.2764497 , 4.33293163, 4.62826398, 4.65428414, 4.70788841, 4.8098832
+    ]
+    expected_depths = [
+        2.9602338269e-02, 2.9673371519e-02, 2.9704446669e-02, 2.9605682107e-02,
+        2.9750487589e-02, 2.9726817356e-02, 2.9526279939e-02, 2.9459430393e-02,
+        2.9076228245e-02, 2.9157602907e-02, 2.9342234464e-02, 2.9243180723e-02,
+        2.9275985608e-02, 2.9279524748e-02, 2.9312241769e-02, 2.9349643103e-02,
+    ]
+    expected_errors = [
+        1.3840358487e-04, 7.4326836871e-05, 1.2111463701e-04, 5.6637595030e-05,
+        5.8597305401e-04, 1.2942307791e-04, 8.9283843176e-05, 1.4150529160e-04,
+        7.6607387286e-04, 1.6205714300e-04, 2.6322708714e-04, 1.1749776751e-04,
+        3.5311120708e-04, 1.3152440611e-03, 1.4757125324e-03, 3.2309278153e-04,
+    ]
+    np.testing.assert_allclose(wl0, expected_wl)
+    np.testing.assert_allclose(depths, expected_depths)
+    np.testing.assert_allclose(errors, expected_errors)
+
+    # In case you want to see:
+    if False:
+        import matplotlib.pyplot as plt
+        plt.figure(10)
+        plt.clf()
+        plt.plot(depth_model[0], depth_model[1], c='0.6')
+        plt.xlim(2.3, 6.0)
+        plt.ylim(0.0283, 0.0304)
+        for i,sim in enumerate(photo):
+            bin_wl, bin_spec, bin_err, bin_widths = sim
+            col = plt.cm.rainbow(i/len(filters))
+            plt.errorbar(
+                bin_wl, bin_spec, yerr=bin_err, xerr=bin_widths.T/2,
+                fmt='o', color=col, mec='k', mew=1.0, label=filters[i],
+            )
+        plt.legend(loc='best')
+
+
+
+def test_simulate_tso_photometry_miri():
+    # With MIRI / imaging
+    pando = jwst.PandeiaCalculation('miri', 'imaging_ts')
+    scene = jwst.make_scene('phoenix', 'k5v', '2mass,ks', 13.5)
+    pando.calc['scene'] = [scene]
+
+    model_path = f'{ROOT}data/models/WASP80b_transit.dat'
+    depth_model = np.loadtxt(model_path, unpack=True)
+    transit_dur = 2.71
+    obs_dur = 6.0
+    obs_type = 'transit'
+    ngroup = 6
+    photo = []
+    filters = ['f560w', 'f770w', 'f1000w', 'f1130w', 'f1280w']
+
+    depths = np.zeros(len(filters))
+    errors = np.zeros(len(filters))
+    wl0 = np.zeros(len(filters))
+    for i,filter in enumerate(filters):
+        tso = pando.tso_calculation(
+            obs_type, transit_dur, obs_dur, depth_model,
+            ngroup, filter=filter,
+        )
+        sim = jwst.simulate_tso(tso, n_obs=1, noiseless=True)
+        bin_wl, bin_spec, bin_err, bin_widths = sim
+        wl0[i] = bin_wl[0]
+        depths[i] = bin_spec[0]
+        errors[i] = bin_err[0]
+        photo.append(sim)
+
+    #print(' '.join([f'{val:.10e},' for val in depths]))
+    #print(' '.join([f'{val:.10e},' for val in errors]))
+    expected_wl = 5.60136086,  7.53420869,  9.88160076, 11.2961649 , 12.70594686
+    expected_depths = [
+        2.9531964334e-02, 2.9716731220e-02, 2.9197822880e-02,
+        2.9140090022e-02, 2.9250074765e-02,
+    ]
+    expected_errors = [
+        2.5261903335e-04, 2.5860955286e-04, 5.1512651158e-04,
+        1.6119916090e-03, 1.1052531125e-03,
+    ]
+    np.testing.assert_allclose(wl0, expected_wl)
+    np.testing.assert_allclose(depths, expected_depths)
+    np.testing.assert_allclose(errors, expected_errors)
+
+    # In case you want to see:
+    if False:
+        import matplotlib.pyplot as plt
+        plt.figure(10)
+        plt.clf()
+        plt.plot(depth_model[0], depth_model[1], c='0.6')
+        plt.xlim(2.0, 15)
+        for i,sim in enumerate(photo):
+            bin_wl, bin_spec, bin_err, bin_widths = sim
+            col = plt.cm.rainbow(i/len(filters))
+            plt.errorbar(
+                bin_wl, bin_spec, yerr=bin_err, xerr=bin_widths.T/2,
+                fmt='o', color=col, mec='k', mew=1.0, label=filters[i],
+            )
+        plt.legend(loc='best')
+
+
 def test__print_pandeia_exposure_config():
     with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
@@ -219,6 +504,7 @@ def test__print_pandeia_exposure_format(format):
 
 
 def test__print_pandeia_saturation_perform_calc():
+    # HERE!
     with open('mocks/perform_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
 
@@ -490,4 +776,7 @@ def test_tso_print_rich(capsys):
         "Number of cosmic rays:      0.0072  events/pixel/read\r\n"
     )
     assert captured.out == expected_report
+
+
+
 

@@ -14,6 +14,12 @@ page-navigation: true
 A general TSO simulator for exoplanets with JWST
 </div>
 
+::: {.callout-note title="**Good News!**"}
+<span style="font-size: 1.2em; font-weight: bold; color: #1a73e8;">
+Gen TSO is now ready for JWST cycle 5 simulations! 🎉
+</span>
+:::
+
 `Gen TSO` is a graphical interface to simulate JWST time-series
 observations (TSO) of exoplanets.  Gen TSO connects together:
 
@@ -78,8 +84,11 @@ These are the available TSO modes for each instrument:
 
   <tbody>
     <tr>
-        <td rowspan="2"><span data-qmd="__miri__"></span></td>
+        <td rowspan="3"><span data-qmd="__miri__"></span></td>
         <td>lrsslitless</td> <td>5.0 &#8211; 12</td>
+    </tr>
+    <tr>
+        <td>lrsslit</td> <td>5.0 &#8211; 12</td>
     </tr>
     <tr>
         <td>mrs_ts</td> <td>5.0 &#8211; 28</td>

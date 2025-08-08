@@ -67,11 +67,16 @@ class PandeiaCalculation():
 
         Spectroscopy: instrument  mode
                       miri        lrsslitless
+                      miri        lrsslit
                       miri        mrs_ts
                       nircam      lw_tsgrism
                       nircam      sw_tsgrism
                       niriss      soss
                       nirspec     bots
+        Photometry:
+                      miri        imaging_ts
+                      nircam      lw_ts
+                      nircam      sw_ts
         Acquisition:
                       miri        target_acq
                       nircam      target_acq
@@ -270,6 +275,8 @@ class PandeiaCalculation():
             ranges = conf['range'][aperture]['dhs0_2']
             ranges.update(conf['range'][aperture]['dhs0_1'])
             config = ranges[filter]
+        elif self.mode in ['lrsslit']:
+            config = conf['range'][aperture]
         elif self.mode in ['lrsslitless', 'mrs_ts']:
             config = conf['range'][aperture][disperser]
         elif self.mode in ['imaging_ts']:
