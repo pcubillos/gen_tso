@@ -10,6 +10,10 @@
 [![PyPI](https://img.shields.io/pypi/v/gen_tso.svg)](https://pypi.org/project/gen_tso)
 [![GitHub](https://img.shields.io/github/license/pcubillos/gen_tso.svg?color=blue)](https://github.com/pcubillos/gen_tso/blob/master/LICENSE)
 
+> ## **Good News!** 🎉 
+> Gen TSO is now ready for **JWST cycle 5** simulations!
+
+
 ### Install as:
 
 Available for Python 3.9+ from PyPI:
