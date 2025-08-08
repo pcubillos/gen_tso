@@ -831,6 +831,8 @@ def get_planet_letters(obs, targets, verbose=False):
         return ['c']
     if pid=='3818' and obs_id=='2' and visit=='1':
         return ['d']
+    if pid=='9235' and obs_id=='5':
+        return ['b']
 
     target_name = obs['target']
     # The planet is in the 'target'
@@ -876,6 +878,6 @@ def get_planet_letters(obs, targets, verbose=False):
                 print(f'{info}{name:15}{period:6.1f}  {periods}  {planet_letters}')
             return planet_letters
 
-    print(f'Could not determine planet for {repr(name)} (PID={pid})')
+    print(f'Could not determine planet for {repr(name)} (PID={pid}, {obs_id})')
     return []
 
