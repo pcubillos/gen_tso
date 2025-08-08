@@ -14,9 +14,9 @@ page-navigation: true
 A general TSO simulator for exoplanets with JWST
 </div>
 
-::: {.callout-note title="**Good News! 🎉**"}
-<span style="font-size: 1.2em; font-weight: bold;">
-Gen TSO is now ready for JWST cycle 5 simulations!
+::: {.callout-note title="**Good News!**"}
+<span style="font-size: 1.2em; font-weight: bold; color: #1a73e8;">
+Gen TSO is now ready for JWST cycle 5 simulations! 🎉
 </span>
 :::
 
