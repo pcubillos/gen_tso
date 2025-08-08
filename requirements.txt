@@ -1,7 +1,7 @@
 shiny>=1.0.0
-pandeia.engine>=2025.3
+pandeia.engine>=2025.7
 numpy>=1.17
-scipy<1.15
+scipy>=1.14.1
 requests>=2.19.1
 astroquery>=0.4.8
 astropy>=5.3.0
