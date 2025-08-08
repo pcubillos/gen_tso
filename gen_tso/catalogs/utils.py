@@ -97,17 +97,17 @@ def json_target(index, name, ra, dec, g_mag, teff, logg, separation):
     for ESASky).
     """
     data = [
-        json_target_property('G mag', g_mag[index], '.2f'),
-        json_target_property('T eff', teff[index], '.1f'),
-        json_target_property('log(g)', logg[index], '.2f'),
-        json_target_property('Separation', separation[index], '.3f'),
+        json_target_property('G mag', g_mag, '.2f'),
+        json_target_property('T eff', teff, '.1f'),
+        json_target_property('log(g)', logg, '.2f'),
+        json_target_property('Separation', separation, '.3f'),
     ]
 
     target = {
-        'name': name[index],
+        'name': name,
         'id': index+1,
-        'ra': f'{ra[index]:.8f}',
-        'dec': f'{dec[index]:.8f}',
+        'ra': f'{ra:.8f}',
+        'dec': f'{dec:.8f}',
         'data': data,
     }
     return target
@@ -148,7 +148,10 @@ def esasky_js_catalog(query):
     ntargets = len(names)
     targets = []
     for i in range(ntargets):
-        target = json_target(i, names, ra, dec, g_mag, teff, logg, separation)
+        target = json_target(
+            i, names[i], ra[i], dec[i],
+            g_mag[i], teff[i], logg[i], separation[i],
+        )
         targets.append(target)
 
     command = {
