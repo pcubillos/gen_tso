@@ -723,7 +723,6 @@ def fetch_simbad_aliases(targets):
     return host_aliases, kmag
 
 
-
 def fetch_vizier_ks(target, verbose=True):
     """
     Query for a target in the 2MASS catalog via Vizier.
