@@ -42,6 +42,7 @@ def find_target(targets=None):
     """
     if targets is None:
         targets = load_targets('nea_data.txt', is_confirmed=True)
+        targets += load_targets('tess_data.txt', is_confirmed=False)
     planets = [target.planet for target in targets]
     aliases = []
     for target in targets:
@@ -135,7 +136,7 @@ class Catalog():
 
     def get_target(
             self, name=None,
-            is_transit=True, is_jwst=None, is_confirmed=True,
+            is_transit=True, is_jwst=None, is_confirmed=None,
         ):
         """
         Search by name for a planet in the catalog.
