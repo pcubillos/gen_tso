@@ -1463,22 +1463,41 @@ def server(input, output, session):
 
 
     @render.ui
-    @reactive.event(input.mode)
+    @reactive.event(input.mode, input.subarray)
     def detector_label():
         mode = input.mode.get()
-        sw_warning = (
-            'The SW Grism Time Series mode is still being calibrated; '
-            'the SNR and saturation estimates provided by the ETC '
-            'may therefore be outside the expected 10% accuracy level'
-        )
+        subarray = input.subarray.get()
+        stripes = [
+             'sub17stripe_soss',
+             'sub60stripe_soss',
+             'sub204stripe_soss',
+             'sub680stripe_soss',
+        ]
+
         if mode == 'sw_tsgrism':
-            return ui.tooltip(
-                'Detector setup (!)',
-                sw_warning,
-                placement='top',
+            warning_txt = (
+                'The SW Grism Time Series mode is still being calibrated; '
+                'the SNR and saturation estimates provided by the ETC '
+                'may therefore be outside the expected 10% accuracy level'
+            )
+        elif subarray in stripes:
+            warning_txt = (
+                'The SOSS multi-stripe subgroup is still being calibrated; '
+                'particularly, ETC (pandeia) exposure times are per stripe.  '
+                'Gen TSO corrects it to match the APT values, as '
+                'recommended in the Jwebbinar 43.'
             )
         else:
             return 'Detector setup'
+
+        return ui.tooltip(
+            ui.div(
+                'Detector setup ',
+                fa.icon_svg("triangle-exclamation", fill='gold'),
+            ),
+            warning_txt,
+            placement='top',
+        )
 
 
     @reactive.Effect(priority=2)
