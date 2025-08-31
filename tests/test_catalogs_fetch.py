@@ -265,6 +265,7 @@ def test_fetch_aliases_basics():
         '2MASS J21000618-0505398 b': 'WASP-69 b',
         'WISE J210006.21-050540.9 b': 'WASP-69 b',
         'TIC 248853232 b': 'WASP-69 b',
+        'TIC 248853232.01': 'WASP-69 b',
         'Gaia DR2 6910753016653587840 b': 'WASP-69 b',
         'TOI-5823.01': 'WASP-69 b',
         'TOI-5823 b': 'WASP-69 b',

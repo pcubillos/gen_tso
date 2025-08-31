@@ -152,8 +152,8 @@ def test_perform_calculation_nircam_lw_tsgrism():
     np.testing.assert_allclose(rep['sn'], 5663.234922906078)
     np.testing.assert_allclose(rep['extracted_flux'], 5197.941289562555)
     np.testing.assert_allclose(rep['extracted_noise'], 0.9178396023337207)
-    np.testing.assert_allclose(rep['brightest_pixel'], 2370.525)
-    np.testing.assert_allclose(rep['fraction_saturation'], 0.6948575619512088)
+    np.testing.assert_allclose(rep['brightest_pixel'], 2370.5247)
+    np.testing.assert_allclose(rep['fraction_saturation'], 0.6948574903877508)
 
 
 def test_perform_calculation_nircam_sw_tsgrism():

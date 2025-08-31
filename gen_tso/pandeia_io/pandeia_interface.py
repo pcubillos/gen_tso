@@ -171,8 +171,20 @@ def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
         nreset1 = readout_config["nreset1"]
         nreset2 = readout_config["nreset2"]
 
+    # ETC correction for SOSS substripe subarrays:
+    subarray_factors = {
+        'sub17stripe_soss': 120.0,
+        'sub60stripe_soss':  34.0,
+        'sub204stripe_soss': 10.0,
+        'sub680stripe_soss':  3.0,
+    }
+    if subarray in subarray_factors:
+        t_factor = subarray_factors[subarray]
+    else:
+        t_factor = 1.0
+
     def exp_time(nint):
-        time = nexp * (
+        time = t_factor * nexp * (
             tfffr * nint +
             tframe * (
                 nreset1 + (nint-1) * nreset2 +

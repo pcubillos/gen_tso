@@ -6,6 +6,7 @@ import pickle
 import pytest
 
 import numpy as np
+from pandeia.engine.calc_utils import get_instrument_config
 
 import gen_tso.pandeia_io as jwst
 from gen_tso.utils import ROOT
@@ -14,9 +15,45 @@ os.chdir(ROOT+'../tests')
 # See tests/mocks/make_mocks.py for mocked data setup.
 
 
-@pytest.mark.skip(reason='TBD')
-def test_read_noise_variance():
-    pass
+#@pytest.mark.skip(reason='TBD')
+@pytest.mark.parametrize(
+    'configs',
+    (
+        # inst,  mode, aperture, expected_rn
+        ('miri', 'mrs_ts', 'ch1', 32.6),
+        ('miri', 'mrs_ts', 'ch2', 32.6),
+        ('miri', 'mrs_ts', 'ch3', 32.6),
+        ('miri', 'mrs_ts', 'ch4', 32.6),
+        ('miri', 'lrsslitless', 'imager', 32.6),
+        ('miri', 'imaging_ts', 'imager', 32.6),
+        ('nircam', 'lw_tsgrism', 'lw', 8.98),
+        ('nircam', 'sw_tsgrism', 'dhs0spec2', 21.3192),
+        ('nircam', 'sw_tsgrism', 'dhs0spec4', 42.6384),
+        ('nircam', 'sw_tsgrism', 'dhs0spec8', 85.2768),
+        ('nircam', 'sw_tsgrism', 'dhs0bright', 10.6596),
+        ('nircam', 'lw_ts', 'lw', 8.98),
+        ('nircam', 'sw_ts', 'sw', 10.6596),
+        ('nircam', 'sw_ts', 'wlp4', 10.6596),
+        ('nircam', 'sw_ts', 'wlp8__ts', 10.6596),
+        ('nircam', 'sw_ts', 'wlp8__tsgrism', 10.6596),
+        ('nirspec', 'bots',  's1600a1', 9.799),
+        ('niriss', 'soss', 'soss', 11.55),
+    )
+)
+def test_read_noise_variance(configs):
+    inst, mode, aperture, expected_rn = configs
+    ins_config = get_instrument_config('jwst', inst)
+    # mock report
+    instrument = {
+        'mode': mode,
+        'aperture': aperture,
+    }
+    configuration = {'instrument': instrument}
+    input = {'configuration': configuration}
+    report = {'input': input}
+
+    read_noise = jwst.read_noise_variance(report, ins_config)
+    np.testing.assert_almost_equal(read_noise, expected_rn)
 
 
 @pytest.mark.parametrize('nint', [1, 10, 100])
@@ -312,16 +349,18 @@ def test_simulate_tso_spectroscopy():
         4.59706369, 4.68993366, 4.7846798 , 4.88134   , 4.9642892,
     ]
     expected_depths = [
-        2.9196147533e-02, 2.9133292403e-02, 2.9080336314e-02, 2.9072502418e-02,
-        2.9099839002e-02, 2.9181665646e-02, 2.9334965459e-02, 2.9401305002e-02,
-        2.9380707088e-02, 2.9308734016e-02, 2.9250582642e-02, 2.9310178172e-02,
-        2.9331133145e-02, 2.9383420209e-02, 2.9416676413e-02,
+        2.9196140488e-02, 2.9133293446e-02, 2.9080333256e-02, 2.9072499494e-02,
+        2.9099833873e-02, 2.9181661142e-02, 2.9334961283e-02, 2.9401298674e-02,
+        2.9380711497e-02, 2.9308732552e-02, 2.9250589981e-02, 2.9310169251e-02,
+        2.9331140031e-02, 2.9383422601e-02, 2.9416677476e-02,
+
     ]
     expected_errors = [
         2.5216620191e-03, 9.7522860111e-05, 3.0456858027e-05, 2.8706507253e-05,
         2.9208368639e-05, 2.9868139512e-05, 3.0767740663e-05, 3.3243328518e-05,
         3.5617857052e-05, 3.8147765558e-05, 4.0227910565e-05, 4.3083460408e-05,
-        4.5791244642e-05, 4.9872653719e-05, 7.4568353154e-05,    ]
+        4.5791244642e-05, 4.9872653719e-05, 7.4568353154e-05,
+    ]
     np.testing.assert_allclose(bin_wl, expected_wl)
     np.testing.assert_allclose(bin_spec, expected_depths)
     np.testing.assert_allclose(bin_err, expected_errors)
@@ -375,15 +414,17 @@ def test_simulate_tso_photometry_nircam():
     #print(' '.join([f'{val:.10e},' for val in depths]))
     #print(' '.join([f'{val:.10e},' for val in errors]))
     expected_wl = [
-       2.50043641, 2.74658655, 2.98917098, 3.10777101, 3.23666867,
-       3.35436687, 3.52803572, 3.61482427, 4.05288935, 4.07232472,
-       4.2764497 , 4.33293163, 4.62826398, 4.65428414, 4.70788841, 4.8098832
+       2.50043643, 2.74658693, 2.98917097, 3.10777101, 3.23666866,
+       3.35436689, 3.52803571, 3.61482424, 4.05288935, 4.07232474,
+       4.27644969, 4.33293162, 4.62826397, 4.65428413, 4.7078885 ,
+       4.80988318,
     ]
     expected_depths = [
-        2.9602338269e-02, 2.9673371519e-02, 2.9704446669e-02, 2.9605682107e-02,
-        2.9750487589e-02, 2.9726817356e-02, 2.9526279939e-02, 2.9459430393e-02,
-        2.9076228245e-02, 2.9157602907e-02, 2.9342234464e-02, 2.9243180723e-02,
-        2.9275985608e-02, 2.9279524748e-02, 2.9312241769e-02, 2.9349643103e-02,
+        2.9602355004e-02, 2.9673371794e-02, 2.9704446586e-02, 2.9605678087e-02,
+        2.9750499043e-02, 2.9726816999e-02, 2.9526299697e-02, 2.9459430372e-02,
+        2.9076237238e-02, 2.9157603316e-02, 2.9342234571e-02, 2.9243180952e-02,
+        2.9275989763e-02, 2.9279518701e-02, 2.9312241722e-02, 2.9349633790e-02,
+
     ]
     expected_errors = [
         1.3840358487e-04, 7.4326836871e-05, 1.2111463701e-04, 5.6637595030e-05,
@@ -448,8 +489,8 @@ def test_simulate_tso_photometry_miri():
     #print(' '.join([f'{val:.10e},' for val in errors]))
     expected_wl = 5.60136086,  7.53420869,  9.88160076, 11.2961649 , 12.70594686
     expected_depths = [
-        2.9531964334e-02, 2.9716731220e-02, 2.9197822880e-02,
-        2.9140090022e-02, 2.9250074765e-02,
+        2.9531941371e-02, 2.9716732792e-02, 2.9197826341e-02,
+        2.9140093469e-02, 2.9250072922e-02,
     ]
     expected_errors = [
         2.5261903335e-04, 2.5860955286e-04, 5.1512651158e-04,

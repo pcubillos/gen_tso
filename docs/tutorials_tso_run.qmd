@@ -221,10 +221,11 @@ pando.get_configs()
 ```
 
 ```bash
+apertures: ['lw']
 dispersers: ['grismr']
 filters: ['f277w', 'f322w2', 'f356w', 'f444w']
-subarrays: ['full', 'subgrism128', 'subgrism256', 'subgrism64', 'full (noutputs=1)', 'subgrism128 (noutputs=1)', 'subgrism256 (noutputs=1)', 'subgrism64 (noutputs=1)', 'sub40stripe1_dhs', 'sub80stripe2_dhs', 'sub160stripe4_dhs', 'sub256stripe4_dhs']
-readout patterns: ['rapid', 'bright1', 'bright2', 'shallow2', 'shallow4', 'medium2', 'medium8', 'deep2', 'deep8']
+subarrays: ['full', 'subgrism128', 'subgrism256', 'subgrism64', 'full (noutputs=1)', 'subgrism128 (noutputs=1)', 'subgrism256 (noutputs=1)', 'subgrism64 (noutputs=1)', 'sub41s1_2-spectra', 'sub82s2_4-spectra', 'sub164s4_8-spectra', 'sub260s4_8-spectra']
+readout patterns: ['rapid', 'bright1', 'bright2', 'shallow2', 'shallow4', 'medium2', 'medium8', 'mediumdeep2', 'mediumdeep8', 'deep2', 'deep8', 'dhs3', 'dhs4', 'dhs5', 'dhs6', 'dhs7']
 ```
 
 ## Run Pandeia and check results
