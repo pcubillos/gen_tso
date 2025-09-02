@@ -37,7 +37,7 @@ To use `pandeia` you need to download some files as per their [documentation](ht
 If you don't have it yet, download the latest pandeia reference data,
 unzip it, and place it in the folder pointed by `$pandeia_refdata`.
 Here's the current latest version:
-[https://stsci.box.com/v/pandeia-refdata-v2025p3-jwst](https://stsci.box.com/v/pandeia-refdata-v2025p3-jwst)
+[https://stsci.box.com/v/pandeia-refdata-v2025p7-jwst](https://stsci.box.com/v/pandeia-refdata-v2025p7-jwst)
 
 If this is your first time using pandeia, you likely need to setup a
 `$pandeia_refdata` environment variable (e.g., in your `~/.bashrc`,
@@ -54,7 +54,7 @@ You should end up with something like this:
 
 ```bash
 echo $pandeia_refdata
-/home/USERNAME/data/pandeia_data-4.1-jwst
+/home/USERNAME/data/pandeia_data-2025.7-jwst
 ```
 
 ### 2.2 Atlases data
