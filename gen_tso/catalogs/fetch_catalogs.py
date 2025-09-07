@@ -1329,12 +1329,12 @@ def fetch_gaia_targets(
         target = targets[idx]
 
     return (
-            targets['designation'].data.data[sep_isort],
-            targets['phot_g_mean_mag'].data.data[sep_isort],
-            targets['teff_gspphot'].data.data[sep_isort],
-            targets['logg_gspphot'].data.data[sep_isort],
-            targets['ra'].data.data[sep_isort],
-            targets['dec'].data.data[sep_isort],
-            np.array(separation)[sep_isort],
+        targets['designation'].data.data[sep_isort],
+        targets['phot_g_mean_mag'].data.data[sep_isort],
+        targets['teff_gspphot'].data.data[sep_isort],
+        targets['logg_gspphot'].data.data[sep_isort],
+        targets['ra'].data.data[sep_isort],
+        targets['dec'].data.data[sep_isort],
+        np.array(separation)[sep_isort],
     )
 
