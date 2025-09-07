@@ -38,6 +38,7 @@ import random
 
 import numpy as np
 import scipy.interpolate as si
+from scipy.interpolate import CubicSpline
 import pandeia.engine.sed as sed
 from pandeia.engine.calc_utils import get_instrument_config
 from pandeia.engine.normalization import NormalizationFactory
@@ -96,6 +97,50 @@ def read_noise_variance(report, ins_config):
 
     return read_noise
 
+
+# ETC-APT correction for t_exp for SOSS multi-stripe subarrays
+log_ngroup = np.log10([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 50, 100, 300, 1000, 3000,
+])
+stripe_subarrays = [
+    'sub17stripe_soss',
+    'sub60stripe_soss',
+    'sub204stripe_soss',
+    'sub680stripe_soss',
+]
+log_correction = [
+    [
+        -0.77956267, -0.95565393, -1.08059267, -1.17750268, -1.25668393,
+        -1.32363072, -1.38162266, -1.43277519, -1.47853268, -1.51992536,
+        -1.80075197, -1.96989437, -2.18610285, -2.48285405, -2.95709917,
+        -3.47896676, -3.95579867,
+    ],
+    [
+        -1.23735383, -1.41345756, -1.53840877, -1.63533126, -1.71452498,
+        -1.78142187, -1.83942629, -1.89059129, -1.93636125, -1.97776641,
+        -2.25859302, -2.42773542, -2.6439439 , -2.9406951 , -3.41494022,
+        -3.9368078 , -4.41363972,
+    ],
+    [
+        -1.74005413, -1.91614539, -2.04108413, -2.13799414, -2.21717539,
+        -2.28412218, -2.34211412, -2.39326665, -2.43902414, -2.48041682,
+        -2.76124343, -2.93038583, -3.14659431, -3.44334551, -3.91759063,
+        -4.43945821, -4.91629013,
+    ],
+    [
+        -2.25430035, -2.42996756, -2.55518895, -2.6523818 , -2.73113886,
+        -2.79836839, -2.85593629, -2.90737147, -2.95341179, -2.99438029,
+        -3.2752069 , -3.4443493 , -3.66055778, -3.95730898, -4.4315541 ,
+        -4.95342169, -5.4302536,
+    ],
+]
+
+soss_exp_correction = {
+    subarray: CubicSpline(
+        log_ngroup, log_correction[j], extrapolate=True,
+    )
+    for j,subarray in enumerate(stripe_subarrays)
+}
 
 def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
     """
@@ -179,7 +224,9 @@ def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
         'sub680stripe_soss':  3.0,
     }
     if subarray in subarray_factors:
-        t_factor = subarray_factors[subarray]
+        corr = 1.0 + 10.0**soss_exp_correction[subarray](np.log10(ngroup))
+        print(f"correction is {corr}")
+        t_factor = subarray_factors[subarray] * corr
     else:
         t_factor = 1.0
 
