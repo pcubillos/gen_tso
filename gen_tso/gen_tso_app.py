@@ -1150,8 +1150,12 @@ def server(input, output, session):
                 )
                 warnings = tso['report_out']['warnings']
         else:
-            reports = tso['scalar'], None
-            warnings = tso['warnings']
+            if isinstance(tso, list):
+                reports = [report['scalar'] for report in tso]
+                warnings = tso[0]['warnings']
+            else:
+                reports = tso['scalar'], None
+                warnings = tso['warnings']
         tso_run['stats'] = jwst._print_pandeia_stats(
             inst, mode, reports[0], reports[1], format='html',
         )

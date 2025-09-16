@@ -225,7 +225,6 @@ def _exposure_time_function(instrument, subarray, readout, ngroup, nexp=1):
     }
     if subarray in subarray_factors:
         corr = 1.0 + 10.0**soss_exp_correction[subarray](np.log10(ngroup))
-        print(f"correction is {corr}")
         t_factor = subarray_factors[subarray] * corr
     else:
         t_factor = 1.0
@@ -1312,12 +1311,21 @@ def save_tso(filename, tso, lightweight=True):
         'report_in' to reduce the file size.
         The original `tso` object is not modified.
     """
-    tso_copy = copy.deepcopy(tso)
     if lightweight:
-        for rep in ['report_out', 'report_in']:
-            report = tso_copy[rep]
-            report.pop('2d', None)
-            report.pop('3d', None)
+        tso_copy = copy.deepcopy(tso)
+        is_list = isinstance(tso_copy, list)
+        if not is_list:
+            tso_copy = [tso_copy]
+
+        for _tso in tso_copy:
+            for rep in ['report_out', 'report_in']:
+                report = _tso[rep]
+                report.pop('2d', None)
+                report.pop('3d', None)
+        if not is_list:
+            tso_copy = tso_copy[0]
+    else:
+        tso_copy = tso
 
     with open(filename, 'wb') as handle:
         pickle.dump(tso_copy, handle, protocol=4)

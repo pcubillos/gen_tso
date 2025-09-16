@@ -313,7 +313,13 @@ def test_get_bandwidths_miri_photo():
 
 
 @pytest.mark.skip(reason='TBD')
-def test_save_tso():
+def test_save_tso_single():
+    pass
+
+
+@pytest.mark.skip(reason='TBD')
+def test_save_tso_list():
+    # eg SOSS or MRS
     pass
 
 

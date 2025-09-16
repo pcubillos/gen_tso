@@ -894,7 +894,6 @@ class PandeiaCalculation():
         >>> plt.xlabel('Wavelength (um)')
         >>> plt.ylabel('Flux rate (e-/s)')
         >>> plt.tight_layout()
-
         """
         if transit_dur >= obs_dur:
             raise ValueError(
@@ -909,6 +908,19 @@ class PandeiaCalculation():
         elif obs_type == 'transit':
             scene_in = depth_scene
             scene_out = star_scene
+
+        if aperture is None:
+            aperture = self.calc['configuration']['instrument']['aperture']
+        if disperser is None:
+            disperser = self.calc['configuration']['instrument']['disperser']
+        if filter is None:
+            filter = self.calc['configuration']['instrument']['filter']
+        if subarray is None:
+            subarray = self.calc['configuration']['detector']['subarray']
+        if readout is None:
+            readout = self.calc['configuration']['detector']['readout_pattern']
+        if self.mode == 'soss' and order is None:
+            order = self.calc['strategy']['order']
 
         if not isinstance(aperture, Iterable) or isinstance(aperture, str):
             aperture = [aperture]
