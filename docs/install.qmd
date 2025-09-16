@@ -84,6 +84,13 @@ place them inside the folder pointed by `$PYSYN_CDBS` (make sure to keep the
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_kurucz-1993-atlas_multi_v2_synphot4.tar
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_pheonix-models_multi_v3_synphot5.tar
 wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_everything_multi_v16_sed.tar
+wget https://archive.stsci.edu/hlsps/reference-atlases/hlsp_reference-atlases_hst_multi_other-spectra_multi_v2_sed.tar
+```
+
+For the BT-Settl spectra you will need to move the files, something like this:
+
+```bash
+mv grp/redcat/trds/source/ grp/redcat/trds/grid/phoenixBTS11_15/
 ```
 
 If everything went right, then you should see something similar to this:
