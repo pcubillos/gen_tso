@@ -79,7 +79,7 @@ def response_boundaries(wl, response, threshold=0.001):
     [(0.1, 0.25), (0.5, 0.55)]
     """
     bounds = []
-    # Contigous ranges where response > threshold:
+    # Contiguous ranges where response > threshold:
     for group, indices in groupby(range(len(wl)), lambda x: response[x]>threshold):
         if group:
             indices = list(indices)
@@ -567,10 +567,16 @@ def plotly_tso_spectra(
         ymin = np.amin([ymin, np.amin(spec)])
 
     # Saturation (take report with highest e-/sec)
-    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
-    wl, partial = report['1d']['n_partial_saturated']
-    wl, full = report['1d']['n_full_saturated']
-    partial_saturation = response_boundaries(wl, partial, threshold=0)
+    hi_flux = 'report_out' if obs_geometry=='transit' else 'report_in'
+    partial_saturation = []
+    full_saturation = []
+    for i,tso in enumerate(tso_list):
+        report = tso[hi_flux]
+        wl, partial = report['1d']['n_partial_saturated']
+        wl, full = report['1d']['n_full_saturated']
+        partial_saturation += response_boundaries(wl, partial, threshold=0)
+        full_saturation += response_boundaries(wl, full, threshold=0)
+
     for j,bound in enumerate(partial_saturation):
         fig.add_vrect(
             x0=bound[0], x1=bound[1],
@@ -581,7 +587,6 @@ def plotly_tso_spectra(
             name='partial',
             showlegend=(j==0),
         )
-    full_saturation = response_boundaries(wl, full, threshold=0)
     for j,bound in enumerate(full_saturation):
         fig.add_vrect(
             x0=bound[0], x1=bound[1],
