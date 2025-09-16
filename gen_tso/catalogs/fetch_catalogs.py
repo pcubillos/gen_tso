@@ -675,7 +675,7 @@ def fetch_simbad_aliases(targets):
 
     Examples
     --------
-    >>> from gen_tso.catalogs.update_catalogs import fetch_simbad_aliases
+    >>> from gen_tso.catalogs.fetch_catalogs import fetch_simbad_aliases
     >>> # Single-planet search
     >>> aliases, ks_mag = fetch_simbad_aliases('WASP-80')
     >>> print(aliases[0], ks_mag[0], sep='\n')
@@ -696,6 +696,9 @@ def fetch_simbad_aliases(targets):
     """
     if isinstance(targets, str):
         targets = [targets]
+    if len(targets) == 0:
+        return [[]], np.array([np.nan])
+
     Simbad.reset_votable_fields()
     Simbad.add_votable_fields("otype", "ids", 'K')
 
