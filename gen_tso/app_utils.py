@@ -36,6 +36,18 @@ bands_dict = {
     'johnson,v': 'V mag',
 }
 
+# Catch empty or invalid numerical values
+# Anytime a input is called as such: varname = input.varname.get()
+# replace with: varname = _safe_num(input.varname.get(), default=..., cast=...)
+# Only neccessary when val cant be empty string or None
+def _safe_num(val, default=0.0, cast=float):
+    if val is None or val == "":
+        return default
+    try:
+        return cast(val)
+    except (ValueError, TypeError):
+        return default
+
 
 def get_throughput(input, evaluate=False):
     config = parse_instrument(
@@ -73,8 +85,8 @@ def get_auto_sed(input):
     sed_models = sed_dict[sed_type]
 
     try:
-        t_eff = float(input.t_eff.get())
-        log_g = float(input.log_g.get())
+        t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
+        log_g = _safe_num(input.log_g.get(), default=4.5, cast=float)
     except ValueError:
         return sed_models, None
     chosen_sed = jwst.find_closest_sed(t_eff, log_g, sed_type)
@@ -298,7 +310,7 @@ def parse_sed(input, spectra, target_acq_mag=None):
     if target_acq_mag is None:
         sed_type = input.sed_type()
         norm_band = input.magnitude_band.get()
-        norm_magnitude = float(input.magnitude.get())
+        norm_magnitude = _safe_num(input.magnitude.get(), default=10.0, cast=float)
     else:
         sed_type = 'phoenix'
         norm_band = 'gaia,g'
@@ -313,7 +325,7 @@ def parse_sed(input, spectra, target_acq_mag=None):
             return None, None, None, None, None
         model_label = f'{sed_type}_{sed_model}'
     elif sed_type == 'blackbody':
-        sed_model = float(input.t_eff.get())
+        sed_model = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
         model_label = f'bb_{sed_model:.0f}K'
     elif sed_type == 'input':
         model_label = input.sed.get()

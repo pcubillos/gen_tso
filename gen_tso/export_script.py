@@ -10,6 +10,7 @@ from gen_tso.app_utils import (
     parse_instrument,
     parse_obs,
     parse_sed,
+    _safe_num,
 )
 from gen_tso.pandeia_io.pandeia_defaults import (
     make_save_label,
@@ -134,7 +135,7 @@ def export_script_fixed_values(
     sed_model = {{'wl': sed_wl, 'flux': flux}}
     """.strip()
     elif sed_type == 'blackbody':
-        t_eff = input.t_eff.get()
+        t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
         sed_script = f"sed_model = {t_eff}"
     else:
         sed_script = f"sed_model = {repr(sed_model)}"
@@ -174,7 +175,7 @@ def export_script_fixed_values(
     else:
         # Transit depth
         transit_depth_script = parse_depth_source(input, spectra)
-        transit_dur = float(input.t_dur.get())
+        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
         script += f"""
     {transit_depth_script}
 
@@ -241,15 +242,15 @@ def export_script_calculated_values(
         target_acq_mag = None
 
     req_saturation = saturation_fraction.get()
-    transit_dur = float(input.t_dur.get())
+    transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
     planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
     sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
         input, spectra, target_acq_mag=target_acq_mag,
     )
     sed_warning = ""
-    t_eff = float(input.t_eff.get())
-    log_g = float(input.log_g.get())
+    t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
+    log_g = _safe_num(input.log_g.get(), default=4.5, cast=float)
     teff_text = 'target.teff' if t_eff == target.teff else f'{t_eff}'
     logg_text = 'target.logg_star' if log_g == target.logg_star else f'{log_g}'
 
@@ -312,8 +313,8 @@ def export_script_calculated_values(
         )
 
     # obs_duration
-    obs_dur = float(input.obs_dur.get())
-    transit_dur = float(input.t_dur.get())
+    obs_dur = _safe_num(input.obs_dur.get(), default=1.0, cast=float)
+    transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
     is_target_tdur = np.abs(transit_dur - target.transit_dur) < 0.01
     tdur_text = 'target.transit_dur' if is_target_tdur else f'{transit_dur}'
 

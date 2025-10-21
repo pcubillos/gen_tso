@@ -56,6 +56,7 @@ from gen_tso.app_utils import (
     parse_depth_model,
     parse_obs,
     parse_sed,
+    _safe_num,
 )
 import gen_tso.viewer_popovers as pops
 from gen_tso.export_script import (
@@ -432,10 +433,10 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_text("t_eff", "", value='1400.0'),
+                    ui.input_numeric("t_eff", "", value='1400.0'),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_text("log_g", "", value='4.5'),
+                    ui.input_numeric("log_g", "", value='4.5'),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
@@ -443,11 +444,11 @@ app_ui = ui.page_fluid(
                         choices=bands_dict,
                         selected='2mass,ks',
                     ),
-                    ui.input_text(
+                    ui.input_numeric(
                         id="magnitude",
                         label="",
                         value='10.0',
-                        placeholder="magnitude",
+                        #placeholder="magnitude",
                     ),
                     width=1/2,
                     fixed_width=False,
@@ -532,10 +533,10 @@ app_ui = ui.page_fluid(
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
-                    ui.input_text("t_dur", "", value='2.0'),
+                    ui.input_numeric("t_dur", "", value='2.0'),
                     # Row 3
                     ui.p("Obs_dur (h):"),
-                    ui.input_text("obs_dur", "", value='5.0'),
+                    ui.input_numeric("obs_dur", "", value='5.0'),
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
@@ -1012,11 +1013,12 @@ def server(input, output, session):
         # Target setup:
         target_focus = input.target_focus.get()
         target_name = input.target.get()
-        t_eff = input.t_eff.get()
-        log_g = input.log_g.get()
+        t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
+        log_g = _safe_num(input.log_g.get(), default=4.5, cast=float)
         obs_geometry = input.obs_geometry.get()
-        transit_dur = float(input.t_dur.get())
-        obs_dur = float(input.obs_dur.get())
+        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+        obs_dur = _safe_num(input.obs_dur.get(), default=1.0, cast=float)
+
         planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
         if target_focus == 'acquisition':
@@ -1286,13 +1288,14 @@ def server(input, output, session):
 
         # The target:
         current_target = input.target.get()
-        current_tdur = input.t_dur.get()
+        current_tdur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+
 
         target_focus = tso['target_focus']
         ui.update_radio_buttons('target_focus', selected=target_focus)
 
         name = tso['target']
-        t_dur = str(tso['transit_dur'])
+        t_dur = float(tso['transit_dur'])
         planet_model_type = tso['planet_model_type']
         ui.update_selectize('target', selected=name)
         norm_band = tso['norm_band']
@@ -1312,20 +1315,20 @@ def server(input, output, session):
                 cache_target[name]['norm_band'] = norm_band
                 cache_target[name]['norm_mag'] = norm_mag
         else:
-            ui.update_text('t_eff', value=tso['t_eff'])
-            ui.update_text('log_g', value=tso['log_g'])
-            ui.update_text('t_dur', value=t_dur)
+            ui.update_numeric('t_eff', value=float(tso['t_eff']))
+            ui.update_numeric('log_g', value=float(tso['log_g']))
+            ui.update_numeric('t_dur', value=float(t_dur))
             if target_focus == 'science':
                 ui.update_select('magnitude_band', selected=norm_band)
-                ui.update_text('magnitude', value=norm_mag)
-
+                ui.update_numeric('magnitude', value=float(norm_mag()))
+                                  
         # sed_type, sed_model, norm_band, norm_mag, sed_label
         if target_focus == 'science':
             ui.update_select('sed_type', selected=sed_type)
             reset_sed = (
-                sed_type != input.sed_type.get() or
-                tso['t_eff']!=input.t_eff.get() or
-                tso['log_g'] != input.log_g.get()
+                sed_type != input.sed_type.get()
+                or float(tso['t_eff']) != _safe_num(input.t_eff.get(), default=float(tso['t_eff']), cast=float)
+                or float(tso['log_g']) != _safe_num(input.log_g.get(), default=float(tso['log_g']), cast=float)
             )
             if sed_type in sed_dict:
                 if reset_sed:
@@ -1345,10 +1348,10 @@ def server(input, output, session):
         warning_text.set(tso['warnings'])
         obs_geometry = tso['obs_geometry']
         ui.update_select('obs_geometry', selected=obs_geometry)
-        if t_dur != current_tdur:
+        if float(t_dur) != float(current_tdur):
             preset_obs_dur.set(tso['obs_dur'])
         else:
-            ui.update_text('obs_dur', value=tso['obs_dur'])
+            ui.update_numeric('obs_dur', value=float(tso['obs_dur']))
 
         choices = depth_choices[obs_geometry]
         ui.update_select(
@@ -1370,8 +1373,8 @@ def server(input, output, session):
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
 
-            resolution = input.tso_resolution.get()
-            n_obs = input.n_obs.get()
+            resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
+            n_obs = int(_safe_num(input.n_obs.get(), default=1, cast=int))
             tso_draw.set(draw(tso['tso'], resolution, n_obs))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
@@ -2062,13 +2065,13 @@ def server(input, output, session):
             band = '2mass,ks'
             magnitude = f'{target.ks_mag:.3f}'
 
-        ui.update_text('t_eff', value=t_eff)
-        ui.update_text('log_g', value=log_g)
+        ui.update_numeric('t_eff', value=float(t_eff))
+        ui.update_numeric('log_g', value=float(log_g))
         ui.update_select('magnitude_band', selected=band)
-        ui.update_text('magnitude', value=magnitude)
+        ui.update_numeric('magnitude', value=float(magnitude))
         if t_dur == '':
             t_dur = '0.0'
-        ui.update_text('t_dur', value=t_dur)
+        ui.update_numeric('t_dur', value=float(t_dur))
 
         delete_catalog = {
             "event": 'deleteCatalogue',
@@ -2116,10 +2119,7 @@ def server(input, output, session):
                 selected = preset_sed.get()
                 preset_sed.set(None)
         elif sed_type == 'blackbody':
-            if input.t_eff.get() == '':
-                t_eff = 0.0
-            else:
-                t_eff = float(input.t_eff.get())
+            t_eff = _safe_num(input.t_eff.get(), default=0.0, cast=float)
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
@@ -2307,20 +2307,20 @@ def server(input, output, session):
         if preset_obs_dur.get() is not None:
             obs_dur = preset_obs_dur.get()
             preset_obs_dur.set(None)
-            ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
+            ui.update_numeric('obs_dur', value=float(f'{obs_dur:.2f}'))
             return
-        t_dur = req(input.t_dur).get()
-        if t_dur == '':
-            ui.update_text('obs_dur', value='0.0')
+        t_dur_val = _safe_num(req(input.t_dur).get(), default=0.0, cast=float)
+        if t_dur_val == 0.0:
+            ui.update_numeric('obs_dur', value=0.0)
             return
-        transit_dur = float(t_dur)
+        transit_dur = t_dur_val
         settling = req(input.settling_time).get()
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
         # Tdwell = T_start + T_settle + T14 + 2*max(1, T14/2)
         obs_dur = 1.0 + settling + transit_dur + 2.0*baseline
-        ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
+        ui.update_numeric('obs_dur', value=float(f'{obs_dur:.2f}'))
 
 
     @reactive.effect
@@ -2522,7 +2522,29 @@ def server(input, output, session):
             ui.update_numeric('integrations', value=1)
             return
 
-        obs_dur = float(req(input.obs_dur).get())
+        # Handles empty or invalid observation duration when pressing match integrations
+        obs_val = req(input.obs_dur).get()
+        if obs_val is None or obs_val == "":
+            ui.notification_show(
+                ui.markdown("**Error:**<br>Observation duration is empty — enter a value to match integrations"),
+                type="error",
+                duration=5,
+            )
+            ui.update_numeric('integrations', value=1)
+            return
+        try:
+            obs_dur = float(obs_val)
+        except (ValueError, TypeError):
+            ui.notification_show(
+                ui.markdown("**Error:**<br>Observation duration is not a valid number"),
+                type="error",
+                duration=5,
+            )
+            ui.update_numeric('integrations', value=1)
+            return
+
+        #obs_dur = float(req(input.obs_dur).get())
+
         inst = input.instrument.get().lower()
         ngroup = input.ngroup.get()
         readout = input.readout.get()
@@ -2751,7 +2773,7 @@ def server(input, output, session):
             return
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
-        resolution = input.tso_resolution.get()
+        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
         units = input.plot_tso_units.get()
 
         min_depth, max_depth, step = jwst._get_tso_depth_range(
@@ -2770,8 +2792,8 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
 
-        n_obs = input.n_obs.get()
-        resolution = input.tso_resolution.get()
+        n_obs = int(_safe_num(input.n_obs.get(), default=1, cast=int))
+        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
         tso_draw.set(draw(tso['tso'], resolution, n_obs))
 
 
@@ -2805,7 +2827,7 @@ def server(input, output, session):
         )
 
         depth_label = parse_obs(input)[1]
-        transit_dur = float(input.t_dur.get())
+        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
 
         if ngroup is None or parse_sed(input, spectra)[-1] is None:
             warning_text.set(warnings)
