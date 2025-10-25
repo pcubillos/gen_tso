@@ -1320,7 +1320,7 @@ def server(input, output, session):
             ui.update_numeric('t_dur', value=float(t_dur))
             if target_focus == 'science':
                 ui.update_select('magnitude_band', selected=norm_band)
-                ui.update_numeric('magnitude', value=float(norm_mag()))
+                ui.update_numeric('magnitude', value=float(norm_mag))
                                   
         # sed_type, sed_model, norm_band, norm_mag, sed_label
         if target_focus == 'science':
@@ -2151,19 +2151,19 @@ def server(input, output, session):
 
         icons = [
             sed_icon,
-            #fa.icon_svg("circle-xmark", style='regular', fill='black'),
+            fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
             'Bookmark SED',
-            #'Clear all SED bookmarks',
+            'Clear all SED bookmarks',
             'Upload SED',
         ]
         return cs.label_tooltip_button(
             label='Stellar SED model: ',
             icons=icons,
             tooltips=texts,
-            button_ids=['sed_bookmark', 'upload_sed']
+            button_ids=['sed_bookmark', 'clear_sed_bookmarks', 'upload_sed']
         )
 
 
@@ -2186,6 +2186,15 @@ def server(input, output, session):
         else:
             bookmarked_spectra['sed'].remove(sed_label)
 
+    @reactive.Effect
+    @reactive.event(input.clear_sed_bookmarks)
+    def _():
+        """Clear all bookmarked SEDs"""
+        bookmarked_spectra['sed'].clear()
+        bookmarked_sed.set(False)
+        update_sed_flag.set('cleared')  # trigger UI updates
+        ui.notification_show("Cleared all SED bookmarks", type="message", duration=3)
+
 
     @render.ui
     @reactive.event(
@@ -2203,17 +2212,19 @@ def server(input, output, session):
         depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
         icons = [
             depth_icon,
+            fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
             f'Bookmark {obs_geometry} depth model',
+            f'Clear all {obs_geometry} depth bookmarks',
             f'Upload {obs_geometry} depth model',
         ]
         return cs.label_tooltip_button(
             label=f"{obs_geometry.capitalize()} depth spectrum: ",
             icons=icons,
             tooltips=texts,
-            button_ids=['bookmark_depth', 'upload_depth'],
+            button_ids=['bookmark_depth', 'clear_depth_bookmarks', 'upload_depth'],
         )
 
 
@@ -2239,6 +2250,16 @@ def server(input, output, session):
                 spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
+
+    @reactive.Effect
+    @reactive.event(input.clear_depth_bookmarks)
+    def _():
+        """Clear bookmarked depth models for the current geometry"""
+        obs_geometry = input.obs_geometry.get()
+        bookmarked_spectra[obs_geometry].clear()
+        bookmarked_depth.set(False)
+        update_depth_flag.set('cleared')  # trigger UI updates
+        ui.notification_show(f"Cleared all {obs_geometry} depth bookmarks", type="message", duration=3)
 
 
     @reactive.effect
@@ -2315,6 +2336,7 @@ def server(input, output, session):
             return
         transit_dur = t_dur_val
         settling = req(input.settling_time).get()
+        
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
@@ -2653,6 +2675,9 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_sed():
+        bookmarked_sed.get() # (make panel reactive to remove all bookmarks)
+        update_sed_flag.get()
+
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
         throughput = get_throughput(input, evaluate=True)
         if throughput is None:
@@ -2685,7 +2710,7 @@ def server(input, output, session):
 
     @render_plotly
     @reactive.event(
-        input.bookmark_depth, update_depth_flag,
+        input.bookmark_depth, update_depth_flag, input.clear_depth_bookmarks,
         input.plot_depth_xscale, input.depth_wl_min, input.depth_wl_max,
         input.plot_depth_units, input.depth_resolution, input.obs_geometry,
         input.instrument, input.mode,
