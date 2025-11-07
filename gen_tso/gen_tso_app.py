@@ -283,6 +283,17 @@ app_ui = ui.page_fluid(
                 "settings",
                 placement='bottom',
             ),
+            ',',
+            ui.tooltip(
+                ui.input_action_link(
+                    id='BibTex_Citation',
+                    label='',
+                    icon=fa.icon_svg("book-open-reader", fill='black'),
+                ),
+                "BibTex Citation",
+                placement='bottom',
+            ),
+
             ')',
             style="font-size: 26px;",
         ),
@@ -967,6 +978,48 @@ def server(input, output, session):
         )
         ui.modal_show(m)
 
+    @reactive.effect
+    @reactive.event(input.BibTex_Citation)
+    def _():
+        bibtex = ("""
+        @ARTICLE{Cubillos2024paspGenTSO,
+            author = {Cubillos, Patricio E.},
+            title = "{Gen TSO: A General JWST Simulator for Exoplanet Time-series Observations}",
+            journal = {PASP},
+            keywords = {Exoplanets, Time series analysis, Astronomy databases, 498, 1916, 83, Astrophysics - Earth and Planetary Astrophysics, Astrophysics - Instrumentation and Methods for Astrophysics},
+            year = 2024,
+            month = dec,
+            volume = {136},
+            number = {12},
+            eid = {124501},
+            pages = {124501},
+            doi = {10.1088/1538-3873/ad8fd4},
+            archivePrefix = {arXiv},
+            eprint = {2410.04856},
+            primaryClass = {astro-ph.EP},
+            adsurl = {https://ui.adsabs.harvard.edu/abs/2024PASP..136l4501C},
+            adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+        }
+        """)
+
+        m = ui.modal(
+            ui.HTML(f'<pre style=" font-size:13px; margin:0;">{bibtex}</pre>'),
+            ui.div(
+                ui.input_action_button(
+                    id='copy_bibtex',
+                    label='Copy to clipboard',
+                    class_='btn btn-primary',
+                ),
+                class_='d-flex justify-content-end mb-2'
+            ),
+            title="BibTex Citation",
+            size='m',
+            easy_close=False,
+            fade=True,
+        )
+        clipboard.set(bibtex)
+        ui.modal_show(m) 
+
     @reactive.Effect
     @reactive.event(input.update_trexo)
     def _():
@@ -1452,6 +1505,13 @@ def server(input, output, session):
             clipboard.get(),
         )
 
+    @reactive.effect
+    @reactive.event(input.copy_bibtex)
+    async def copy_bibtex_to_clipboard():
+        await session.send_custom_message(
+            "copy_to_clipboard",
+            clipboard.get(),
+        )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
