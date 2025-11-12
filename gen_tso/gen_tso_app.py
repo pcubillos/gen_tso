@@ -2962,11 +2962,29 @@ def server(input, output, session):
             inst, mode, aperture, disperser, filter, subarray, readout, order,
             ngroup, nint, run_type, sed_label, depth_label,
         )
-        if tso_label in tso_runs[run_type]:
+
+        tso_run = None
+        display_key = input.display_tso_run.get()
+        if display_key:
+            try:
+                dkey, dlabel = display_key.split('_', maxsplit=1)
+            except Exception:
+                dkey = dlabel = None
+            if dkey == run_type and dlabel in tso_runs.get(run_type, {}):
+                tso_run = tso_runs[run_type][dlabel]
+
+        if tso_run is None and tso_label in tso_runs.get(run_type, {}):
             tso_run = tso_runs[run_type][tso_label]
+
+        if tso_run is not None:
             warnings = tso_run['warnings']
-            if transit_dur == tso_run['transit_dur']:
+            try:
+                stored_td = float(tso_run.get('transit_dur', 0.0))
+            except Exception:
+                stored_td = 0.0
+            if abs(transit_dur - stored_td) < 1e-6:
                 report_text += f'<br><br>{tso_run["stats"]}'
+
         warning_text.set(warnings)
         return ui.HTML(f'<pre>{report_text}</pre>')
 
