@@ -1,0 +1,6 @@
+# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)
+# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass
+>55 Cnc: 1 1 1 1 1 1 1 1
+ 55 Cnc e: 1 1 1 1 1 1 1
+>WASP-80: 1 1 1 1 1 1 1 1
+ WASP-80 b: 1 1 1 1 1 1 1

@@ -2032,7 +2032,8 @@ def server(input, output, session):
     @reactive.event(input.target)
     def target_label():
         name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        target = next((t for t in catalog.targets if t.planet == name), None)
+
         if target is None:
             return ui.span('Science target')
 
@@ -2083,6 +2084,17 @@ def server(input, output, session):
                 placement='top',
             )
 
+        # show a small custom badge if this target was loaded from the custom file
+        custom_badge = None
+        if target is not None and getattr(target, "is_custom", False):
+            custom_badge = ui.tooltip(
+                ui.tags.span(
+                    fa.icon_svg("tag", fill='green'),
+                ),
+                "This is a custom target",
+                placement='top',
+            )
+
         return ui.span(
             'Science target ',
             info_tooltip,
@@ -2097,6 +2109,7 @@ def server(input, output, session):
             ),
             trexolists_tooltip,
             candidate_tooltip,
+            custom_badge,
         )
 
 

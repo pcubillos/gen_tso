@@ -14,6 +14,7 @@ __all__ = [
 import csv
 from datetime import datetime
 import json
+import os
 
 from astropy.io import ascii
 import numpy as np
@@ -85,10 +86,26 @@ class Catalog():
         # Confirmed planets and TESS candidates
         nea_targets = load_targets('nea_data.txt', is_confirmed=True)
         tess_targets = load_targets('tess_data.txt', is_confirmed=False)
-        self.targets = nea_targets + tess_targets
-        if custom_targets is not None:
-            custom = load_targets(custom_targets, is_confirmed=True)
-            self.targets += custom
+
+
+        base_targets = nea_targets + tess_targets
+        custom_path = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
+        if os.path.exists(custom_path):
+            custom = load_targets('my_custom_targets.txt', is_confirmed=True)
+            base_by_name = {t.planet: t for t in base_targets}
+            for ct in custom:
+                name = ct.planet
+                if name in base_by_name:
+                    tgt = base_by_name[name]
+                    tgt._orig_values = {k: getattr(tgt, k, None) for k in tgt.__dict__}
+                    for k, v in ct.__dict__.items():
+                        setattr(tgt, k, v)
+                    tgt.is_custom = True
+                else:
+                    ct.is_custom = True
+                    base_targets.append(ct)
+
+        self.targets = base_targets
 
         # TBD: a switch between load_trexolists() and load_programs()?
         programs = load_trexolists(grouped=True)
