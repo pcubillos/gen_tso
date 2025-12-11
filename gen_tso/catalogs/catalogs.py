@@ -15,6 +15,7 @@ import csv
 from datetime import datetime
 import json
 import os
+from typing import List, Dict
 
 from astropy.io import ascii
 import numpy as np
@@ -72,6 +73,230 @@ def find_target(targets=None):
 
     return None
 
+def _read_custom_lenient(path: str):
+    """
+    Leniently read existing my_custom_targets.txt:
+    Pads missing host/planet fields and lets load_targets parse the fixed file.
+    """
+    import os
+    from gen_tso.utils import ROOT
+
+    if not os.path.exists(path):
+        return []
+
+    fixed = []
+    with open(path, 'r', encoding='utf-8') as fh:
+        for line in fh:
+            s = line.strip()
+            if s == '' or s.startswith('#'):
+                fixed.append(line)
+                continue
+
+            if s.startswith('>'):  # host line
+                try:
+                    head, rest = s.split(':', 1)
+                except ValueError:
+                    fixed.append(line)
+                    continue
+                parts = rest.strip().split()
+                if len(parts) < 8:
+                    parts += ['nan'] * (8 - len(parts))
+                fixed.append(f"{head}: " + " ".join(parts[:8]) + "\n")
+            else:  # planet line
+                try:
+                    name, rest = s.split(':', 1)
+                except ValueError:
+                    fixed.append(line)
+                    continue
+                parts = rest.strip().split()
+                if len(parts) < 7:
+                    parts += ['nan'] * (7 - len(parts))
+                fixed.append(f" {name}: " + " ".join(parts[:7]) + "\n")
+
+    # Write fixed content into ROOT/data so load_targets can find it
+    tmp_name = '_merge_fix_custom.txt'
+    tmp_path = os.path.join(ROOT, 'data', tmp_name)
+    os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+    with open(tmp_path, 'w', encoding='utf-8', newline='\n') as tmp:
+        tmp.writelines(fixed)
+
+    try:
+        # Pass just the basename; load_targets opens ROOT/data/{database}
+        return load_targets(tmp_name, is_confirmed=True)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+def merge_custom_targets(csv_path, output_txt=None):
+    """
+    Merge CSV targets into my_custom_targets.txt.
+    Updates existing by planet name, adds new ones.
+    """
+    from gen_tso.utils import ROOT
+
+    if output_txt is None:
+        output_txt = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
+
+    # Convert CSV -> temp session (already normalized by csv_to_session_txt)
+    temp_session = os.path.join(ROOT, 'data', '_temp_custom.txt')
+    csv_to_session_txt(csv_path, temp_session)
+    print(f"Converted CSV to temporary file: {temp_session}")
+
+    # Load new targets
+    new_targets = load_targets('_temp_custom.txt', is_confirmed=True)
+
+    # Leniently read existing custom file (pad missing fields)
+    existing_targets = _read_custom_lenient(output_txt)
+
+    # Merge by planet name
+    by_name: Dict[str, object] = {t.planet: t for t in existing_targets}
+    for nt in new_targets:
+        if nt.planet in by_name:
+            tgt = by_name[nt.planet]
+            for k, v in nt.__dict__.items():
+                # Avoid overwriting with empty strings
+                if v is None or (isinstance(v, str) and v.strip() == ''):
+                    continue
+                setattr(tgt, k, v)
+            print(f"  Updated: {nt.planet}")
+        else:
+            existing_targets.append(nt)
+            by_name[nt.planet] = nt
+            print(f"  Added: {nt.planet}")
+
+    # Group planets by host name and write back in host->planets order
+    hosts: Dict[str, List[object]] = {}
+    host_first: Dict[str, object] = {}
+    for t in existing_targets:
+        hname = t.host
+        if hname not in hosts:
+            hosts[hname] = []
+            host_first[hname] = t
+        hosts[hname].append(t)
+
+    os.makedirs(os.path.dirname(output_txt), exist_ok=True)
+    with open(output_txt, 'w', encoding='utf-8', newline='\n') as out:
+        out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
+        out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
+
+        for hname, planets in hosts.items():
+            ht = host_first[hname]
+            h_parts = [
+                str(getattr(ht, 'ra', 'nan')),
+                str(getattr(ht, 'dec', 'nan')),
+                str(getattr(ht, 'ks_mag', 'nan')),
+                str(getattr(ht, 'rstar', 'nan')),
+                str(getattr(ht, 'mstar', 'nan')),
+                str(getattr(ht, 'teff', 'nan')),
+                str(getattr(ht, 'logg_star', 'nan')),
+                str(getattr(ht, 'metal_star', 'nan')),
+            ]
+            out.write(f">{hname}: " + " ".join(h_parts[:8]) + "\n")
+
+            for p in planets:
+                p_parts = [
+                    str(getattr(p, 'transit_dur', 'nan')),
+                    str(getattr(p, 'rplanet', 'nan')),
+                    str(getattr(p, 'mplanet', 'nan')),
+                    str(getattr(p, 'sma', 'nan')),
+                    str(getattr(p, 'period', 'nan')),
+                    str(getattr(p, 'eq_temp', 'nan')),  # default to nan if not present
+                    str(int(getattr(p, 'is_min_mass', False))),
+                ]
+                out.write(f" {p.planet}: " + " ".join(p_parts[:7]) + "\n")
+
+    print(f"Merged targets written to: {output_txt}")
+
+    # Cleanup temp
+    if os.path.exists(temp_session):
+        os.remove(temp_session)
+
+def csv_to_session_txt(csv_path, output_txt):
+    """
+    Convert NASA-style CSV to txt:
+    """
+    import csv, os
+
+    def val(row, *keys):
+        for k in keys:
+            v = row.get(k)
+            if v is not None and str(v).strip() != '':
+                return str(v).strip()
+        return ''
+
+    def norm(x):
+        return 'nan' if x is None or str(x).strip() == '' else str(x)
+
+    with open(csv_path, 'r', encoding='utf-8', newline='') as fh:
+        filtered = [line for line in fh if not line.lstrip().startswith('#')]
+    if not filtered:
+        return output_txt
+
+    reader = csv.DictReader(filtered)
+
+    hosts = {}
+    planets_by_host = {}
+    host_order = []
+    planets_seen = set()
+
+    for row in reader:
+        pl_name = val(row, 'pl_name', 'PL_NAME')
+        if not pl_name or pl_name in planets_seen:
+            continue
+        planets_seen.add(pl_name)
+
+        host = val(row, 'hostname', 'HOSTNAME')
+        if host and host not in hosts:
+            hosts[host] = {
+                'ra': norm(val(row, 'ra', 'RA')),
+                'dec': norm(val(row, 'dec', 'DEC')),
+                'ks_mag': norm(val(row, 'sy_kmag', 'SY_KMAG')),
+                'rstar': norm(val(row, 'st_rad', 'ST_RAD')),
+                'mstar': norm(val(row, 'st_mass', 'ST_MASS')),
+                'teff': norm(val(row, 'st_teff', 'ST_TEFF')),
+                'log_g': norm(val(row, 'st_logg', 'ST_LOGG')),
+                'metallicity': norm(val(row, 'st_met', 'ST_MET')),
+            }
+            planets_by_host[host] = []
+            host_order.append(host)
+
+        if host:
+            planets_by_host[host].append({
+                'planet': pl_name,
+                'T14': 'nan',
+                'rplanet': norm(val(row, 'pl_rade', 'PL_RADE')),
+                'mplanet': norm(val(row, 'pl_bmasse', 'PL_BMASSE')),
+                'sma': norm(val(row, 'pl_orbsmax', 'PL_ORBSMAX')),
+                'period': norm(val(row, 'pl_orbper', 'PL_ORBPER')),
+                'teq': norm(val(row, 'pl_eqt', 'PL_EQT')),
+                'is_min_mass': '1' if 'Msini' in val(row, 'pl_bmassprov', 'PL_BMASSPROV') else '0',
+            })
+
+    os.makedirs(os.path.dirname(output_txt), exist_ok=True)
+    with open(output_txt, 'w', encoding='utf-8', newline='\n') as out:
+        out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
+        out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
+
+        for hname in host_order:
+            h = hosts[hname]
+            h_parts = [norm(h.get(k)) for k in ('ra','dec','ks_mag','rstar','mstar','teff','log_g','metallicity')]
+            out.write(f">{hname}: " + " ".join(h_parts[:8]) + "\n")
+
+            for p in planets_by_host.get(hname, []):
+                p_parts = [
+                    norm(p.get('T14')),
+                    norm(p.get('rplanet')),
+                    norm(p.get('mplanet')),
+                    norm(p.get('sma')),
+                    norm(p.get('period')),
+                    norm(p.get('teq')),
+                    norm(p.get('is_min_mass', '0')),
+                ]
+                out.write(f" {p['planet']}: " + " ".join(p_parts) + "\n")
+
+    return output_txt
 
 class Catalog():
     """
@@ -87,11 +312,44 @@ class Catalog():
         nea_targets = load_targets('nea_data.txt', is_confirmed=True)
         tess_targets = load_targets('tess_data.txt', is_confirmed=False)
 
-
         base_targets = nea_targets + tess_targets
-        custom_path = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
-        if os.path.exists(custom_path):
-            custom = load_targets('my_custom_targets.txt', is_confirmed=True)
+
+        # Check for custom targets:
+        # Priority 1: custom_targets_session.txt (generated by --load_custom)
+        # Priority 2: my_custom_targets.txt (static file in data folder)
+        custom_to_load = None
+        
+        session_path = os.path.join(ROOT, 'data', 'custom_targets_session.txt')
+
+        # Only load the session file when --load_custom set GEN_TSO_CUSTOM_TARGETS
+        load_session = os.environ.get('GEN_TSO_CUSTOM_TARGETS')
+        if load_session and os.path.exists(session_path):
+            custom_to_load = 'custom_targets_session.txt'
+        else:
+            custom_to_load = None
+
+        # Fallback to my_custom_targets.txt if present
+        if custom_to_load is None:
+            custom_path = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
+            if os.path.exists(custom_path):
+                custom_to_load = 'my_custom_targets.txt'
+
+        if custom_to_load:
+            custom = load_targets(custom_to_load, is_confirmed=True)
+
+            def sanitize(ct):
+                for key in (
+                    'ks_mag', 'rstar', 'mstar', 'teff', 'log_g', 'metallicity',
+                    'rplanet', 'mplanet', 'sma', 'period', 'teq', 't14'
+                ):
+                    v = getattr(ct, key, None)
+                    if v is None or v == '' or str(v).strip() == '':
+                        setattr(ct, key, 'nan')
+
+            for ct in custom:
+                sanitize(ct)
+                ct.is_transit = True
+            
             base_by_name = {t.planet: t for t in base_targets}
             for ct in custom:
                 name = ct.planet
@@ -101,8 +359,10 @@ class Catalog():
                     for k, v in ct.__dict__.items():
                         setattr(tgt, k, v)
                     tgt.is_custom = True
+                    tgt.is_transit = True  # Ensure flag is set
                 else:
                     ct.is_custom = True
+                    ct.is_transit = True  # Ensure flag is set
                     base_targets.append(ct)
 
         self.targets = base_targets

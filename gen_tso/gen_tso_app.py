@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -423,6 +424,7 @@ app_ui = ui.page_fluid(
                         choices={
                             "transit": "transiting",
                             "jwst": "JWST targets",
+                            "custom": "custom targets",
                             "tess": "TESS candidates",
                             "non_transit": "non-transiting",
                         },
@@ -1831,15 +1833,24 @@ def server(input, output, session):
     @reactive.event(input.target_filter, update_catalog_flag)
     def _():
         update_catalog_flag.get()
-        mask = np.zeros(nplanets, bool)
-        if 'jwst' in input.target_filter.get():
-            mask |= is_jwst
-        if 'transit' in input.target_filter.get():
-            mask |= is_transit
-        if 'non_transit' in input.target_filter.get():
-            mask |= ~is_transit
-        if 'tess' in input.target_filter.get():
-            mask |= ~is_confirmed
+        # precompute custom mask
+        custom_mask = np.array([getattr(t, 'is_custom', False) for t in catalog.targets], dtype=bool)
+
+        # If user requests "custom" -> show only custom targets
+        if 'custom' in input.target_filter.get():
+            mask = custom_mask.copy()
+        else:
+            mask = np.zeros(nplanets, bool)
+            if 'jwst' in input.target_filter.get():
+                mask |= is_jwst
+            if 'transit' in input.target_filter.get():
+                mask |= is_transit
+            if 'non_transit' in input.target_filter.get():
+                mask |= ~is_transit
+            if 'tess' in input.target_filter.get():
+                mask |= ~is_confirmed
+            # always include custom targets unless "custom only" selected
+            mask |= custom_mask
 
         targets = [
             target.planet for target,flag in zip(catalog.targets,mask)
@@ -2084,7 +2095,6 @@ def server(input, output, session):
                 placement='top',
             )
 
-        # show a small custom badge if this target was loaded from the custom file
         custom_badge = None
         if target is not None and getattr(target, "is_custom", False):
             custom_badge = ui.tooltip(
@@ -2124,6 +2134,18 @@ def server(input, output, session):
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
 
+        def to_float(v):
+            """Convert value to float, return math.nan for empty/invalid"""
+            try:
+                if v is None:
+                    return math.nan
+                s = str(v).strip()
+                if s == '':
+                    return math.nan
+                return float(s)
+            except Exception:
+                return math.nan
+
         # Physical properties:
         if target.planet in cache_target:
             t_eff  = cache_target[target.planet]['t_eff']
@@ -2138,13 +2160,13 @@ def server(input, output, session):
             band = '2mass,ks'
             magnitude = f'{target.ks_mag:.3f}'
 
-        ui.update_numeric('t_eff', value=float(t_eff))
-        ui.update_numeric('log_g', value=float(log_g))
+        ui.update_numeric('t_eff', value=to_float(t_eff))
+        ui.update_numeric('log_g', value=to_float(log_g))
         ui.update_select('magnitude_band', selected=band)
-        ui.update_numeric('magnitude', value=float(magnitude))
+        ui.update_numeric('magnitude', value=to_float(magnitude))
         if t_dur == '':
             t_dur = '0.0'
-        ui.update_numeric('t_dur', value=float(t_dur))
+        ui.update_numeric('t_dur', value=to_float(t_dur))
 
         delete_catalog = {
             "event": 'deleteCatalogue',
