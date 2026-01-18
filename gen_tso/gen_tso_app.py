@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -56,6 +57,7 @@ from gen_tso.app_utils import (
     parse_depth_model,
     parse_obs,
     parse_sed,
+    _safe_num,
 )
 import gen_tso.viewer_popovers as pops
 from gen_tso.export_script import (
@@ -282,6 +284,17 @@ app_ui = ui.page_fluid(
                 "settings",
                 placement='bottom',
             ),
+            ',',
+            ui.tooltip(
+                ui.input_action_link(
+                    id='BibTex_Citation',
+                    label='',
+                    icon=fa.icon_svg("book-open-reader", fill='black'),
+                ),
+                "BibTex Citation",
+                placement='bottom',
+            ),
+
             ')',
             style="font-size: 26px;",
         ),
@@ -411,6 +424,7 @@ app_ui = ui.page_fluid(
                         choices={
                             "transit": "transiting",
                             "jwst": "JWST targets",
+                            "custom": "custom targets",
                             "tess": "TESS candidates",
                             "non_transit": "non-transiting",
                         },
@@ -432,10 +446,10 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_text("t_eff", "", value='1400.0'),
+                    ui.input_numeric("t_eff", "", value='1400.0'),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_text("log_g", "", value='4.5'),
+                    ui.input_numeric("log_g", "", value='4.5'),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
@@ -443,11 +457,11 @@ app_ui = ui.page_fluid(
                         choices=bands_dict,
                         selected='2mass,ks',
                     ),
-                    ui.input_text(
+                    ui.input_numeric(
                         id="magnitude",
                         label="",
                         value='10.0',
-                        placeholder="magnitude",
+                        #placeholder="magnitude",
                     ),
                     width=1/2,
                     fixed_width=False,
@@ -532,10 +546,10 @@ app_ui = ui.page_fluid(
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
-                    ui.input_text("t_dur", "", value='2.0'),
+                    ui.input_numeric("t_dur", "", value='2.0'),
                     # Row 3
                     ui.p("Obs_dur (h):"),
-                    ui.input_text("obs_dur", "", value='5.0'),
+                    ui.input_numeric("obs_dur", "", value='5.0'),
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
@@ -895,6 +909,91 @@ def server(input, output, session):
     clipboard = reactive.Value('')
     latest_pandeia = reactive.Value(None)
 
+    # Track if current target has unsaved changes
+    has_changes = reactive.value(False)
+    original_values = reactive.value({})
+
+    @reactive.effect
+    @reactive.event(input.target)
+    def _():
+        """Store original values when target selected"""
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+        
+        # Store original values
+        original_values.set({
+            't_eff': input.t_eff(),
+            'log_g': input.log_g(),
+            'rstar': input.rstar(),
+            'mstar': input.mstar(),
+            'metallicity': input.metallicity(),
+            'ks_mag': input.ks_mag(),
+            # add other editable fields...
+        })
+        has_changes.set(False)
+
+    @reactive.effect
+    @reactive.event(input.t_eff, input.log_g, input.rstar, input.mstar, input.metallicity, input.ks_mag)
+    def _():
+        """Detect changes in any input field"""
+        if not original_values.get():
+            return
+        
+        orig = original_values.get()
+        changed = (
+            input.t_eff() != orig.get('t_eff') or
+            input.log_g() != orig.get('log_g') or
+            input.rstar() != orig.get('rstar') or
+            input.mstar() != orig.get('mstar') or
+            input.metallicity() != orig.get('metallicity') or
+            input.ks_mag() != orig.get('ks_mag')
+        )
+        has_changes.set(changed)
+
+    @render.ui
+    def save_changes_button():
+        """Show save button only when there are changes"""
+        if has_changes.get():
+            return ui.input_action_button('save_target', 'Save Changes', class_='btn-success')
+        return ui.TagList()
+
+    @reactive.effect
+    @reactive.event(input.save_target)
+    def _():
+        """Save modified target to my_custom_targets.txt"""
+        from gen_tso.catalogs.catalogs import merge_custom_targets
+        from gen_tso.utils import ROOT
+        import os
+        
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return
+        
+        # Update target object with current UI values
+        target.teff = input.t_eff()
+        target.logg_star = input.log_g()
+        target.rstar = input.rstar()
+        target.mstar = input.mstar()
+        target.metal_star = input.metallicity()
+        target.ks_mag = input.ks_mag()
+        
+        # Write single target to temp CSV then merge
+        temp_csv = os.path.join(ROOT, 'data', '_save_target.txt')
+        with open(temp_csv, 'w', encoding='utf-8', newline='\n') as out:
+            out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
+            out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
+            out.write(f">{target.host}: {target.ra} {target.dec} {target.ks_mag} {target.rstar} {target.mstar} {target.teff} {target.logg_star} {target.metal_star}\n")
+            out.write(f" {target.planet}: {target.transit_dur} {target.rplanet} {target.mplanet} {target.sma} {target.period} nan {int(target.is_min_mass)}\n")
+        
+        merge_custom_targets(temp_csv)
+        os.remove(temp_csv)
+        
+        has_changes.set(False)
+        ui.notification_show(f"Saved changes for {target.planet}", type='message')
+
     @reactive.effect
     @reactive.event(input.main_settings)
     def _():
@@ -966,6 +1065,48 @@ def server(input, output, session):
         )
         ui.modal_show(m)
 
+    @reactive.effect
+    @reactive.event(input.BibTex_Citation)
+    def _():
+        bibtex = ("""
+        @ARTICLE{Cubillos2024paspGenTSO,
+            author = {Cubillos, Patricio E.},
+            title = "{Gen TSO: A General JWST Simulator for Exoplanet Time-series Observations}",
+            journal = {PASP},
+            keywords = {Exoplanets, Time series analysis, Astronomy databases, 498, 1916, 83, Astrophysics - Earth and Planetary Astrophysics, Astrophysics - Instrumentation and Methods for Astrophysics},
+            year = 2024,
+            month = dec,
+            volume = {136},
+            number = {12},
+            eid = {124501},
+            pages = {124501},
+            doi = {10.1088/1538-3873/ad8fd4},
+            archivePrefix = {arXiv},
+            eprint = {2410.04856},
+            primaryClass = {astro-ph.EP},
+            adsurl = {https://ui.adsabs.harvard.edu/abs/2024PASP..136l4501C},
+            adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+        }
+        """)
+
+        m = ui.modal(
+            ui.HTML(f'<pre style=" font-size:13px; margin:0;">{bibtex}</pre>'),
+            ui.div(
+                ui.input_action_button(
+                    id='copy_bibtex',
+                    label='Copy to clipboard',
+                    class_='btn btn-primary',
+                ),
+                class_='d-flex justify-content-end mb-2'
+            ),
+            title="BibTex Citation",
+            size='m',
+            easy_close=False,
+            fade=True,
+        )
+        clipboard.set(bibtex)
+        ui.modal_show(m) 
+
     @reactive.Effect
     @reactive.event(input.update_trexo)
     def _():
@@ -1012,11 +1153,12 @@ def server(input, output, session):
         # Target setup:
         target_focus = input.target_focus.get()
         target_name = input.target.get()
-        t_eff = input.t_eff.get()
-        log_g = input.log_g.get()
+        t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
+        log_g = _safe_num(input.log_g.get(), default=4.5, cast=float)
         obs_geometry = input.obs_geometry.get()
-        transit_dur = float(input.t_dur.get())
-        obs_dur = float(input.obs_dur.get())
+        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+        obs_dur = _safe_num(input.obs_dur.get(), default=1.0, cast=float)
+
         planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
         if target_focus == 'acquisition':
@@ -1286,13 +1428,14 @@ def server(input, output, session):
 
         # The target:
         current_target = input.target.get()
-        current_tdur = input.t_dur.get()
+        current_tdur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+
 
         target_focus = tso['target_focus']
         ui.update_radio_buttons('target_focus', selected=target_focus)
 
         name = tso['target']
-        t_dur = str(tso['transit_dur'])
+        t_dur = float(tso['transit_dur'])
         planet_model_type = tso['planet_model_type']
         ui.update_selectize('target', selected=name)
         norm_band = tso['norm_band']
@@ -1312,20 +1455,20 @@ def server(input, output, session):
                 cache_target[name]['norm_band'] = norm_band
                 cache_target[name]['norm_mag'] = norm_mag
         else:
-            ui.update_text('t_eff', value=tso['t_eff'])
-            ui.update_text('log_g', value=tso['log_g'])
-            ui.update_text('t_dur', value=t_dur)
+            ui.update_numeric('t_eff', value=float(tso['t_eff']))
+            ui.update_numeric('log_g', value=float(tso['log_g']))
+            ui.update_numeric('t_dur', value=float(t_dur))
             if target_focus == 'science':
                 ui.update_select('magnitude_band', selected=norm_band)
-                ui.update_text('magnitude', value=norm_mag)
-
+                ui.update_numeric('magnitude', value=float(norm_mag))
+                                  
         # sed_type, sed_model, norm_band, norm_mag, sed_label
         if target_focus == 'science':
             ui.update_select('sed_type', selected=sed_type)
             reset_sed = (
-                sed_type != input.sed_type.get() or
-                tso['t_eff']!=input.t_eff.get() or
-                tso['log_g'] != input.log_g.get()
+                sed_type != input.sed_type.get()
+                or float(tso['t_eff']) != _safe_num(input.t_eff.get(), default=float(tso['t_eff']), cast=float)
+                or float(tso['log_g']) != _safe_num(input.log_g.get(), default=float(tso['log_g']), cast=float)
             )
             if sed_type in sed_dict:
                 if reset_sed:
@@ -1345,10 +1488,10 @@ def server(input, output, session):
         warning_text.set(tso['warnings'])
         obs_geometry = tso['obs_geometry']
         ui.update_select('obs_geometry', selected=obs_geometry)
-        if t_dur != current_tdur:
+        if float(t_dur) != float(current_tdur):
             preset_obs_dur.set(tso['obs_dur'])
         else:
-            ui.update_text('obs_dur', value=tso['obs_dur'])
+            ui.update_numeric('obs_dur', value=float(tso['obs_dur']))
 
         choices = depth_choices[obs_geometry]
         ui.update_select(
@@ -1370,8 +1513,8 @@ def server(input, output, session):
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
 
-            resolution = input.tso_resolution.get()
-            n_obs = input.n_obs.get()
+            resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
+            n_obs = int(_safe_num(input.n_obs.get(), default=1, cast=int))
             tso_draw.set(draw(tso['tso'], resolution, n_obs))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
@@ -1449,6 +1592,13 @@ def server(input, output, session):
             clipboard.get(),
         )
 
+    @reactive.effect
+    @reactive.event(input.copy_bibtex)
+    async def copy_bibtex_to_clipboard():
+        await session.send_custom_message(
+            "copy_to_clipboard",
+            clipboard.get(),
+        )
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
@@ -1768,15 +1918,24 @@ def server(input, output, session):
     @reactive.event(input.target_filter, update_catalog_flag)
     def _():
         update_catalog_flag.get()
-        mask = np.zeros(nplanets, bool)
-        if 'jwst' in input.target_filter.get():
-            mask |= is_jwst
-        if 'transit' in input.target_filter.get():
-            mask |= is_transit
-        if 'non_transit' in input.target_filter.get():
-            mask |= ~is_transit
-        if 'tess' in input.target_filter.get():
-            mask |= ~is_confirmed
+        # precompute custom mask
+        custom_mask = np.array([getattr(t, 'is_custom', False) for t in catalog.targets], dtype=bool)
+
+        # If user requests "custom" -> show only custom targets
+        if 'custom' in input.target_filter.get():
+            mask = custom_mask.copy()
+        else:
+            mask = np.zeros(nplanets, bool)
+            if 'jwst' in input.target_filter.get():
+                mask |= is_jwst
+            if 'transit' in input.target_filter.get():
+                mask |= is_transit
+            if 'non_transit' in input.target_filter.get():
+                mask |= ~is_transit
+            if 'tess' in input.target_filter.get():
+                mask |= ~is_confirmed
+            # always include custom targets unless "custom only" selected
+            mask |= custom_mask
 
         targets = [
             target.planet for target,flag in zip(catalog.targets,mask)
@@ -1969,7 +2128,8 @@ def server(input, output, session):
     @reactive.event(input.target)
     def target_label():
         name = input.target.get()
-        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        target = next((t for t in catalog.targets if t.planet == name), None)
+
         if target is None:
             return ui.span('Science target')
 
@@ -2020,6 +2180,16 @@ def server(input, output, session):
                 placement='top',
             )
 
+        custom_badge = None
+        if target is not None and getattr(target, "is_custom", False):
+            custom_badge = ui.tooltip(
+                ui.tags.span(
+                    fa.icon_svg("tag", fill='green'),
+                ),
+                "This is a custom target",
+                placement='top',
+            )
+
         return ui.span(
             'Science target ',
             info_tooltip,
@@ -2034,6 +2204,7 @@ def server(input, output, session):
             ),
             trexolists_tooltip,
             candidate_tooltip,
+            custom_badge,
         )
 
 
@@ -2047,6 +2218,18 @@ def server(input, output, session):
             return
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
+
+        def to_float(v):
+            """Convert value to float, return math.nan for empty/invalid"""
+            try:
+                if v is None:
+                    return math.nan
+                s = str(v).strip()
+                if s == '':
+                    return math.nan
+                return float(s)
+            except Exception:
+                return math.nan
 
         # Physical properties:
         if target.planet in cache_target:
@@ -2062,13 +2245,13 @@ def server(input, output, session):
             band = '2mass,ks'
             magnitude = f'{target.ks_mag:.3f}'
 
-        ui.update_text('t_eff', value=t_eff)
-        ui.update_text('log_g', value=log_g)
+        ui.update_numeric('t_eff', value=to_float(t_eff))
+        ui.update_numeric('log_g', value=to_float(log_g))
         ui.update_select('magnitude_band', selected=band)
-        ui.update_text('magnitude', value=magnitude)
+        ui.update_numeric('magnitude', value=to_float(magnitude))
         if t_dur == '':
             t_dur = '0.0'
-        ui.update_text('t_dur', value=t_dur)
+        ui.update_numeric('t_dur', value=to_float(t_dur))
 
         delete_catalog = {
             "event": 'deleteCatalogue',
@@ -2093,7 +2276,7 @@ def server(input, output, session):
         else:
             teq_planet = np.round(target.eq_temp, decimals=1)
             if np.isnan(teq_planet):
-                teq_planet = 0.0
+                teq_planet =  0.0
             rprs_square = target.rprs**2.0
             if np.isnan(rprs_square):
                 rprs_square = 0.0
@@ -2116,10 +2299,7 @@ def server(input, output, session):
                 selected = preset_sed.get()
                 preset_sed.set(None)
         elif sed_type == 'blackbody':
-            if input.t_eff.get() == '':
-                t_eff = 0.0
-            else:
-                t_eff = float(input.t_eff.get())
+            t_eff = _safe_num(input.t_eff.get(), default=0.0, cast=float)
             selected = f' Blackbody (Teff={t_eff:.0f} K)'
             choices = [selected]
         elif sed_type == 'input':
@@ -2151,19 +2331,19 @@ def server(input, output, session):
 
         icons = [
             sed_icon,
-            #fa.icon_svg("circle-xmark", style='regular', fill='black'),
+            fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
             'Bookmark SED',
-            #'Clear all SED bookmarks',
+            'Clear all SED bookmarks',
             'Upload SED',
         ]
         return cs.label_tooltip_button(
             label='Stellar SED model: ',
             icons=icons,
             tooltips=texts,
-            button_ids=['sed_bookmark', 'upload_sed']
+            button_ids=['sed_bookmark', 'clear_sed_bookmarks', 'upload_sed']
         )
 
 
@@ -2186,6 +2366,15 @@ def server(input, output, session):
         else:
             bookmarked_spectra['sed'].remove(sed_label)
 
+    @reactive.Effect
+    @reactive.event(input.clear_sed_bookmarks)
+    def _():
+        """Clear all bookmarked SEDs"""
+        bookmarked_spectra['sed'].clear()
+        bookmarked_sed.set(False)
+        update_sed_flag.set('cleared')  # trigger UI updates
+        ui.notification_show("Cleared all SED bookmarks", type="message", duration=3)
+
 
     @render.ui
     @reactive.event(
@@ -2203,17 +2392,19 @@ def server(input, output, session):
         depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
         icons = [
             depth_icon,
+            fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
         ]
         texts = [
             f'Bookmark {obs_geometry} depth model',
+            f'Clear all {obs_geometry} depth bookmarks',
             f'Upload {obs_geometry} depth model',
         ]
         return cs.label_tooltip_button(
             label=f"{obs_geometry.capitalize()} depth spectrum: ",
             icons=icons,
             tooltips=texts,
-            button_ids=['bookmark_depth', 'upload_depth'],
+            button_ids=['bookmark_depth', 'clear_depth_bookmarks', 'upload_depth'],
         )
 
 
@@ -2239,6 +2430,16 @@ def server(input, output, session):
                 spectra[obs_geometry][depth_label] = {'wl': wl, 'depth': depth}
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
+
+    @reactive.Effect
+    @reactive.event(input.clear_depth_bookmarks)
+    def _():
+        """Clear bookmarked depth models for the current geometry"""
+        obs_geometry = input.obs_geometry.get()
+        bookmarked_spectra[obs_geometry].clear()
+        bookmarked_depth.set(False)
+        update_depth_flag.set('cleared')  # trigger UI updates
+        ui.notification_show(f"Cleared all {obs_geometry} depth bookmarks", type="message", duration=3)
 
 
     @reactive.effect
@@ -2307,20 +2508,21 @@ def server(input, output, session):
         if preset_obs_dur.get() is not None:
             obs_dur = preset_obs_dur.get()
             preset_obs_dur.set(None)
-            ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
+            ui.update_numeric('obs_dur', value=float(f'{obs_dur:.2f}'))
             return
-        t_dur = req(input.t_dur).get()
-        if t_dur == '':
-            ui.update_text('obs_dur', value='0.0')
+        t_dur_val = _safe_num(req(input.t_dur).get(), default=0.0, cast=float)
+        if t_dur_val == 0.0:
+            ui.update_numeric('obs_dur', value=0.0)
             return
-        transit_dur = float(t_dur)
+        transit_dur = t_dur_val
         settling = req(input.settling_time).get()
+        
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
         # Tdwell = T_start + T_settle + T14 + 2*max(1, T14/2)
         obs_dur = 1.0 + settling + transit_dur + 2.0*baseline
-        ui.update_text('obs_dur', value=f'{obs_dur:.2f}')
+        ui.update_numeric('obs_dur', value=float(f'{obs_dur:.2f}'))
 
 
     @reactive.effect
@@ -2522,7 +2724,29 @@ def server(input, output, session):
             ui.update_numeric('integrations', value=1)
             return
 
-        obs_dur = float(req(input.obs_dur).get())
+        # Handles empty or invalid observation duration when pressing match integrations
+        obs_val = req(input.obs_dur).get()
+        if obs_val is None or obs_val == "":
+            ui.notification_show(
+                ui.markdown("**Error:**<br>Observation duration is empty — enter a value to match integrations"),
+                type="error",
+                duration=5,
+            )
+            ui.update_numeric('integrations', value=1)
+            return
+        try:
+            obs_dur = float(obs_val)
+        except (ValueError, TypeError):
+            ui.notification_show(
+                ui.markdown("**Error:**<br>Observation duration is not a valid number"),
+                type="error",
+                duration=5,
+            )
+            ui.update_numeric('integrations', value=1)
+            return
+
+        #obs_dur = float(req(input.obs_dur).get())
+
         inst = input.instrument.get().lower()
         ngroup = input.ngroup.get()
         readout = input.readout.get()
@@ -2631,6 +2855,9 @@ def server(input, output, session):
 
     @render_plotly
     def plotly_sed():
+        bookmarked_sed.get() # (make panel reactive to remove all bookmarks)
+        update_sed_flag.get()
+
         input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
         throughput = get_throughput(input, evaluate=True)
         if throughput is None:
@@ -2663,7 +2890,7 @@ def server(input, output, session):
 
     @render_plotly
     @reactive.event(
-        input.bookmark_depth, update_depth_flag,
+        input.bookmark_depth, update_depth_flag, input.clear_depth_bookmarks,
         input.plot_depth_xscale, input.depth_wl_min, input.depth_wl_max,
         input.plot_depth_units, input.depth_resolution, input.obs_geometry,
         input.instrument, input.mode,
@@ -2751,7 +2978,7 @@ def server(input, output, session):
             return
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
-        resolution = input.tso_resolution.get()
+        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
         units = input.plot_tso_units.get()
 
         min_depth, max_depth, step = jwst._get_tso_depth_range(
@@ -2770,8 +2997,8 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
 
-        n_obs = input.n_obs.get()
-        resolution = input.tso_resolution.get()
+        n_obs = int(_safe_num(input.n_obs.get(), default=1, cast=int))
+        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
         tso_draw.set(draw(tso['tso'], resolution, n_obs))
 
 
@@ -2805,7 +3032,7 @@ def server(input, output, session):
         )
 
         depth_label = parse_obs(input)[1]
-        transit_dur = float(input.t_dur.get())
+        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
 
         if ngroup is None or parse_sed(input, spectra)[-1] is None:
             warning_text.set(warnings)
@@ -2855,11 +3082,29 @@ def server(input, output, session):
             inst, mode, aperture, disperser, filter, subarray, readout, order,
             ngroup, nint, run_type, sed_label, depth_label,
         )
-        if tso_label in tso_runs[run_type]:
+
+        tso_run = None
+        display_key = input.display_tso_run.get()
+        if display_key:
+            try:
+                dkey, dlabel = display_key.split('_', maxsplit=1)
+            except Exception:
+                dkey = dlabel = None
+            if dkey == run_type and dlabel in tso_runs.get(run_type, {}):
+                tso_run = tso_runs[run_type][dlabel]
+
+        if tso_run is None and tso_label in tso_runs.get(run_type, {}):
             tso_run = tso_runs[run_type][tso_label]
+
+        if tso_run is not None:
             warnings = tso_run['warnings']
-            if transit_dur == tso_run['transit_dur']:
+            try:
+                stored_td = float(tso_run.get('transit_dur', 0.0))
+            except Exception:
+                stored_td = 0.0
+            if abs(transit_dur - stored_td) < 1e-6:
                 report_text += f'<br><br>{tso_run["stats"]}'
+
         warning_text.set(warnings)
         return ui.HTML(f'<pre>{report_text}</pre>')
 
