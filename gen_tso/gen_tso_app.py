@@ -470,6 +470,9 @@ app_ui = ui.page_fluid(
                     fill=False,
                     fillable=True,
                 ),
+                # Dynamic save button - only shows when there are unsaved changes
+                ui.output_ui("save_changes_button"),
+
                 ui.input_select(
                     id="sed_type",
                     label=ui.output_ui('stellar_sed_label'),
@@ -926,31 +929,39 @@ def server(input, output, session):
         original_values.set({
             't_eff': input.t_eff(),
             'log_g': input.log_g(),
-            'rstar': input.rstar(),
-            'mstar': input.mstar(),
-            'metallicity': input.metallicity(),
-            'ks_mag': input.ks_mag(),
-            # add other editable fields...
+            'magnitude': input.magnitude(),
+            'magnitude_band': input.magnitude_band(),
         })
         has_changes.set(False)
 
     @reactive.effect
-    @reactive.event(input.t_eff, input.log_g, input.rstar, input.mstar, input.metallicity, input.ks_mag)
+    @reactive.event(input.t_eff, input.log_g, input.magnitude, input.magnitude_band)
     def _():
         """Detect changes in any input field"""
-        if not original_values.get():
+        orig = original_values.get()
+        if not orig:
             return
         
-        orig = original_values.get()
-        changed = (
-            input.t_eff() != orig.get('t_eff') or
-            input.log_g() != orig.get('log_g') or
-            input.rstar() != orig.get('rstar') or
-            input.mstar() != orig.get('mstar') or
-            input.metallicity() != orig.get('metallicity') or
-            input.ks_mag() != orig.get('ks_mag')
-        )
-        has_changes.set(changed)
+        try:
+            current_t_eff = float(input.t_eff())
+            current_log_g = float(input.log_g())
+            current_magnitude = float(input.magnitude())
+            current_band = input.magnitude_band()
+            
+            orig_t_eff = float(orig.get('t_eff', 0))
+            orig_log_g = float(orig.get('log_g', 0))
+            orig_magnitude = float(orig.get('magnitude', 0))
+            orig_band = orig.get('magnitude_band', '')
+            
+            changed = (
+                current_t_eff != orig_t_eff or
+                current_log_g != orig_log_g or
+                current_magnitude != orig_magnitude or
+                current_band != orig_band
+            )
+            has_changes.set(changed)
+        except (ValueError, TypeError):
+            has_changes.set(False)
 
     @render.ui
     def save_changes_button():
@@ -963,8 +974,6 @@ def server(input, output, session):
     @reactive.event(input.save_target)
     def _():
         """Save modified target to my_custom_targets.txt"""
-        from gen_tso.catalogs.catalogs import merge_custom_targets
-        from gen_tso.utils import ROOT
         import os
         
         name = input.target.get()
@@ -972,27 +981,86 @@ def server(input, output, session):
         if target is None:
             return
         
-        # Update target object with current UI values
-        target.teff = input.t_eff()
-        target.logg_star = input.log_g()
-        target.rstar = input.rstar()
-        target.mstar = input.mstar()
-        target.metal_star = input.metallicity()
-        target.ks_mag = input.ks_mag()
+        # Update target object with current UI values (convert to proper types)
+        try:
+            target.teff = float(input.t_eff())
+        except (ValueError, TypeError):
+            target.teff = np.nan
+            
+        try:
+            target.logg_star = float(input.log_g())
+        except (ValueError, TypeError):
+            target.logg_star = np.nan
         
-        # Write single target to temp CSV then merge
-        temp_csv = os.path.join(ROOT, 'data', '_save_target.txt')
-        with open(temp_csv, 'w', encoding='utf-8', newline='\n') as out:
-            out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
-            out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
-            out.write(f">{target.host}: {target.ra} {target.dec} {target.ks_mag} {target.rstar} {target.mstar} {target.teff} {target.logg_star} {target.metal_star}\n")
-            out.write(f" {target.planet}: {target.transit_dur} {target.rplanet} {target.mplanet} {target.sma} {target.period} nan {int(target.is_min_mass)}\n")
+        # Update ks_mag if magnitude_band is 2mass,ks
+        if input.magnitude_band() == '2mass,ks':
+            try:
+                target.ks_mag = float(input.magnitude())
+            except (ValueError, TypeError):
+                target.ks_mag = np.nan
         
-        merge_custom_targets(temp_csv)
-        os.remove(temp_csv)
+        def fmt(val):
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                return 'nan'
+            return str(val)
         
-        has_changes.set(False)
-        ui.notification_show(f"Saved changes for {target.planet}", type='message')
+        # Read existing custom targets
+        custom_file = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
+        try:
+            existing_lines = []
+            target_found = False
+            
+            if os.path.exists(custom_file):
+                with open(custom_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # Find and replace existing target or keep other lines
+                i = 0
+                while i < len(lines):
+                    line = lines[i]
+                    if line.startswith('>'):
+                        host_name = line.split(':')[0][1:].strip()
+                        if host_name == target.host:
+                            # Found the target, skip it and its planet line(s)
+                            target_found = True
+                            i += 1
+                            # Skip planet lines (lines starting with space)
+                            while i < len(lines) and lines[i].startswith(' '):
+                                i += 1
+                            continue
+                    existing_lines.append(line)
+                    i += 1
+            
+            # Write back all lines plus the updated target
+            with open(custom_file, 'w', encoding='utf-8', newline='\n') as out:
+                # Write header if file was empty
+                if not existing_lines or not any(line.startswith('#') for line in existing_lines):
+                    out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
+                    out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
+                
+                # Write existing targets
+                for line in existing_lines:
+                    out.write(line)
+                
+                # Add the updated/new target with proper formatting
+                is_min = 0 if target.is_min_mass is False or target.is_min_mass == 0 else 1
+                out.write(f">{target.host}: {fmt(target.ra)} {fmt(target.dec)} {fmt(target.ks_mag)} {fmt(target.rstar)} {fmt(target.mstar)} {fmt(target.teff)} {fmt(target.logg_star)} {fmt(target.metal_star)}\n")
+                out.write(f" {target.planet}: {fmt(target.transit_dur)} {fmt(target.rplanet)} {fmt(target.mplanet)} {fmt(target.sma)} {fmt(target.period)} nan {is_min}\n")
+            
+            # Update original values to current values after successful save
+            original_values.set({
+                't_eff': input.t_eff(),
+                'log_g': input.log_g(),
+                'magnitude': input.magnitude(),
+                'magnitude_band': input.magnitude_band(),
+            })
+            has_changes.set(False)
+            ui.notification_show(f"Saved changes for {target.planet} to {custom_file}", type='message', duration=3)
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Error saving target: {error_details}")
+            ui.notification_show(f"Error saving: {str(e)}", type='error', duration=5)
 
     @reactive.effect
     @reactive.event(input.main_settings)
@@ -2181,14 +2249,16 @@ def server(input, output, session):
             )
 
         custom_badge = None
-        if target is not None and getattr(target, "is_custom", False):
-            custom_badge = ui.tooltip(
-                ui.tags.span(
-                    fa.icon_svg("tag", fill='green'),
-                ),
-                "This is a custom target",
-                placement='top',
-            )
+        if target is not None:
+            is_custom = getattr(target, "is_custom", False)
+            if is_custom:
+                custom_badge = ui.tooltip(
+                    ui.tags.span(
+                        fa.icon_svg("tag", fill='green'),
+                    ),
+                    "This is a custom target",
+                    placement='top',
+                )
 
         return ui.span(
             'Science target ',

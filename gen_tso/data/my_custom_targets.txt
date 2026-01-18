@@ -1,7 +1,5 @@
 # > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)
 # planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass
->WASP-80: 2.76 10.72 220.0 0.0778 8.5235 805.1 0.0 nan
- WASP-80 b: 3.031 15.524 692.869 0.0295 1.6828 63.04663545381846 0
 >GJ 86: 32.6224785 -50.8209945 4.125 nan 0.77 5151.0 4.594 -0.268
  GJ 86 b: nan nan 1242.66 0.113 15.76491 nan 1
 >HD 10697: 26.2324076 20.0826974 4.601 1.863076 1.155848 5645.13 3.957761 0.1596
@@ -58,3 +56,5 @@
  HD 92788 b: nan nan 1137.8314 0.96 325.0 nan 1
 >eps Eri: 53.2284306 -9.4581715 1.776 nan 0.85 nan nan nan
  eps Eri b: nan nan 540.311 3.4 2502.1 nan 0
+>WASP-80: 303.1667996 -2.1444369 8.351 0.586 0.577 4148.0 4.66 -0.13
+ WASP-80 b: 2.131 11.198 170.993 0.0344 3.06785 nan 0
