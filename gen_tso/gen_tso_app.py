@@ -446,10 +446,10 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_numeric("t_eff", "", value='1400.0'),
+                    ui.input_numeric("t_eff", "", value=1400.0, min=0, step=10.0),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_numeric("log_g", "", value='4.5'),
+                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.05),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
@@ -460,7 +460,8 @@ app_ui = ui.page_fluid(
                     ui.input_numeric(
                         id="magnitude",
                         label="",
-                        value='10.0',
+                        value=10.0,
+                        step=0.1,
                         #placeholder="magnitude",
                     ),
                     width=1/2,
@@ -549,10 +550,10 @@ app_ui = ui.page_fluid(
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
-                    ui.input_numeric("t_dur", "", value='2.0'),
+                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.05),
                     # Row 3
                     ui.p("Obs_dur (h):"),
-                    ui.input_numeric("obs_dur", "", value='5.0'),
+                    ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
                     width=1/2,
                     fixed_width=False,
                     heights_equal='all',
@@ -1136,7 +1137,7 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.BibTex_Citation)
     def _():
-        bibtex = ("""
+        bibtex = textwrap.dedent("""
         @ARTICLE{Cubillos2024paspGenTSO,
             author = {Cubillos, Patricio E.},
             title = "{Gen TSO: A General JWST Simulator for Exoplanet Time-series Observations}",
@@ -1168,8 +1169,8 @@ def server(input, output, session):
                 class_='d-flex justify-content-end mb-2'
             ),
             title="BibTex Citation",
-            size='m',
-            easy_close=False,
+            size='l',
+            easy_close=True,
             fade=True,
         )
         clipboard.set(bibtex)
@@ -1581,8 +1582,8 @@ def server(input, output, session):
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
 
-            resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
-            n_obs = int(_safe_num(input.n_obs.get(), default=1, cast=int))
+            resolution = _safe_num(input.tso_resolution.get(), default=250, cast=int)
+            n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
             tso_draw.set(draw(tso['tso'], resolution, n_obs))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
@@ -2401,19 +2402,19 @@ def server(input, output, session):
 
         icons = [
             sed_icon,
-            fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
+            fa.icon_svg("circle-xmark", style='regular', fill='black'),
         ]
         texts = [
             'Bookmark SED',
-            'Clear all SED bookmarks',
             'Upload SED',
+            'Clear all SED bookmarks',
         ]
         return cs.label_tooltip_button(
             label='Stellar SED model: ',
             icons=icons,
             tooltips=texts,
-            button_ids=['sed_bookmark', 'clear_sed_bookmarks', 'upload_sed']
+            button_ids=['sed_bookmark', 'upload_sed', 'clear_sed_bookmarks']
         )
 
 
@@ -2462,19 +2463,19 @@ def server(input, output, session):
         depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
         icons = [
             depth_icon,
-            fa.icon_svg("circle-xmark", style='regular', fill='black'),
             fa.icon_svg("file-arrow-up", fill='black'),
+            fa.icon_svg("circle-xmark", style='regular', fill='black'),
         ]
         texts = [
             f'Bookmark {obs_geometry} depth model',
-            f'Clear all {obs_geometry} depth bookmarks',
             f'Upload {obs_geometry} depth model',
+            f'Clear all {obs_geometry} depth bookmarks',
         ]
         return cs.label_tooltip_button(
             label=f"{obs_geometry.capitalize()} depth spectrum: ",
             icons=icons,
             tooltips=texts,
-            button_ids=['bookmark_depth', 'clear_depth_bookmarks', 'upload_depth'],
+            button_ids=['bookmark_depth', 'upload_depth', 'clear_depth_bookmarks'],
         )
 
 
@@ -3067,8 +3068,8 @@ def server(input, output, session):
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
 
-        n_obs = int(_safe_num(input.n_obs.get(), default=1, cast=int))
-        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
+        n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
+        resolution = _safe_num(input.tso_resolution.get(), default=250, cast=int)
         tso_draw.set(draw(tso['tso'], resolution, n_obs))
 
 
