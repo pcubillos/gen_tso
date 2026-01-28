@@ -471,9 +471,6 @@ app_ui = ui.page_fluid(
                     fill=False,
                     fillable=True,
                 ),
-                # Dynamic save button - only shows when there are unsaved changes
-                ui.output_ui("save_changes_button"),
-
                 ui.input_select(
                     id="sed_type",
                     label=ui.output_ui('stellar_sed_label'),
@@ -561,6 +558,9 @@ app_ui = ui.page_fluid(
                     fill=False,
                     fillable=True,
                 ),
+                # Dynamic save button - only shows when there are unsaved changes
+                ui.output_ui("save_changes_button"),
+                
                 ui.input_select(
                     id="planet_model_type",
                     label=ui.output_ui('depth_label_text'),
@@ -926,17 +926,31 @@ def server(input, output, session):
         if target is None:
             return
         
-        # Store original values
+        # Store original values from the target object itself (not UI)
+        # This captures the catalog values before any user modifications
+        def safe_float(val, default=0.0):
+            try:
+                if val is None or (isinstance(val, float) and np.isnan(val)):
+                    return default
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+        
+        # Get magnitude band - default to 2mass,ks
+        band = '2mass,ks'
+        magnitude = safe_float(target.ks_mag, 10.0)
+        
         original_values.set({
-            't_eff': input.t_eff(),
-            'log_g': input.log_g(),
-            'magnitude': input.magnitude(),
-            'magnitude_band': input.magnitude_band(),
+            't_eff': safe_float(target.teff, 1400.0),
+            'log_g': safe_float(target.logg_star, 4.5),
+            'magnitude': magnitude,
+            'magnitude_band': band,
+            't_dur': safe_float(target.transit_dur, 2.0),
         })
         has_changes.set(False)
 
     @reactive.effect
-    @reactive.event(input.t_eff, input.log_g, input.magnitude, input.magnitude_band)
+    @reactive.event(input.t_eff, input.log_g, input.magnitude, input.magnitude_band, input.t_dur)
     def _():
         """Detect changes in any input field"""
         orig = original_values.get()
@@ -948,17 +962,20 @@ def server(input, output, session):
             current_log_g = float(input.log_g())
             current_magnitude = float(input.magnitude())
             current_band = input.magnitude_band()
+            current_t_dur = float(input.t_dur())
             
             orig_t_eff = float(orig.get('t_eff', 0))
             orig_log_g = float(orig.get('log_g', 0))
             orig_magnitude = float(orig.get('magnitude', 0))
             orig_band = orig.get('magnitude_band', '')
+            orig_t_dur = float(orig.get('t_dur', 0))
             
             changed = (
                 current_t_eff != orig_t_eff or
                 current_log_g != orig_log_g or
                 current_magnitude != orig_magnitude or
-                current_band != orig_band
+                current_band != orig_band or
+                current_t_dur != orig_t_dur
             )
             has_changes.set(changed)
         except (ValueError, TypeError):
@@ -992,6 +1009,11 @@ def server(input, output, session):
             target.logg_star = float(input.log_g())
         except (ValueError, TypeError):
             target.logg_star = np.nan
+        
+        try:
+            target.transit_dur = float(input.t_dur())
+        except (ValueError, TypeError):
+            target.transit_dur = np.nan
         
         # Update ks_mag if magnitude_band is 2mass,ks
         if input.magnitude_band() == '2mass,ks':
@@ -1054,6 +1076,7 @@ def server(input, output, session):
                 'log_g': input.log_g(),
                 'magnitude': input.magnitude(),
                 'magnitude_band': input.magnitude_band(),
+                't_dur': input.t_dur(),
             })
             has_changes.set(False)
             ui.notification_show(f"Saved changes for {target.planet} to {custom_file}", type='message', duration=3)
