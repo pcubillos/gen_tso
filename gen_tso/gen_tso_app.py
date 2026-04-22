@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import textwrap
+import traceback
 from datetime import timedelta, datetime
 
 import faicons as fa
@@ -917,67 +918,46 @@ def server(input, output, session):
 
     @reactive.effect
     @reactive.event(input.target)
-    def _():
-        """Store original values when target selected"""
+    def load_target_defaults():
+        """Store target's original values when selected"""
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
 
-        # Store original values from the target object itself (not UI)
-        # This captures the catalog values before any user modifications
-        def safe_float(val, default=0.0):
-            try:
-                if val is None or (isinstance(val, float) and np.isnan(val)):
-                    return default
-                return float(val)
-            except (ValueError, TypeError):
-                return default
-
-        # Get magnitude band - default to 2mass,ks
-        band = '2mass,ks'
-        magnitude = safe_float(target.ks_mag, 10.0)
-
         original_values.set({
-            't_eff': safe_float(target.teff, 1400.0),
-            'log_g': safe_float(target.logg_star, 4.5),
-            'magnitude': magnitude,
-            'magnitude_band': band,
-            't_dur': safe_float(target.transit_dur, 2.0),
+            't_eff': target.teff,
+            'log_g': target.logg_star,
+            'ks_mag': target.ks_mag,
+            't_dur': target.transit_dur,
         })
         has_changes.set(False)
 
     @reactive.effect
     @reactive.event(input.t_eff, input.log_g, input.magnitude, input.magnitude_band, input.t_dur)
-    def _():
-        """Detect changes in any input field"""
+    def detect_target_changes():
+        """Detect changes in target input fields"""
         orig = original_values.get()
         if not orig:
             return
 
-        try:
-            current_t_eff = float(input.t_eff())
-            current_log_g = float(input.log_g())
-            current_magnitude = float(input.magnitude())
-            current_band = input.magnitude_band()
-            current_t_dur = float(input.t_dur())
+        orig_t_eff = orig.get('t_eff')
+        orig_log_g = orig.get('log_g')
+        orig_ks_mag = orig.get('ks_mag')
+        orig_t_dur = orig.get('t_dur')
 
-            orig_t_eff = float(orig.get('t_eff', 0))
-            orig_log_g = float(orig.get('log_g', 0))
-            orig_magnitude = float(orig.get('magnitude', 0))
-            orig_band = orig.get('magnitude_band', '')
-            orig_t_dur = float(orig.get('t_dur', 0))
+        t_eff = input.t_eff()
+        log_g = input.log_g()
+        band = input.magnitude_band()
+        mag = input.magnitude()
+        t_dur = input.t_dur()
 
-            changed = (
-                current_t_eff != orig_t_eff or
-                current_log_g != orig_log_g or
-                current_magnitude != orig_magnitude or
-                current_band != orig_band or
-                current_t_dur != orig_t_dur
-            )
-            has_changes.set(changed)
-        except (ValueError, TypeError):
-            has_changes.set(False)
+        has_changes.set(
+            t_eff != orig_t_eff or
+            log_g != orig_log_g or
+            (band == '2mass,ks' and mag != orig_ks_mag) or
+            t_dur != orig_t_dur
+        )
 
     @render.ui
     def save_changes_button():
@@ -990,8 +970,6 @@ def server(input, output, session):
     @reactive.event(input.save_target)
     def _():
         """Save modified target to my_custom_targets.txt"""
-        import os
-
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
@@ -1072,14 +1050,12 @@ def server(input, output, session):
             original_values.set({
                 't_eff': input.t_eff(),
                 'log_g': input.log_g(),
-                'magnitude': input.magnitude(),
-                'magnitude_band': input.magnitude_band(),
+                'ks_mag': input.magnitude(),
                 't_dur': input.t_dur(),
             })
             has_changes.set(False)
             ui.notification_show(f"Saved changes for {target.planet} to {custom_file}", type='message', duration=3)
         except Exception as e:
-            import traceback
             error_details = traceback.format_exc()
             print(f"Error saving target: {error_details}")
             ui.notification_show(f"Error saving: {str(e)}", type='error', duration=5)
