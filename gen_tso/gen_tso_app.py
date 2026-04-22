@@ -2,7 +2,6 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 import json
-import math
 import os
 from pathlib import Path
 import sys
@@ -462,7 +461,6 @@ app_ui = ui.page_fluid(
                         label="",
                         value=10.0,
                         step=0.1,
-                        #placeholder="magnitude",
                     ),
                     width=1/2,
                     fixed_width=False,
@@ -560,7 +558,7 @@ app_ui = ui.page_fluid(
                 ),
                 # Dynamic save button - only shows when there are unsaved changes
                 ui.output_ui("save_changes_button"),
-                
+
                 ui.input_select(
                     id="planet_model_type",
                     label=ui.output_ui('depth_label_text'),
@@ -925,7 +923,7 @@ def server(input, output, session):
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
-        
+
         # Store original values from the target object itself (not UI)
         # This captures the catalog values before any user modifications
         def safe_float(val, default=0.0):
@@ -935,11 +933,11 @@ def server(input, output, session):
                 return float(val)
             except (ValueError, TypeError):
                 return default
-        
+
         # Get magnitude band - default to 2mass,ks
         band = '2mass,ks'
         magnitude = safe_float(target.ks_mag, 10.0)
-        
+
         original_values.set({
             't_eff': safe_float(target.teff, 1400.0),
             'log_g': safe_float(target.logg_star, 4.5),
@@ -956,20 +954,20 @@ def server(input, output, session):
         orig = original_values.get()
         if not orig:
             return
-        
+
         try:
             current_t_eff = float(input.t_eff())
             current_log_g = float(input.log_g())
             current_magnitude = float(input.magnitude())
             current_band = input.magnitude_band()
             current_t_dur = float(input.t_dur())
-            
+
             orig_t_eff = float(orig.get('t_eff', 0))
             orig_log_g = float(orig.get('log_g', 0))
             orig_magnitude = float(orig.get('magnitude', 0))
             orig_band = orig.get('magnitude_band', '')
             orig_t_dur = float(orig.get('t_dur', 0))
-            
+
             changed = (
                 current_t_eff != orig_t_eff or
                 current_log_g != orig_log_g or
@@ -993,50 +991,50 @@ def server(input, output, session):
     def _():
         """Save modified target to my_custom_targets.txt"""
         import os
-        
+
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
-        
+
         # Update target object with current UI values (convert to proper types)
         try:
             target.teff = float(input.t_eff())
         except (ValueError, TypeError):
             target.teff = np.nan
-            
+
         try:
             target.logg_star = float(input.log_g())
         except (ValueError, TypeError):
             target.logg_star = np.nan
-        
+
         try:
             target.transit_dur = float(input.t_dur())
         except (ValueError, TypeError):
             target.transit_dur = np.nan
-        
+
         # Update ks_mag if magnitude_band is 2mass,ks
         if input.magnitude_band() == '2mass,ks':
             try:
                 target.ks_mag = float(input.magnitude())
             except (ValueError, TypeError):
                 target.ks_mag = np.nan
-        
+
         def fmt(val):
             if val is None or (isinstance(val, float) and np.isnan(val)):
                 return 'nan'
             return str(val)
-        
+
         # Read existing custom targets
         custom_file = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
         try:
             existing_lines = []
             target_found = False
-            
+
             if os.path.exists(custom_file):
                 with open(custom_file, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
-                
+
                 # Find and replace existing target or keep other lines
                 i = 0
                 while i < len(lines):
@@ -1053,23 +1051,23 @@ def server(input, output, session):
                             continue
                     existing_lines.append(line)
                     i += 1
-            
+
             # Write back all lines plus the updated target
             with open(custom_file, 'w', encoding='utf-8', newline='\n') as out:
                 # Write header if file was empty
                 if not existing_lines or not any(line.startswith('#') for line in existing_lines):
                     out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
                     out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
-                
+
                 # Write existing targets
                 for line in existing_lines:
                     out.write(line)
-                
+
                 # Add the updated/new target with proper formatting
                 is_min = 0 if target.is_min_mass is False or target.is_min_mass == 0 else 1
                 out.write(f">{target.host}: {fmt(target.ra)} {fmt(target.dec)} {fmt(target.ks_mag)} {fmt(target.rstar)} {fmt(target.mstar)} {fmt(target.teff)} {fmt(target.logg_star)} {fmt(target.metal_star)}\n")
                 out.write(f" {target.planet}: {fmt(target.transit_dur)} {fmt(target.rplanet)} {fmt(target.mplanet)} {fmt(target.sma)} {fmt(target.period)} nan {is_min}\n")
-            
+
             # Update original values to current values after successful save
             original_values.set({
                 't_eff': input.t_eff(),
@@ -1197,7 +1195,7 @@ def server(input, output, session):
             fade=True,
         )
         clipboard.set(bibtex)
-        ui.modal_show(m) 
+        ui.modal_show(m)
 
     @reactive.Effect
     @reactive.event(input.update_trexo)
@@ -1553,7 +1551,7 @@ def server(input, output, session):
             if target_focus == 'science':
                 ui.update_select('magnitude_band', selected=norm_band)
                 ui.update_numeric('magnitude', value=float(norm_mag))
-                                  
+
         # sed_type, sed_model, norm_band, norm_mag, sed_label
         if target_focus == 'science':
             ui.update_select('sed_type', selected=sed_type)
@@ -2314,16 +2312,16 @@ def server(input, output, session):
             ui.update_selectize('target', selected=target.planet)
 
         def to_float(v):
-            """Convert value to float, return math.nan for empty/invalid"""
+            """Convert value to float, return NaN for empty/invalid"""
             try:
                 if v is None:
-                    return math.nan
+                    return np.nan
                 s = str(v).strip()
                 if s == '':
-                    return math.nan
+                    return np.nan
                 return float(s)
             except Exception:
-                return math.nan
+                return np.nan
 
         # Physical properties:
         if target.planet in cache_target:
@@ -2610,7 +2608,7 @@ def server(input, output, session):
             return
         transit_dur = t_dur_val
         settling = req(input.settling_time).get()
-        
+
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
