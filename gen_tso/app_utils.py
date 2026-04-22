@@ -36,11 +36,11 @@ bands_dict = {
     'johnson,v': 'V mag',
 }
 
-# Catch empty or invalid numerical values
-# Anytime a input is called as such: varname = input.varname.get()
-# replace with: varname = _safe_num(input.varname.get(), default=..., cast=...)
-# Only neccessary when val cant be empty string or None
+
 def _safe_num(val, default=0.0, cast=float):
+    """
+    Parse inputs from GUI, set default values for empty or invalid fields.
+    """
     if val is None or val == "":
         return default
     try:
