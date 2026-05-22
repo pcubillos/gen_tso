@@ -434,6 +434,52 @@ app_ui = ui.page_fluid(
                     placement="right",
                     id="targets_popover",
                 ),
+                # Hidden section to hold switches for conditionals
+                ui.panel_conditional(
+                    'false',
+                    ui.input_action_button(
+                        id="konami_sequence_trigger",
+                        label="",
+                    ),
+                    ui.input_switch(
+                        id="is_custom",
+                        label="custom",
+                        value=False,
+                    ),
+                    ui.input_switch(
+                        id="has_sed_bookmarks",
+                        label="has SED",
+                        value=False,
+                    ),
+                    ui.input_switch(
+                        id="has_depth_bookmarks",
+                        label="has transits",
+                        value=False,
+                    ),
+                ),
+                # Customizing buttons
+                ui.panel_conditional(
+                    "input.is_custom",
+                    ui.layout_column_wrap(
+                        ui.input_action_button(
+                            id='save_custom_target',
+                            label='Save changes',
+                            class_='btn btn-outline-success btn-sm',
+                        ),
+                        #ui.input_action_button(
+                        #    id='clear_custom',
+                        #    label='Clear changes',
+                        #    class_='btn btn-outline-success btn-sm',
+                        #),
+                        width=1/2,
+                        fixed_width=False,
+                        heights_equal='all',
+                        gap='7px',
+                        fill=False,
+                        fillable=True,
+                    ),
+                ),
+                # The target
                 ui.output_ui('target_label'),
                 ui.input_selectize(
                     id='target',
@@ -557,9 +603,6 @@ app_ui = ui.page_fluid(
                     fill=False,
                     fillable=True,
                 ),
-                # Dynamic save button - only shows when there are unsaved changes
-                ui.output_ui("save_changes_button"),
-
                 ui.input_select(
                     id="planet_model_type",
                     label=ui.output_ui('depth_label_text'),
@@ -913,7 +956,6 @@ def server(input, output, session):
     latest_pandeia = reactive.Value(None)
 
     # Track if current target has unsaved changes
-    has_changes = reactive.value(False)
     original_values = reactive.value({})
 
     @reactive.effect
@@ -931,7 +973,7 @@ def server(input, output, session):
             'ks_mag': target.ks_mag,
             't_dur': target.transit_dur,
         })
-        has_changes.set(False)
+        ui.update_switch('is_custom', value=False)
 
     @reactive.effect
     @reactive.event(input.t_eff, input.log_g, input.magnitude, input.magnitude_band, input.t_dur)
@@ -952,22 +994,17 @@ def server(input, output, session):
         mag = input.magnitude()
         t_dur = input.t_dur()
 
-        has_changes.set(
+        is_custom = bool(
             t_eff != orig_t_eff or
             log_g != orig_log_g or
             (band == '2mass,ks' and mag != orig_ks_mag) or
             t_dur != orig_t_dur
         )
+        ui.update_switch('is_custom', value=is_custom)
 
-    @render.ui
-    def save_changes_button():
-        """Show save button only when there are changes"""
-        if has_changes.get():
-            return ui.input_action_button('save_target', 'Save Changes', class_='btn-success')
-        return ui.TagList()
 
     @reactive.effect
-    @reactive.event(input.save_target)
+    @reactive.event(input.save_custom_target)
     def _():
         """Save modified target to my_custom_targets.txt"""
         name = input.target.get()
@@ -1053,7 +1090,7 @@ def server(input, output, session):
                 'ks_mag': input.magnitude(),
                 't_dur': input.t_dur(),
             })
-            has_changes.set(False)
+            ui.update_switch('is_custom', value=False)
             ui.notification_show(f"Saved changes for {target.planet} to {custom_file}", type='message', duration=3)
         except Exception as e:
             error_details = traceback.format_exc()
