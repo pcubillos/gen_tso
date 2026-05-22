@@ -184,7 +184,7 @@ for location in loading_folders:
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
-cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/'
+cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/'
 
 # Depth and SED units, ensure they are consistent with u.read_spectrum_file()
 depth_units = [
@@ -263,7 +263,7 @@ app_ui = ui.page_fluid(
         ui.span(
             ui.HTML(
                 "<b>Gen TSO</b>: A general JWST simulator "
-                "for exoplanet time-series observations ("
+                "for exoplanet time series ("
             ),
             ui.tooltip(
                 ui.tags.a(
@@ -274,7 +274,7 @@ app_ui = ui.page_fluid(
                 "documentation",
                 placement='bottom',
             ),
-            ',',
+            ', ',
             ui.tooltip(
                 ui.input_action_link(
                     id='main_settings',
@@ -284,14 +284,14 @@ app_ui = ui.page_fluid(
                 "settings",
                 placement='bottom',
             ),
-            ',',
+            ', ',
             ui.tooltip(
                 ui.input_action_link(
-                    id='BibTex_Citation',
+                    id='bibtex',
                     label='',
                     icon=fa.icon_svg("book-open-reader", fill='black'),
                 ),
-                "BibTex Citation",
+                "citation",
                 placement='bottom',
             ),
 
@@ -1132,9 +1132,9 @@ def server(input, output, session):
         ui.modal_show(m)
 
     @reactive.effect
-    @reactive.event(input.BibTex_Citation)
+    @reactive.event(input.bibtex)
     def _():
-        bibtex = textwrap.dedent("""
+        bibtex = textwrap.dedent("""\
         @ARTICLE{Cubillos2024paspGenTSO,
             author = {Cubillos, Patricio E.},
             title = "{Gen TSO: A General JWST Simulator for Exoplanet Time-series Observations}",
@@ -1155,8 +1155,13 @@ def server(input, output, session):
         }
         """)
 
+        color_syntax_bibtex = ui.HTML(
+            f'<pre><code class="language-java">{bibtex}</code></pre>'
+            "<script>hljs.highlightAll();</script>"
+        )
+
         m = ui.modal(
-            ui.HTML(f'<pre style=" font-size:13px; margin:0;">{bibtex}</pre>'),
+            ui.HTML(f'<pre style=" font-size:13px; margin:0;">{color_syntax_bibtex}</pre>'),
             ui.div(
                 ui.input_action_button(
                     id='copy_bibtex',
@@ -1165,7 +1170,7 @@ def server(input, output, session):
                 ),
                 class_='d-flex justify-content-end mb-2'
             ),
-            title="BibTex Citation",
+            title="Gen TSO bibtex citation",
             size='l',
             easy_close=True,
             fade=True,
@@ -2247,16 +2252,13 @@ def server(input, output, session):
             )
 
         custom_badge = None
-        if target is not None:
-            is_custom = getattr(target, "is_custom", False)
-            if is_custom:
-                custom_badge = ui.tooltip(
-                    ui.tags.span(
-                        fa.icon_svg("tag", fill='green'),
-                    ),
-                    "This is a custom target",
-                    placement='top',
-                )
+        is_custom = getattr(target, "is_custom", False)
+        if is_custom:
+            custom_badge = ui.tooltip(
+                fa.icon_svg("circle-info", fill='#15B01A'),
+                "This is a custom target",
+                placement='top',
+            )
 
         return ui.span(
             'Science target ',
