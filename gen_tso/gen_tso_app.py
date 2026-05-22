@@ -446,10 +446,10 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_numeric("t_eff", "", value=1400.0, min=0, step=10.0),
+                    ui.input_numeric("t_eff", "", value=1400, min=100, step=100),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.05),
+                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.1),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
@@ -546,7 +546,7 @@ app_ui = ui.page_fluid(
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
-                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.05),
+                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.1),
                     # Row 3
                     ui.p("Obs_dur (h):"),
                     ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
