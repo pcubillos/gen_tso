@@ -1012,28 +1012,12 @@ def server(input, output, session):
         if target is None:
             return
 
-        # Update target object with current UI values (convert to proper types)
-        try:
-            target.teff = float(input.t_eff())
-        except (ValueError, TypeError):
-            target.teff = np.nan
-
-        try:
-            target.logg_star = float(input.log_g())
-        except (ValueError, TypeError):
-            target.logg_star = np.nan
-
-        try:
-            target.transit_dur = float(input.t_dur())
-        except (ValueError, TypeError):
-            target.transit_dur = np.nan
-
-        # Update ks_mag if magnitude_band is 2mass,ks
+        # Update target with UI values
+        target.teff = _safe_num(input.t_eff(), default=np.nan)
+        target.logg_star = _safe_num(input.log_g(), default=np.nan)
+        target.transit_dur = _safe_num(input.t_dur(), default=np.nan)
         if input.magnitude_band() == '2mass,ks':
-            try:
-                target.ks_mag = float(input.magnitude())
-            except (ValueError, TypeError):
-                target.ks_mag = np.nan
+            target.ks_mag = _safe_num(input.magnitude(), default=np.nan)
 
         def fmt(val):
             if val is None or (isinstance(val, float) and np.isnan(val)):
