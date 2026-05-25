@@ -508,7 +508,7 @@ def load_targets(catalog_file=None, is_confirmed=np.nan):
             name_len = line.find(':')
             planet = line[1:name_len].strip()
             planet_vals = np.array(line[name_len+1:].split(), float)
-            t_dur, rplanet, mplanet, sma, period, teq, min_mass = planet_vals
+            t_dur, rplanet, mplanet, sma, period, epoch, teq, min_mass = planet_vals
 
             target = Target(
                 host=host,
@@ -517,7 +517,8 @@ def load_targets(catalog_file=None, is_confirmed=np.nan):
                 ks_mag=ks_mag, ra=ra, dec=dec,
                 planet=planet,
                 mplanet=mplanet, rplanet=rplanet,
-                period=period, sma=sma, transit_dur=t_dur,
+                period=period, transit_epoch=epoch,
+                sma=sma, transit_dur=t_dur,
                 is_confirmed=is_confirmed,
                 is_min_mass=bool(min_mass),
             )

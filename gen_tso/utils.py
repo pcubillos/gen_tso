@@ -393,6 +393,7 @@ def pretty_print_target(target):
     rprs = as_str(target.rprs, '.3f', '---')
     ars = as_str(target.ars, '.3f', '---')
     period = as_str(target.period, '.3f', '---')
+    epoch = as_str(target.transit_epoch, '.6f', '---')
     t_dur = as_str(target.transit_dur, '.3f', '---')
     eq_temp = as_str(target.eq_temp, '.1f', '---')
 
@@ -424,10 +425,11 @@ def pretty_print_target(target):
         f"{mplanet_label} = {mplanet} m_earth<br>"
         f"semi_major_axis = {sma} AU<br>"
         f"period = {period} d<br>"
-        f"equilibrium_temp = {eq_temp} K<br>"
+        f"transit_epoch = {epoch} BJD<br>"
+        f"t_equilibrium = {eq_temp} K<br>"
         f"transit_duration = {t_dur} h<br>"
-        f"rplanet/rstar = {rprs}<br>"
-        f"a/rstar = {ars}<br>"
+        f"rplanet_rstar = {rprs}<br>"
+        f"a_rstar = {ars}<br>"
     )
 
     star_info = ui.HTML(
@@ -438,7 +440,7 @@ def pretty_print_target(target):
         f"mstar = {mstar} m_sun<br>"
         f"log_g = {logg}<br>"
         f"metallicity = {metal}<br>"
-        f"effective_temp = {teff} K<br>"
+        f"t_effective = {teff} K<br>"
         f"Ks_mag = {ks_mag}<br>"
         f"RA = {target.ra:.3f} deg<br>"
         f"dec = {target.dec:.3f} deg<br>"

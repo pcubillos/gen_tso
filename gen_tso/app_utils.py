@@ -159,7 +159,7 @@ def planet_model_name(input):
         return f'Flat transit ({transit_depth:.3f}%)'
     elif planet_model_type == 'Blackbody':
         eclipse_depth = input.eclipse_depth.get()
-        t_planet = input.teq_planet.get()
+        t_planet = _safe_num(input.teq_planet.get(), default=1000.0)
         return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 

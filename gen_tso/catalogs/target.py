@@ -21,7 +21,7 @@ class Target():
         host=None, mstar=np.nan, rstar=np.nan, teff=np.nan, logg_star=np.nan,
         metal_star=np.nan, ks_mag=np.nan, ra=np.nan, dec=np.nan,
         planet=None, mplanet=np.nan, rplanet=np.nan, period=np.nan, sma=np.nan,
-        transit_dur=np.nan, ars=np.nan, rprs=np.nan, eq_temp=np.nan,
+        transit_dur=np.nan, transit_epoch=np.nan, ars=np.nan, rprs=np.nan, eq_temp=np.nan,
         is_confirmed=np.nan, is_min_mass=False, aliases=[],
     ):
         # Turn on if planet mass is RV's minimum mass: M*sin(i)
@@ -44,6 +44,7 @@ class Target():
             self.rplanet = rplanet
             self.sma = sma
             self.period = period
+            self.transit_epoch = transit_epoch
             self.ars = ars
             self.rprs = rprs
             self.eq_temp = eq_temp
@@ -69,6 +70,7 @@ class Target():
             self.rplanet = entry['pl_rade']
             self.sma = entry['pl_orbsmax']
             self.period = entry['pl_orbper']
+            self.transit_epoch = entry['pl_tranmid']
             self.ars = entry['pl_ratdor']
             self.rprs = entry['pl_ratror']
             self.transit_dur = entry['pl_trandur']
@@ -181,6 +183,7 @@ class Target():
         a_rstar = u.as_str(self.ars, '.3f', 'np.nan')
         sma = u.as_str(self.sma, '.3f', 'np.nan')
         period = u.as_str(self.period, '.3f', 'np.nan')
+        transit_epoch = u.as_str(self.transit_epoch, '.6f', 'np.nan')
         transit_dur = u.as_str(self.transit_dur, '.3f', 'np.nan')
         eq_temp = u.as_str(self.eq_temp, '.1f', 'np.nan')
 
@@ -203,6 +206,7 @@ class Target():
             f"transit_dur = {transit_dur}  # h\n"
             f"sma = {sma}  # AU\n"
             f"period = {period}  # d\n"
+            f"transit_epoch = {transit_epoch}  # BJD\n"
             f"eq_temp = {eq_temp}  # K\n"
             f"rprs = {rprs}\n"
             f"a_rstar = {a_rstar}\n"
@@ -232,6 +236,7 @@ class Target():
         sma = u.as_str(self.sma, '.3f', '---')
         period = u.as_str(self.period, '.3f', '---')
         t14 = u.as_str(self.transit_dur, '.3f', '---')
+        epoch = u.as_str(self.transit_epoch, '.6f', '---')
         eq_temp = u.as_str(self.eq_temp, '.1f', '---')
 
         mplanet_label = 'M*sin(i)' if self.is_min_mass else 'mplanet'
@@ -252,6 +257,7 @@ class Target():
             f"transit_dur = {t14} h\n"
             f"sma = {sma} AU\n"
             f"period = {period} d\n"
+            f"transit_epoch = {epoch} BJD\n"
             f"eq_temp = {eq_temp} K\n"
             f"rplanet/rstar = {rprs}\n"
             f"a/rstar = {ars}\n"
@@ -265,36 +271,6 @@ class Target():
         if len(self.aliases) > 0:
             report += f'aliases: {self.aliases}'
         return report
-
-
-def format_nea_entry(entry):
-    # Have TOI entries the same keys as PS entries:
-    if 'toi' in entry.keys():
-        entry['hostname'] = f"TOI-{entry['toipfx']}"
-        entry['st_met'] = np.nan
-        entry['sy_kmag'] = np.nan
-        logg = entry['st_logg'] if entry['st_logg'] is not None else np.nan
-        rstar = entry['st_rad'] if entry['st_rad'] is not None else np.nan
-        entry['st_mass'] = 10**logg * (rstar*pc.rsun)**2 / pc.G / pc.msun
-
-        entry['pl_name'] = f"TOI-{entry['toi']}"
-        entry['pl_masse'] = np.nan
-        entry['pl_orbsmax'] = np.nan
-        entry['pl_ratdor'] = np.nan
-        entry['pl_ratror'] = np.sqrt(entry.pop('pl_trandep')*pc.ppm)
-        entry['pl_trandur'] = entry.pop('pl_trandurh')
-    else:
-        entry['pl_eqt'] = np.nan
-
-    # Patch
-    if entry['st_mass'] == 0.0:
-        entry['st_mass'] = np.nan
-
-    # Replace None with np.nan
-    for key in entry.keys():
-        if entry[key] is None:
-            entry[key] = np.nan
-    return entry
 
 
 def solve_sma_period(period, sma, mstar):
@@ -465,6 +441,9 @@ def missing_mask(target):
 
 
 def rank_planets(target, alt_targets):
+    """
+    Rank entries for a target by completeness and fill the gaps.
+    """
     rank = np.zeros(len(alt_targets))
 
     props = [
@@ -476,6 +455,7 @@ def rank_planets(target, alt_targets):
         'mstar',
         'transit_dur',
         'period',
+        'transit_epoch',
         'sma',
         'teff',
         'metal_star',

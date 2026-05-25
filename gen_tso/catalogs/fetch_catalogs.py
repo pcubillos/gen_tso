@@ -23,7 +23,6 @@ import ssl
 import urllib
 import warnings
 
-
 from astropy.coordinates import SkyCoord
 import numpy as np
 from astroquery.simbad import Simbad
@@ -131,7 +130,7 @@ def save_catalog(targets, catalog_file):
             '# > host: RA(deg) dec(deg) Ks_mag '
             'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
             '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
-            'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
+            'semi-major_axis(AU) period(d) transit_epoch(BJD) t_eq(K) is_min_mass\n'
         )
         hosts = [target.host for target in targets]
         planets = [target.planet for target in targets]
@@ -153,6 +152,7 @@ def save_catalog(targets, catalog_file):
             transit_dur = f'{target.transit_dur:.3f}'
             sma = f'{target.sma:.4f}'
             period = f'{target.period:.5f}'
+            transit_epoch = f'{target.transit_epoch:.6f}'
             teq = f'{target.eq_temp:.1f}'
             is_min_mass = int(target.is_min_mass)
             if target.host != host:
@@ -163,7 +163,7 @@ def save_catalog(targets, catalog_file):
                 )
             f.write(
                 f" {planet}: {transit_dur} {rplanet} {mplanet} "
-                f"{sma} {period} {teq} {is_min_mass}\n",
+                f"{sma} {period} {transit_epoch} {teq} {is_min_mass}\n",
             )
 
 
@@ -358,7 +358,7 @@ def fetch_nasa_confirmed_targets():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+hostname,pl_name,default_flag,rowupdate,sy_kmag,sy_pnum,"
-        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,"
+        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,pl_tranmid,"
         "pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_msinie,pl_ratdor,pl_ratror+"
         "from+ps+"
         "&format=json"
@@ -394,7 +394,7 @@ def fetch_nasa_confirmed_targets():
             tar.rank_planets(target, entries)
             planets.append(target)
             n_dups.append(len(idx_entry))
-        # Solve stellar parameters (all planets must have the 'same' host)
+        # Solve stellar parameters (all planets must have the same host)
         star = tar.solve_host(planets, n_dups)
 
         # Now, re-do each planet, but using the single host properties
@@ -472,7 +472,7 @@ def fetch_nasa_tess_candidates():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+toi,toipfx,pl_trandurh,pl_trandep,pl_rade,pl_eqt,ra,dec,"
-        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp,rowupdate+"
+        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,pl_tranmid,tfopwg_disp,rowupdate+"
         "from+toi+"
         "&format=json"
     )
@@ -1038,8 +1038,8 @@ def fetch_tess_aliases(new_targets=None):
     if new_targets is None:
         new_targets = np.unique([target.planet for target in candidates])
 
-    if os.path.exists(f'{ROOT}data/tess_data.txt'):
-        tess_catalog = f'{ROOT}data/tess_data.txt'
+    tess_catalog = f'{ROOT}data/tess_data.txt'
+    if os.path.exists(tess_catalog):
         known_candidates = load_targets(tess_catalog)
         known_tess = [target.planet for target in known_candidates]
     else:
