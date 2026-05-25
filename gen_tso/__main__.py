@@ -61,7 +61,7 @@ def main():
 
         from gen_tso.catalogs.catalogs import merge_custom_targets
         merge_custom_targets(targets_path)
-    
+
     if '--load_custom' in sys.argv:
         try:
             i = sys.argv.index('--load_custom')
@@ -81,7 +81,7 @@ def main():
             session_txt = os.path.join(ROOT, 'data', 'custom_targets_session.txt')
             csv_to_session_txt(targets_path, session_txt)
             print(f"Converted CSV to: {session_txt}")
-    
+
     if (
         '--update_db' not in sys.argv and
         '--update_exo' not in sys.argv and

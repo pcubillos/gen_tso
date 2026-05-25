@@ -2,6 +2,7 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
+    'save_catalog',
     'fetch_trexolist',
     'update_exoplanet_archive',
     'fetch_nasa_confirmed_targets',
@@ -110,6 +111,19 @@ def save_catalog(targets, catalog_file):
     """
     Write data from a catalog of targets to a plain-text file.
     Targets will be sorted by host name and then by planet name.
+
+    Parameters
+    ----------
+    targets: List of Target
+        Targets to store.
+    catalog_file: String
+        File name where to store targets data as plant text.
+        See load_targets() for reading.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> nea_data = cat.load_targets()
     """
     # Save as plain text:
     with open(catalog_file, 'w') as f:
@@ -400,7 +414,7 @@ def fetch_nasa_confirmed_targets():
     catalog_file = f'{ROOT}data/nea_data.txt'
     if os.path.exists(catalog_file):
         current_targets = [
-            target.planet for target in load_targets('nea_data.txt')
+            target.planet for target in load_targets()
         ]
     else:
         current_targets = []
@@ -471,7 +485,7 @@ def fetch_nasa_tess_candidates():
     dates = [entry['rowupdate'][0:10] for entry in entries]
 
     # Discard confirmed planets:
-    targets = load_targets('nea_data.txt')
+    targets = load_targets()
     confirmed_targets = [target.planet for target in targets]
     confirmed_hosts = [target.host for target in targets]
 
@@ -1019,12 +1033,14 @@ def fetch_tess_aliases(new_targets=None):
     >>> aliases = fetch_cat.fetch_tess_aliases(new_targets)
     >>> fetch_cat.crosscheck_tess_candidates()
     """
-    candidates = load_targets('tess_candidates_tmp.txt')
+    tmp_catalog = f'{ROOT}data/tess_candidates_tmp.txt'
+    candidates = load_targets(tmp_catalog)
     if new_targets is None:
         new_targets = np.unique([target.planet for target in candidates])
 
     if os.path.exists(f'{ROOT}data/tess_data.txt'):
-        known_candidates = load_targets('tess_data.txt')
+        tess_catalog = f'{ROOT}data/tess_data.txt'
+        known_candidates = load_targets(tess_catalog)
         known_tess = [target.planet for target in known_candidates]
     else:
         known_tess = []
@@ -1104,7 +1120,8 @@ def crosscheck_tess_candidates(ncpu=None):
             host_aliases[alias] = host
 
     # Identity alias for targets without aliases
-    candidates = load_targets('tess_candidates_tmp.txt')
+    tmp_catalog = f'{ROOT}data/tess_candidates_tmp.txt'
+    candidates = load_targets(tmp_catalog)
     for target in candidates:
         if target.host not in host_aliases:
             host_aliases[target.host] = target.host
@@ -1127,7 +1144,8 @@ def crosscheck_tess_candidates(ncpu=None):
     # Now I need to collect the Ks-band magnitudes:
     # Zeroth idea, check if I already have the Ks mag:
     if os.path.exists(f'{ROOT}data/tess_data.txt'):
-        known_candidates = load_targets('tess_data.txt')
+        tess_catalog = f'{ROOT}data/tess_data.txt'
+        known_candidates = load_targets(tess_catalog)
         known_hosts = [target.host for target in known_candidates]
         for target in candidates:
             if target.host in known_hosts:
