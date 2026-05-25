@@ -1019,67 +1019,30 @@ def server(input, output, session):
         if input.magnitude_band() == '2mass,ks':
             target.ks_mag = _safe_num(input.magnitude(), default=np.nan)
 
-        def fmt(val):
-            if val is None or (isinstance(val, float) and np.isnan(val)):
-                return 'nan'
-            return str(val)
+        custom_catalog = f'{ROOT}data/my_custom_targets.txt'
+        custom_targets = cat.load_targets(custom_catalog)
+        # Search and replace or add custom target
+        custom_planets = [target.planet for target in custom_targets]
+        if target.planet in custom_planets:
+            idx = custom_planets.index(target.planet)
+            custom_targets[idx] = target
+        else:
+            custom_targets.append(target)
 
-        # Read existing custom targets
-        custom_file = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
-        try:
-            existing_lines = []
-            target_found = False
+        custom_catalog = f'{ROOT}data/my_custom_targets.txt'
+        cat.save_catalog(custom_targets, custom_catalog)
 
-            if os.path.exists(custom_file):
-                with open(custom_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
+        # Update original values to current values after successful save
+        original_values.set({
+            't_eff': input.t_eff(),
+            'log_g': input.log_g(),
+            'ks_mag': input.magnitude(),
+            't_dur': input.t_dur(),
+        })
+        ui.update_switch('is_custom', value=False)
+        msg = f"Updated {target.planet} into {custom_catalog}"
+        ui.notification_show(msg, type='message', duration=6)
 
-                # Find and replace existing target or keep other lines
-                i = 0
-                while i < len(lines):
-                    line = lines[i]
-                    if line.startswith('>'):
-                        host_name = line.split(':')[0][1:].strip()
-                        if host_name == target.host:
-                            # Found the target, skip it and its planet line(s)
-                            target_found = True
-                            i += 1
-                            # Skip planet lines (lines starting with space)
-                            while i < len(lines) and lines[i].startswith(' '):
-                                i += 1
-                            continue
-                    existing_lines.append(line)
-                    i += 1
-
-            # Write back all lines plus the updated target
-            with open(custom_file, 'w', encoding='utf-8', newline='\n') as out:
-                # Write header if file was empty
-                if not existing_lines or not any(line.startswith('#') for line in existing_lines):
-                    out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
-                    out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
-
-                # Write existing targets
-                for line in existing_lines:
-                    out.write(line)
-
-                # Add the updated/new target with proper formatting
-                is_min = 0 if target.is_min_mass is False or target.is_min_mass == 0 else 1
-                out.write(f">{target.host}: {fmt(target.ra)} {fmt(target.dec)} {fmt(target.ks_mag)} {fmt(target.rstar)} {fmt(target.mstar)} {fmt(target.teff)} {fmt(target.logg_star)} {fmt(target.metal_star)}\n")
-                out.write(f" {target.planet}: {fmt(target.transit_dur)} {fmt(target.rplanet)} {fmt(target.mplanet)} {fmt(target.sma)} {fmt(target.period)} nan {is_min}\n")
-
-            # Update original values to current values after successful save
-            original_values.set({
-                't_eff': input.t_eff(),
-                'log_g': input.log_g(),
-                'ks_mag': input.magnitude(),
-                't_dur': input.t_dur(),
-            })
-            ui.update_switch('is_custom', value=False)
-            ui.notification_show(f"Saved changes for {target.planet} to {custom_file}", type='message', duration=3)
-        except Exception as e:
-            error_details = traceback.format_exc()
-            print(f"Error saving target: {error_details}")
-            ui.notification_show(f"Error saving: {str(e)}", type='error', duration=5)
 
     @reactive.effect
     @reactive.event(input.main_settings)
