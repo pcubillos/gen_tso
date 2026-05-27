@@ -214,6 +214,8 @@ def normalize_name(target):
         name = name[:-1]
     if name.lower().endswith('d') and not name[-2].isalpha():
         name = name[:-1]
+    if name.endswith('_c'):
+        name = name[:-2]
 
     # Custom corrections
     name = name.replace('-offset', '')
@@ -223,12 +225,14 @@ def normalize_name(target):
     if name.endswith('-'):
         name = name[:-1]
 
-    if name.upper() in ['55CNC', 'RHO01-CNC', '-RHO01-CNC']:
+    if name.upper() in ['55CNC', 'RHO01-CNC', '-RHO01-CNC', '55-CNC-E']:
         name = '55 Cnc'
     if name == 'WD 1856':
         name = 'WD 1856+534'
     if 'V1298' in name:
         name = 'V1298 Tau'
+    if name == 'KELT-4':
+        name = 'KELT-4 A'
     return name
 
 

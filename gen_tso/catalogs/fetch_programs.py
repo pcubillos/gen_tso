@@ -433,9 +433,9 @@ def guess_event_type(obs):
         event = 'eclipse'
 
     # Hardcoded patches for missing information:
-    if pid in ['2149', '2589', '3385', '5177', '5882', '6456']:
+    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9709', '11831']:
         event = 'transit'
-    elif pid in ['2488', '2765']:
+    elif pid in ['2488', '2765', '10300', '11712']:
         event = 'phase curve'
 
     if event == '':
@@ -592,6 +592,7 @@ def parse_program(pid, path=None, to_csv=None):
                     for child in obs.find(".//apt:SpecialRequirements", ns)
                 ]).tolist()
                 phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
+                between_reqs = obs.findall(".//apt:Between", ns)
                 time_series_reqs = obs.find(".//apt:TimeSeriesObservation", ns)
                 if time_series_reqs is None:
                     continue
@@ -638,6 +639,12 @@ def parse_program(pid, path=None, to_csv=None):
                 observation['phase_reqs'] = None
                 if phase_reqs is not None:
                     observation['phase_reqs'] = phase_reqs.attrib
+                observation['between_reqs'] = None
+                if between_reqs is not None:
+                    observation['between_reqs'] = [
+                        bet_req.attrib for bet_req in between_reqs
+                    ]
+
                 # Add orbital-phase information when possible
                 period, phase, obs_duration = _get_phase_info(observation)
                 if period is None:
@@ -834,11 +841,18 @@ def get_planet_letters(obs, targets, verbose=False):
     if pid=='9235' and obs_id=='5':
         return ['b']
 
-    target_name = obs['target']
+    target_name = obs['target_in_program']
     # The planet is in the 'target'
     if target_name[-1].lower() == 'b' and not target_name[-2].isalpha():
         name = target_name[:-1]
         planet_letters = ['b']
+        if verbose:
+            print(f'{info}{target_name:15}  {planet_letters}')
+        return planet_letters
+
+    if target_name[-2:] == '_c':
+        name = target_name[:-2]
+        planet_letters = ['c']
         if verbose:
             print(f'{info}{target_name:15}  {planet_letters}')
         return planet_letters

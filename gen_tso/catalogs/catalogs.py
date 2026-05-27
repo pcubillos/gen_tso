@@ -817,6 +817,7 @@ def load_programs(grouped=False, csv_file=None):
     int_keys = ['cycle', 'groups', 'integrations', 'proprietary_period']
     float_keys = ['duration', 'period', 'phase_start', 'phase_duration']
     date_keys = ['date_start', 'date_end']
+    eval_keys = ['planets', 'special_reqs', 'phase_reqs', 'between_reqs']
     for obs in observations:
         for key,val in obs.items():
             if val == '':
@@ -828,7 +829,7 @@ def load_programs(grouped=False, csv_file=None):
             elif key in date_keys:
                 date_format = "%Y-%m-%d %H:%M:%S"
                 obs[key] = datetime.strptime(val, date_format)
-            elif key == 'planets':
+            elif key in eval_keys:
                 obs[key] = eval(obs[key])
 
     if grouped:
