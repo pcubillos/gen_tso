@@ -74,6 +74,7 @@ def find_target(targets=None):
 
     return None
 
+
 def _read_custom_lenient(path: str):
     """
     Leniently read existing my_custom_targets.txt:
@@ -129,6 +130,7 @@ def _read_custom_lenient(path: str):
             os.remove(tmp_path)
         except Exception:
             pass
+
 
 def merge_custom_targets(csv_path, output_txt=None):
     """
@@ -215,6 +217,7 @@ def merge_custom_targets(csv_path, output_txt=None):
     if os.path.exists(temp_session):
         os.remove(temp_session)
 
+
 def csv_to_session_txt(csv_path, output_txt):
     """
     Convert NASA-style CSV to txt:
@@ -300,6 +303,7 @@ def csv_to_session_txt(csv_path, output_txt):
 
     return output_txt
 
+
 class Catalog():
     """
     Load the entire catalog.
@@ -367,6 +371,7 @@ class Catalog():
 
         # TBD: a switch between load_trexolists() and load_programs()?
         programs = load_trexolists(grouped=True)
+        #programs = load_programs(grouped=True)
         njwst = len(programs)
         host_aliases = load_aliases('host')
 
@@ -389,7 +394,7 @@ class Catalog():
             target.is_jwst_host = target.host in jwst_hosts
             if target.is_jwst_host:
                 for j in range(njwst):
-                    if target.host == programs[j][0]['nea_host']:
+                    if target.host in programs[j][0]['nea_host']:
                         break
                 target.programs = programs[j]
                 planets = []
