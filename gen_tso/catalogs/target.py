@@ -434,6 +434,7 @@ def missing_mask(target):
         np.isnan(target.transit_dur),
         np.isnan(target.sma),
         np.isnan(target.period),
+        #np.isnan(target.transit_epoch),
         np.isnan(target.ars),
         np.isnan(target.rprs),
     ])
@@ -442,10 +443,9 @@ def missing_mask(target):
 
 def rank_planets(target, alt_targets):
     """
-    Rank entries for a target by completeness and fill the gaps.
+    Rank entries for a target by completeness.
+    Then fill the gaps in ranked order.
     """
-    rank = np.zeros(len(alt_targets))
-
     props = [
         'rprs',
         'ars',
@@ -461,21 +461,31 @@ def rank_planets(target, alt_targets):
         'metal_star',
         'logg_star',
     ]
-    t = 0
-    for t in range(len(alt_targets)):
+    nfillers = len(alt_targets)
+    fillers = np.ones(nfillers, bool)
+    prop_mask = np.array(
+        [np.isfinite(getattr(target, prop)) for prop in props],
+        bool,
+    )
+
+    for t in range(nfillers):
         missing = missing_mask(target)
         # rank by fill as many missing values as possible
-        for i,alt in enumerate(alt_targets):
-            alt_miss = missing_mask(alt)
-            rank[i] = np.sum(~alt_miss & missing)
-        if np.all(rank==0):
-            break
+        best_rank = -1
+        for i,mask in enumerate(fillers):
+            if not mask:
+                continue
+            filler = alt_targets[i]
+            alt_miss = missing_mask(filler)
+            rank = np.sum(~alt_miss & missing)
+            if rank > best_rank:
+                best_rank = rank
+                i_best = i
 
-        # loop by rank
-        i_rank = np.argsort(-rank)[0]
-        alt = alt_targets[i_rank]
+        fillers[i_best] = False
+        alt = alt_targets[i_best]
         # update props
-        for prop in props:
+        for j,prop in enumerate(props):
             update = (
                 np.isnan(getattr(target, prop)) and
                 np.isfinite(getattr(alt, prop))
@@ -483,6 +493,8 @@ def rank_planets(target, alt_targets):
             if update:
                 setattr(target, prop, getattr(alt, prop))
                 target._complete_values()
-    return t
+                prop_mask[j] = True
 
+        if np.all(prop_mask):
+            break
 
