@@ -108,7 +108,8 @@ class Target():
                 self.rplanet, self.rstar, self.rprs = solution
             if i == 2:
                 solution = solve_sma_period(self.period, self.sma, self.mstar)
-                self.period, self.sma, self.mstar = solution
+                # Do not update period, if now, it should be there
+                self.sma, self.mstar = solution[1:]
         self.equilibrium_temp()
 
 
@@ -157,7 +158,7 @@ class Target():
                 setattr(self, prop, getattr(star, prop))
         if update_rplanet:
             self.rplanet = self.rprs * self.rstar*pc.rsun / pc.rearth
-        # Now complement all other values
+        # Now complete all other values
         self._complete_values()
 
     def machine_readable_text(self):
@@ -492,9 +493,9 @@ def rank_planets(target, alt_targets):
             )
             if update:
                 setattr(target, prop, getattr(alt, prop))
-                target._complete_values()
                 prop_mask[j] = True
 
         if np.all(prop_mask):
             break
+    target._complete_values()
 
