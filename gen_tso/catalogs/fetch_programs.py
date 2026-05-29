@@ -413,6 +413,14 @@ def guess_event_type(obs):
     label = obs['label']
     event = ''
 
+    # Hardcoded patches for missing information:
+    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9709', '11831']:
+        return 'transit'
+    if pid=='1274' and obs['observation'] in ['4', '5']:
+        return 'eclipse'
+    if pid in ['2488', '2765', '10300', '11712']:
+        return 'phase curve'
+
     # Guess from orbital phase when phase constraints exist:
     if obs['period'] is not None:
         phase = obs['phase_start']
@@ -431,12 +439,6 @@ def guess_event_type(obs):
         event = 'phase curve'
     elif 'eclipse' in label or 'emis' in label or 'occultat' in label:
         event = 'eclipse'
-
-    # Hardcoded patches for missing information:
-    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9709', '11831']:
-        event = 'transit'
-    elif pid in ['2488', '2765', '10300', '11712']:
-        event = 'phase curve'
 
     if event == '':
         obs_id = obs['observation']
@@ -840,6 +842,10 @@ def get_planet_letters(obs, targets, verbose=False):
         return ['d']
     if pid=='9235' and obs_id=='5':
         return ['b']
+    if pid=='9709' and 'TOI-2134' in obs['target_in_program']:
+        return ['b']
+    if pid=='11302':
+        return ['b']
 
     target_name = obs['target_in_program']
     # The planet is in the 'target'
@@ -863,7 +869,7 @@ def get_planet_letters(obs, targets, verbose=False):
     planets = []
     for target in targets:
         aliases = [target.planet] + target.aliases
-        hosts = [get_host(alias) for alias in aliases]
+        hosts = [target.host] + [get_host(alias) for alias in aliases]
         if name in hosts:
             planets.append(target)
 

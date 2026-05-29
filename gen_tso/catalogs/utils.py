@@ -231,8 +231,8 @@ def normalize_name(target):
         name = 'WD 1856+534'
     if 'V1298' in name:
         name = 'V1298 Tau'
-    if name == 'KELT-4':
-        name = 'KELT-4 A'
+    if name in ['KELT-4', 'TOI-1338']:
+        name += ' A'
     return name
 
 
