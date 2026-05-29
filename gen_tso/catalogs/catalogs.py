@@ -370,20 +370,20 @@ class Catalog():
         self.targets = base_targets
 
         # TBD: a switch between load_trexolists() and load_programs()?
-        programs = load_trexolists(grouped=True)
-        #programs = load_programs(grouped=True)
+        #programs = load_trexolists(grouped=True)
+        programs = load_programs(grouped=True)
         njwst = len(programs)
         host_aliases = load_aliases('host')
 
         jwst_hosts = []
-        for jwst_target in programs:
-            host_names = [obs['target'] for obs in jwst_target]
+        for target_programs in programs:
+            host_names = [obs['target'] for obs in target_programs]
             nea_host = np.unique([
                 host_aliases[host] if host in host_aliases else host
                 for host in host_names
             ])
             jwst_hosts += list(nea_host)
-            for obs in jwst_target:
+            for obs in target_programs:
                 obs['nea_host'] = nea_host
         jwst_hosts = np.unique(jwst_hosts)
 
@@ -391,6 +391,9 @@ class Catalog():
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
+            if target.planet in planets_aka:
+                target.aliases = planets_aka[target.planet]
+
             target.is_jwst_host = target.host in jwst_hosts
             if target.is_jwst_host:
                 for j in range(njwst):
@@ -401,13 +404,14 @@ class Catalog():
                 for obs in programs[j]:
                     planets += obs['planets']
                 planets = np.unique(planets)
-                letter = u.get_letter(target.planet).strip()
-                target.is_jwst_planet = letter in planets
+                names = [target.planet] + target.aliases
+                letter_ids = np.unique([
+                    u.get_letter(name).strip()
+                    for name in names
+                ])
+                target.is_jwst_planet = np.any(np.isin(letter_ids, planets))
             else:
                 target.is_jwst_planet = False
-
-            if target.planet in planets_aka:
-                target.aliases = planets_aka[target.planet]
 
         self._transit_mask = [target.is_transiting for target in self.targets]
         self._jwst_mask = [target.is_jwst_host for target in self.targets]
@@ -480,7 +484,7 @@ def load_targets(catalog_file=None, is_confirmed=np.nan):
         A plant text file containing a target catalog. See format in save_catalog().
         If None, default to Gen TSO's nea_data.txt catalog.
     is_confirmed: Bool
-        If True, only extract confirmed targets.
+        set confirmed status of targets.
 
     Returns
     -------
@@ -493,7 +497,7 @@ def load_targets(catalog_file=None, is_confirmed=np.nan):
     >>> nea_data = cat.load_targets()
     """
     if catalog_file is None:
-        catalog_file = f'{ROOT}data/' + 'nea_data.txt'
+        catalog_file = f'{ROOT}data/nea_data.txt'
 
     with open(catalog_file, 'r') as f:
         lines = f.readlines()
@@ -921,13 +925,48 @@ def load_aliases(style='planet', aliases_file=None):
     with open(aliases_file, 'r') as f:
         lines = f.readlines()
 
-    if style != 'system':
+    if style == 'host':
+        catalog = f'{ROOT}data/nea_data.txt'
+        hosts = [
+            line[1:line.index(':')]
+            for line in open(catalog, 'r')
+            if line.strip().startswith('>')
+        ]
+        catalog = f'{ROOT}data/tess_data.txt'
+        hosts += [
+            line[1:line.index(':')]
+            for line in open(catalog, 'r')
+            if line.strip().startswith('>')
+        ]
+
+        aliases = {}
+        for line in lines:
+            loc = line.index(':')
+            name = parse(line[:loc], style)
+            names = [name] + [
+                parse(alias, style)
+                for alias in line[loc+1:].strip().split(',')
+            ]
+
+            for name in names:
+                if name in hosts:
+                    host = name
+                    break
+
+            for name in names:
+                if name == host:
+                    continue
+                aliases[name] = host
+        return aliases
+
+    if style == 'planet':
         aliases = {}
         for line in lines:
             loc = line.index(':')
             name = parse(line[:loc], style)
             for alias in line[loc+1:].strip().split(','):
-                aliases[parse(alias,style)] = name
+                parse_alias = parse(alias, style)
+                aliases[parse_alias] = name
             aliases[name] = name
         return aliases
 
