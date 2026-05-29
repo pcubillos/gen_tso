@@ -427,10 +427,10 @@ def guess_event_type(obs):
         duration = obs['phase_duration']
         if duration > 1.0:
             event = 'phase curve'
-        elif (phase<1.0) and (phase+duration>1.0):
-            event = 'transit'
-        else:
+        elif np.abs(phase-0.5) < 0.25:
             event = 'eclipse'
+        else:
+            event = 'transit'
 
     # Use label (can override phase-guess, and that's intentional):
     if 'trans' in label:
