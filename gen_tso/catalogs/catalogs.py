@@ -27,6 +27,7 @@ from astropy.units import hourangle, deg
 from ..utils import ROOT
 from . import utils as u
 from .target import Target
+from .fetch_catalogs import save_catalog
 
 
 def find_target(targets=None):
@@ -80,9 +81,6 @@ def _read_custom_lenient(path: str):
     Leniently read existing my_custom_targets.txt:
     Pads missing host/planet fields and lets load_targets parse the fixed file.
     """
-    import os
-    from gen_tso.utils import ROOT
-
     if not os.path.exists(path):
         return []
 
@@ -132,19 +130,17 @@ def _read_custom_lenient(path: str):
             pass
 
 
-def merge_custom_targets(csv_path, output_txt=None):
+def merge_custom_targets(csv_file, output_txt=None):
     """
     Merge CSV targets into my_custom_targets.txt.
     Updates existing by planet name, adds new ones.
     """
-    from gen_tso.utils import ROOT
-
     if output_txt is None:
         output_txt = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
 
-    # Convert CSV -> temp session (already normalized by csv_to_session_txt)
+    # Convert CSV -> temp session (already normalized by load_csv_targets)
     temp_session = os.path.join(ROOT, 'data', '_temp_custom.txt')
-    csv_to_session_txt(csv_path, temp_session)
+    load_csv_targets(csv_file, temp_session)
     print(f"Converted CSV to temporary file: {temp_session}")
 
     # Load new targets
@@ -218,90 +214,50 @@ def merge_custom_targets(csv_path, output_txt=None):
         os.remove(temp_session)
 
 
-def csv_to_session_txt(csv_path, output_txt):
+def load_csv_targets(csv_file, output_txt):
     """
-    Convert NASA-style CSV to txt:
+    Convert NASA-style CSV file to Gen TSO exoplanet file.
     """
-    import csv, os
-
-    def val(row, *keys):
-        for k in keys:
-            v = row.get(k)
-            if v is not None and str(v).strip() != '':
-                return str(v).strip()
-        return ''
-
-    def norm(x):
-        return 'nan' if x is None or str(x).strip() == '' else str(x)
-
-    with open(csv_path, 'r', encoding='utf-8', newline='') as fh:
-        filtered = [line for line in fh if not line.lstrip().startswith('#')]
-    if not filtered:
-        return output_txt
-
-    reader = csv.DictReader(filtered)
-
-    hosts = {}
-    planets_by_host = {}
-    host_order = []
-    planets_seen = set()
-
-    for row in reader:
-        pl_name = val(row, 'pl_name', 'PL_NAME')
-        if not pl_name or pl_name in planets_seen:
+    lines = []
+    for line in open(csv_file, newline="", encoding="utf-8"):
+        if line.strip() == '' or line.strip().startswith("#"):
             continue
-        planets_seen.add(pl_name)
+        lines.append(line)
+    entries = list(csv.DictReader(lines))
 
-        host = val(row, 'hostname', 'HOSTNAME')
-        if host and host not in hosts:
-            hosts[host] = {
-                'ra': norm(val(row, 'ra', 'RA')),
-                'dec': norm(val(row, 'dec', 'DEC')),
-                'ks_mag': norm(val(row, 'sy_kmag', 'SY_KMAG')),
-                'rstar': norm(val(row, 'st_rad', 'ST_RAD')),
-                'mstar': norm(val(row, 'st_mass', 'ST_MASS')),
-                'teff': norm(val(row, 'st_teff', 'ST_TEFF')),
-                'log_g': norm(val(row, 'st_logg', 'ST_LOGG')),
-                'metallicity': norm(val(row, 'st_met', 'ST_MET')),
-            }
-            planets_by_host[host] = []
-            host_order.append(host)
+    if len(lines) == 0:
+        raise ValueError('No data in input CSV file')
+    if len(entries) == 0:
+        raise ValueError('Missing header with column names in input CSV file')
 
-        if host:
-            planets_by_host[host].append({
-                'planet': pl_name,
-                'T14': 'nan',
-                'rplanet': norm(val(row, 'pl_rade', 'PL_RADE')),
-                'mplanet': norm(val(row, 'pl_bmasse', 'PL_BMASSE')),
-                'sma': norm(val(row, 'pl_orbsmax', 'PL_ORBSMAX')),
-                'period': norm(val(row, 'pl_orbper', 'PL_ORBPER')),
-                'teq': norm(val(row, 'pl_eqt', 'PL_EQT')),
-                'is_min_mass': '1' if 'Msini' in val(row, 'pl_bmassprov', 'PL_BMASSPROV') else '0',
-            })
+    required = np.array(['hostname', 'pl_name'])
+    missing_fields = ~np.isin(required, list(entries[0]))
+    if np.any(missing_fields):
+        missing = required[missing_fields]
+        raise ValueError(f'Missing {missing} header fields in input CSV file')
 
+    numeric_fields = [
+        'st_mass', 'st_rad', 'st_teff', 'st_logg', 'st_met', 'sy_kmag', 'ra', 'dec',
+        'pl_masse', 'pl_msinie', 'pl_rade', 'pl_orbsmax', 'pl_orbper',
+        'pl_tranmid', 'pl_ratdor', 'pl_ratror', 'pl_trandur', 'pl_eqt',
+    ]
+
+    for entry in entries:
+        if 'pl_bmasse' in entry and not 'pl_masse' in entry:
+            entry['pl_masse'] = entry['pl_bmasse']
+
+        for key in numeric_fields:
+            if key not in entry or entry[key] == '':
+                entry[key] = np.nan
+                continue
+            try:
+                entry[key] = float(entry[key])
+            except:
+                entry[key] = np.nan
+
+    targets = [Target(entry) for entry in entries]
     os.makedirs(os.path.dirname(output_txt), exist_ok=True)
-    with open(output_txt, 'w', encoding='utf-8', newline='\n') as out:
-        out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
-        out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
-
-        for hname in host_order:
-            h = hosts[hname]
-            h_parts = [norm(h.get(k)) for k in ('ra','dec','ks_mag','rstar','mstar','teff','log_g','metallicity')]
-            out.write(f">{hname}: " + " ".join(h_parts[:8]) + "\n")
-
-            for p in planets_by_host.get(hname, []):
-                p_parts = [
-                    norm(p.get('T14')),
-                    norm(p.get('rplanet')),
-                    norm(p.get('mplanet')),
-                    norm(p.get('sma')),
-                    norm(p.get('period')),
-                    norm(p.get('teq')),
-                    norm(p.get('is_min_mass', '0')),
-                ]
-                out.write(f" {p['planet']}: " + " ".join(p_parts) + "\n")
-
-    return output_txt
+    save_catalog(targets, output_txt)
 
 
 class Catalog():

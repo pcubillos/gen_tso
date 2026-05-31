@@ -6,7 +6,6 @@ import sys
 from shiny import run_app
 
 
-
 def main():
     """
     Launch the Gen TSO application.
@@ -76,10 +75,10 @@ def main():
         print(f"Loading custom targets from: {targets_path}")
 
         if targets_path.lower().endswith('.csv'):
-            from gen_tso.catalogs.catalogs import csv_to_session_txt
+            from gen_tso.catalogs.catalogs import load_csv_targets
             from gen_tso.utils import ROOT
             session_txt = os.path.join(ROOT, 'data', 'custom_targets_session.txt')
-            csv_to_session_txt(targets_path, session_txt)
+            load_csv_targets(targets_path, session_txt)
             print(f"Converted CSV to: {session_txt}")
 
     if (
