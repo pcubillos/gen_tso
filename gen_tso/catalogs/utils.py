@@ -6,6 +6,7 @@ A collection of low-level routines to handle catalogs.
 """
 
 __all__ = [
+    'save_targets',
     'esasky_js_circle',
     'esasky_js_catalog',
     'normalize_name',
@@ -22,6 +23,67 @@ __all__ = [
 import re
 
 import numpy as np
+
+
+def save_targets(targets, catalog_file):
+    """
+    Write data from a catalog of targets to a plain-text file.
+    Targets will be sorted by host name and then by planet name.
+
+    Parameters
+    ----------
+    targets: List of Target
+        Targets to store.
+    catalog_file: String
+        File name where to store targets data as plant text.
+        See load_targets() for reading.
+
+    Examples
+    --------
+    >>> import gen_tso.catalogs as cat
+    >>> nea_data = cat.load_targets()
+    """
+    # Save as plain text:
+    with open(catalog_file, 'w') as f:
+        f.write(
+            '# > host: RA(deg) dec(deg) Ks_mag '
+            'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
+            '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
+            'semi-major_axis(AU) period(d) transit_epoch(BJD) t_eq(K) is_min_mass\n'
+        )
+        hosts = [target.host for target in targets]
+        planets = [target.planet for target in targets]
+        isort = np.lexsort((planets, hosts))
+        host = ''
+        for idx in isort:
+            target = targets[idx]
+            planet = target.planet
+            ra = f'{target.ra:.7f}'
+            dec = f'{target.dec:.7f}'
+            ks_mag = f'{target.ks_mag:.3f}'
+            teff = f'{target.teff:.1f}'
+            rstar = f'{target.rstar:.3f}'
+            mstar = f'{target.mstar:.3f}'
+            logg = f'{target.logg_star:.2f}'
+            metal = f'{target.metal_star:.2f}'
+            rplanet = f'{target.rplanet:.3f}'
+            mplanet = f'{target.mplanet:.3f}'
+            transit_dur = f'{target.transit_dur:.3f}'
+            sma = f'{target.sma:.4f}'
+            period = f'{target.period:.5f}'
+            transit_epoch = f'{target.transit_epoch:.6f}'
+            teq = f'{target.eq_temp:.1f}'
+            is_min_mass = int(target.is_min_mass)
+            if target.host != host:
+                host = target.host
+                f.write(
+                    f">{host}: {ra} {dec} {ks_mag} "
+                    f"{rstar} {mstar} {teff} {logg} {metal}\n",
+                )
+            f.write(
+                f" {planet}: {transit_dur} {rplanet} {mplanet} "
+                f"{sma} {period} {transit_epoch} {teq} {is_min_mass}\n",
+            )
 
 
 def esasky_js_circle(ra, dec, radius, color='#15B01A'):

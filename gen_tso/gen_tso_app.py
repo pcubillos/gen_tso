@@ -1029,7 +1029,7 @@ def server(input, output, session):
             custom_targets.append(target)
 
         custom_catalog = f'{ROOT}data/my_custom_targets.txt'
-        cat.save_catalog(custom_targets, custom_catalog)
+        cat.save_targets(custom_targets, custom_catalog)
 
         # Update original values to current values after successful save
         original_values.set({

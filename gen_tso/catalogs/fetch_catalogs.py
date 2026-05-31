@@ -2,7 +2,6 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
-    'save_catalog',
     'fetch_trexolist',
     'update_exoplanet_archive',
     'fetch_nasa_confirmed_targets',
@@ -104,67 +103,6 @@ def get_children(host_aliases, planet_aliases):
         if planet in children
     }
     return aliases
-
-
-def save_catalog(targets, catalog_file):
-    """
-    Write data from a catalog of targets to a plain-text file.
-    Targets will be sorted by host name and then by planet name.
-
-    Parameters
-    ----------
-    targets: List of Target
-        Targets to store.
-    catalog_file: String
-        File name where to store targets data as plant text.
-        See load_targets() for reading.
-
-    Examples
-    --------
-    >>> import gen_tso.catalogs as cat
-    >>> nea_data = cat.load_targets()
-    """
-    # Save as plain text:
-    with open(catalog_file, 'w') as f:
-        f.write(
-            '# > host: RA(deg) dec(deg) Ks_mag '
-            'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
-            '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
-            'semi-major_axis(AU) period(d) transit_epoch(BJD) t_eq(K) is_min_mass\n'
-        )
-        hosts = [target.host for target in targets]
-        planets = [target.planet for target in targets]
-        isort = np.lexsort((planets, hosts))
-        host = ''
-        for idx in isort:
-            target = targets[idx]
-            planet = target.planet
-            ra = f'{target.ra:.7f}'
-            dec = f'{target.dec:.7f}'
-            ks_mag = f'{target.ks_mag:.3f}'
-            teff = f'{target.teff:.1f}'
-            rstar = f'{target.rstar:.3f}'
-            mstar = f'{target.mstar:.3f}'
-            logg = f'{target.logg_star:.2f}'
-            metal = f'{target.metal_star:.2f}'
-            rplanet = f'{target.rplanet:.3f}'
-            mplanet = f'{target.mplanet:.3f}'
-            transit_dur = f'{target.transit_dur:.3f}'
-            sma = f'{target.sma:.4f}'
-            period = f'{target.period:.5f}'
-            transit_epoch = f'{target.transit_epoch:.6f}'
-            teq = f'{target.eq_temp:.1f}'
-            is_min_mass = int(target.is_min_mass)
-            if target.host != host:
-                host = target.host
-                f.write(
-                    f">{host}: {ra} {dec} {ks_mag} "
-                    f"{rstar} {mstar} {teff} {logg} {metal}\n",
-                )
-            f.write(
-                f" {planet}: {transit_dur} {rplanet} {mplanet} "
-                f"{sma} {period} {transit_epoch} {teq} {is_min_mass}\n",
-            )
 
 
 def update_exoplanet_archive(from_scratch=False):
@@ -448,7 +386,7 @@ def fetch_nasa_confirmed_targets():
     )
 
     # Save outputs
-    save_catalog(targets, catalog_file)
+    u.save_targets(targets, catalog_file)
     return new_targets
 
 
@@ -553,7 +491,7 @@ def fetch_nasa_tess_candidates():
 
     # Save temporary data (still need to hunt for Ks mags):
     catalog_file = f'{ROOT}data/tess_candidates_tmp.txt'
-    save_catalog(tess_targets, catalog_file)
+    u.save_targets(tess_targets, catalog_file)
 
     with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
         last_nasa = datetime.strptime(f.readline().strip(),'%Y_%m_%d')
@@ -1210,7 +1148,7 @@ def crosscheck_tess_candidates(ncpu=None):
 
     # Save as plain text:
     catalog_file = f'{ROOT}data/tess_data.txt'
-    save_catalog(candidates, catalog_file)
+    u.save_targets(candidates, catalog_file)
 
 
 def scrap_nea_kmag(target):

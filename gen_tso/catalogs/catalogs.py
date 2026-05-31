@@ -27,7 +27,6 @@ from astropy.units import hourangle, deg
 from ..utils import ROOT
 from . import utils as u
 from .target import Target
-from .fetch_catalogs import save_catalog
 
 
 def find_target(targets=None):
@@ -257,7 +256,7 @@ def load_csv_targets(csv_file, output_txt):
 
     targets = [Target(entry) for entry in entries]
     os.makedirs(os.path.dirname(output_txt), exist_ok=True)
-    save_catalog(targets, output_txt)
+    u.save_targets(targets, output_txt)
 
 
 class Catalog():
@@ -436,7 +435,7 @@ def load_targets(catalog_file=None, is_confirmed=np.nan):
     Parameters
     ----------
     catalog_file: String
-        A plant text file containing a target catalog. See format in save_catalog().
+        A plant text file containing a target catalog. See format in save_targets().
         If None, default to Gen TSO's nea_data.txt catalog.
     is_confirmed: Bool
         set confirmed status of targets.
