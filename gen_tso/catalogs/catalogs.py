@@ -75,60 +75,6 @@ def find_target(targets=None):
     return None
 
 
-def _read_custom_lenient(path: str):
-    """
-    Leniently read existing my_custom_targets.txt:
-    Pads missing host/planet fields and lets load_targets parse the fixed file.
-    """
-    if not os.path.exists(path):
-        return []
-
-    fixed = []
-    with open(path, 'r', encoding='utf-8') as fh:
-        for line in fh:
-            s = line.strip()
-            if s == '' or s.startswith('#'):
-                fixed.append(line)
-                continue
-
-            if s.startswith('>'):  # host line
-                try:
-                    head, rest = s.split(':', 1)
-                except ValueError:
-                    fixed.append(line)
-                    continue
-                parts = rest.strip().split()
-                if len(parts) < 8:
-                    parts += ['nan'] * (8 - len(parts))
-                fixed.append(f"{head}: " + " ".join(parts[:8]) + "\n")
-            else:  # planet line
-                try:
-                    name, rest = s.split(':', 1)
-                except ValueError:
-                    fixed.append(line)
-                    continue
-                parts = rest.strip().split()
-                if len(parts) < 7:
-                    parts += ['nan'] * (7 - len(parts))
-                fixed.append(f" {name}: " + " ".join(parts[:7]) + "\n")
-
-    # Write fixed content into ROOT/data so load_targets can find it
-    tmp_name = '_merge_fix_custom.txt'
-    tmp_path = os.path.join(ROOT, 'data', tmp_name)
-    os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
-    with open(tmp_path, 'w', encoding='utf-8', newline='\n') as tmp:
-        tmp.writelines(fixed)
-
-    try:
-        # Pass just the basename; load_targets opens ROOT/data/{database}
-        return load_targets(tmp_name, is_confirmed=True)
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
-
 def merge_custom_targets(csv_file, output_txt=None):
     """
     Merge CSV targets into my_custom_targets.txt.
@@ -147,7 +93,7 @@ def merge_custom_targets(csv_file, output_txt=None):
     new_targets = load_targets(tmp_catalog, is_confirmed=True)
 
     # Leniently read existing custom file (pad missing fields)
-    existing_targets = _read_custom_lenient(output_txt)
+    existing_targets = load_targets(output_txt, is_confirmed=True)
 
     # Merge by planet name
     by_name: Dict[str, object] = {t.planet: t for t in existing_targets}
