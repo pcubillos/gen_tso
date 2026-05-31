@@ -454,14 +454,13 @@ class Catalog():
         if is_confirmed is not None:
             mask &= np.array(self._confirmed_mask) == is_confirmed
 
-        targets = [target for target,flag in zip(self.targets,mask) if flag]
-
         if name is None:
+            targets = [target for target,flag in zip(self.targets,mask) if flag]
             return find_target(targets)
 
         target = u.normalize_name(name)
-        for target in targets:
-            if name == target.planet or name in target.aliases:
+        for target,flag in zip(self.targets, mask):
+            if flag and (name == target.planet or name in target.aliases):
                 return target
 
     def show_target(

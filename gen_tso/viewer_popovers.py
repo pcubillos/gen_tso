@@ -64,7 +64,7 @@ sed_popover = ui.popover(
             id='plot_sed_resolution',
             label='Resolution:',
             value=0.0,
-            min=10.0, max=3000.0, step=25.0,
+            min=0.0, max=3000.0, step=50.0,
         ),
         ui.input_select(
             id="plot_sed_units",
@@ -117,7 +117,7 @@ planet_popover = ui.popover(
             id='depth_resolution',
             label='Resolution:',
             value=250.0,
-            min=10.0, max=3000.0, step=25.0,
+            min=0.0, max=3000.0, step=25.0,
         ),
         ui.input_select(
             id="plot_depth_units",

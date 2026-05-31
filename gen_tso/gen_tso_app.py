@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import sys
 import textwrap
-import traceback
 from datetime import timedelta, datetime
 
 import faicons as fa
@@ -1568,7 +1567,7 @@ def server(input, output, session):
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
 
-            resolution = _safe_num(input.tso_resolution.get(), default=250, cast=int)
+            resolution = _safe_num(input.tso_resolution.get(), default=250)
             n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
             tso_draw.set(draw(tso['tso'], resolution, n_obs))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
@@ -1973,23 +1972,21 @@ def server(input, output, session):
     @reactive.event(input.target_filter, update_catalog_flag)
     def _():
         update_catalog_flag.get()
-        # precompute custom mask
-        custom_mask = np.array([getattr(t, 'is_custom', False) for t in catalog.targets], dtype=bool)
+        custom_mask = np.array(
+            [getattr(t, 'is_custom', False) for t in catalog.targets],
+            dtype=bool,
+        )
 
-        # If user requests "custom" -> show only custom targets
+        mask = np.zeros(nplanets, bool)
+        if 'jwst' in input.target_filter.get():
+            mask |= is_jwst
+        if 'transit' in input.target_filter.get():
+            mask |= is_transit
+        if 'non_transit' in input.target_filter.get():
+            mask |= ~is_transit
+        if 'tess' in input.target_filter.get():
+            mask |= ~is_confirmed
         if 'custom' in input.target_filter.get():
-            mask = custom_mask.copy()
-        else:
-            mask = np.zeros(nplanets, bool)
-            if 'jwst' in input.target_filter.get():
-                mask |= is_jwst
-            if 'transit' in input.target_filter.get():
-                mask |= is_transit
-            if 'non_transit' in input.target_filter.get():
-                mask |= ~is_transit
-            if 'tess' in input.target_filter.get():
-                mask |= ~is_confirmed
-            # always include custom targets unless "custom only" selected
             mask |= custom_mask
 
         targets = [
@@ -2273,12 +2270,12 @@ def server(input, output, session):
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
 
-        def to_float(v):
+        def to_float(value):
             """Convert value to float, return NaN for empty/invalid"""
+            if value is None:
+                return np.nan
             try:
-                if v is None:
-                    return np.nan
-                s = str(v).strip()
+                s = str(value).strip()
                 if s == '':
                     return np.nan
                 return float(s)
@@ -2330,7 +2327,7 @@ def server(input, output, session):
         else:
             teq_planet = np.round(target.eq_temp, decimals=1)
             if np.isnan(teq_planet):
-                teq_planet =  0.0
+                teq_planet = 0.0
             rprs_square = target.rprs**2.0
             if np.isnan(rprs_square):
                 rprs_square = 0.0
@@ -2426,7 +2423,7 @@ def server(input, output, session):
         """Clear all bookmarked SEDs"""
         bookmarked_spectra['sed'].clear()
         bookmarked_sed.set(False)
-        update_sed_flag.set('cleared')  # trigger UI updates
+        update_sed_flag.set('cleared')
         ui.notification_show("Cleared all SED bookmarks", type="message", duration=3)
 
 
@@ -2492,7 +2489,7 @@ def server(input, output, session):
         obs_geometry = input.obs_geometry.get()
         bookmarked_spectra[obs_geometry].clear()
         bookmarked_depth.set(False)
-        update_depth_flag.set('cleared')  # trigger UI updates
+        update_depth_flag.set('cleared')
         ui.notification_show(f"Cleared all {obs_geometry} depth bookmarks", type="message", duration=3)
 
 
@@ -2773,45 +2770,26 @@ def server(input, output, session):
         """Switch to make the integrations match observation duration"""
         if input.mode.get() == 'target_acq':
             return
+
         match_dur = input.integs_switch.get()
         if not match_dur:
             ui.update_numeric('integrations', value=1)
             return
 
-        # Handles empty or invalid observation duration when pressing match integrations
-        obs_val = req(input.obs_dur).get()
-        if obs_val is None or obs_val == "":
-            ui.notification_show(
-                ui.markdown("**Error:**<br>Observation duration is empty — enter a value to match integrations"),
-                type="error",
-                duration=5,
-            )
-            ui.update_numeric('integrations', value=1)
+        obs_dur = input.obs_dur.get()
+        ngroup = input.ngroup.get()
+        if obs_dur is None or ngroup is None:
             return
-        try:
-            obs_dur = float(obs_val)
-        except (ValueError, TypeError):
-            ui.notification_show(
-                ui.markdown("**Error:**<br>Observation duration is not a valid number"),
-                type="error",
-                duration=5,
-            )
-            ui.update_numeric('integrations', value=1)
-            return
-
-        #obs_dur = float(req(input.obs_dur).get())
 
         inst = input.instrument.get().lower()
-        ngroup = input.ngroup.get()
         readout = input.readout.get()
         subarray = input.subarray.get()
-        if ngroup is None:
-            return
         integs, exp_time = jwst.bin_search_exposure_time(
             inst, subarray, readout, ngroup, obs_dur,
         )
         if exp_time == 0.0:
             return
+
         ui.update_numeric('integrations', value=integs)
 
 
@@ -3032,7 +3010,7 @@ def server(input, output, session):
             return
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
-        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
+        resolution = _safe_num(input.tso_resolution.get(), default=250)
         units = input.plot_tso_units.get()
 
         min_depth, max_depth, step = jwst._get_tso_depth_range(
@@ -3052,7 +3030,7 @@ def server(input, output, session):
         tso = tso_runs[key][tso_label]
 
         n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
-        resolution = _safe_num(input.tso_resolution.get(), default=250, cast=int)
+        resolution = _safe_num(input.tso_resolution.get(), default=250)
         tso_draw.set(draw(tso['tso'], resolution, n_obs))
 
 
@@ -3085,9 +3063,6 @@ def server(input, output, session):
             cache_acquisition[target.host]['selected'] is not None
         )
 
-        depth_label = parse_obs(input)[1]
-        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
-
         if ngroup is None or parse_sed(input, spectra)[-1] is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
@@ -3098,6 +3073,7 @@ def server(input, output, session):
             depth_label = ''
         else:
             run_type = obs_geometry.capitalize()
+            depth_label = parse_obs(input)[1]
 
         report_text = jwst._print_pandeia_exposure(
             inst, subarray, readout, ngroup, nint,
@@ -3137,26 +3113,13 @@ def server(input, output, session):
             ngroup, nint, run_type, sed_label, depth_label,
         )
 
-        tso_run = None
-        display_key = input.display_tso_run.get()
-        if display_key:
-            try:
-                dkey, dlabel = display_key.split('_', maxsplit=1)
-            except Exception:
-                dkey = dlabel = None
-            if dkey == run_type and dlabel in tso_runs.get(run_type, {}):
-                tso_run = tso_runs[run_type][dlabel]
-
-        if tso_run is None and tso_label in tso_runs.get(run_type, {}):
+        if tso_label in tso_runs[run_type]:
             tso_run = tso_runs[run_type][tso_label]
-
-        if tso_run is not None:
             warnings = tso_run['warnings']
-            try:
-                stored_td = float(tso_run.get('transit_dur', 0.0))
-            except Exception:
-                stored_td = 0.0
-            if abs(transit_dur - stored_td) < 1e-6:
+            transit_dur = _safe_num(input.t_dur.get(), default=-1.0)
+            stored_dur = tso_run.get('transit_dur', 0.0)
+            relative_diff = np.abs(1.0 - transit_dur/stored_dur)
+            if relative_diff < 0.01:
                 report_text += f'<br><br>{tso_run["stats"]}'
 
         warning_text.set(warnings)
