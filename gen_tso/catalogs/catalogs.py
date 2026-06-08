@@ -8,7 +8,8 @@ __all__ = [
     'load_programs',
     'load_targets',
     'load_aliases',
-    'merge_custom_targets',
+    'load_csv_targets',
+    'update_custom_targets',
     '_group_by_target',
 ]
 
@@ -76,91 +77,52 @@ def find_target(targets=None):
     return None
 
 
-def merge_custom_targets(csv_file, output_txt=None):
+def update_custom_targets(csv_file, mode='replace'):
     """
-    Merge CSV targets into my_custom_targets.txt.
-    Update existing by planet name, add new ones.
+    Update custom_targets.txt file with targets from csv file.
+
+    Parameters
+    ----------
+    csv_file: String
+        A csv file in the format of the NASA Exoplanet Archive.
+    mode: String
+        Update mode.
+        - 'replace': Replace custom_targets.txt with new csv targets
+        - 'add': Add csv targets, replacing targets with a same planet name.
     """
+    if mode not in ['add', 'replace']:
+        raise ValueError("Update mode must be either 'add' or 'replace'")
+
     if output_txt is None:
-        output_txt = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
+    custom_targets_file = os.path.join(ROOT, 'data', 'custom_targets.txt')
 
-    # Convert CSV -> temp session (already normalized by load_csv_targets)
-    temp_session = os.path.join(ROOT, 'data', '_temp_custom.txt')
-    load_csv_targets(csv_file, temp_session)
-    print(f"Converted CSV to temporary file: {temp_session}")
+    # Load new targets from csv file
+    custom_file = custom_targets_file if mode == 'replace' else None
+    new_targets = load_csv_targets(csv_file, custom_file)
+    if mode == 'replace':
+        return
 
-    # Load new targets
-    tmp_catalog = f'{ROOT}data/_temp_custom.txt'
-    new_targets = load_targets(tmp_catalog, is_confirmed=True)
+    # Load current custom targets
+    if os.path.exists(custom_targets_file):
+        current_targets = load_targets(custom_targets_file, is_confirmed=True)
+    else:
+        current_targets = []
 
-    # Leniently read existing custom file (pad missing fields)
-    existing_targets = load_targets(output_txt, is_confirmed=True)
-
-    # Merge by planet name
-    by_name: Dict[str, object] = {t.planet: t for t in existing_targets}
-    for nt in new_targets:
-        if nt.planet in by_name:
-            tgt = by_name[nt.planet]
-            for k, v in nt.__dict__.items():
-                # Avoid overwriting with empty strings
-                if v is None or (isinstance(v, str) and v.strip() == ''):
-                    continue
-                setattr(tgt, k, v)
-            print(f"  Updated: {nt.planet}")
-        else:
-            existing_targets.append(nt)
-            by_name[nt.planet] = nt
-            print(f"  Added: {nt.planet}")
-
-    # Group planets by host name and write back in host->planets order
-    hosts: Dict[str, List[object]] = {}
-    host_first: Dict[str, object] = {}
-    for t in existing_targets:
-        hname = t.host
-        if hname not in hosts:
-            hosts[hname] = []
-            host_first[hname] = t
-        hosts[hname].append(t)
-
-    os.makedirs(os.path.dirname(output_txt), exist_ok=True)
-    with open(output_txt, 'w', encoding='utf-8', newline='\n') as out:
-        out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
-        out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
-
-        for hname, planets in hosts.items():
-            ht = host_first[hname]
-            h_parts = [
-                str(getattr(ht, 'ra', 'nan')),
-                str(getattr(ht, 'dec', 'nan')),
-                str(getattr(ht, 'ks_mag', 'nan')),
-                str(getattr(ht, 'rstar', 'nan')),
-                str(getattr(ht, 'mstar', 'nan')),
-                str(getattr(ht, 'teff', 'nan')),
-                str(getattr(ht, 'logg_star', 'nan')),
-                str(getattr(ht, 'metal_star', 'nan')),
-            ]
-            out.write(f">{hname}: " + " ".join(h_parts[:8]) + "\n")
-
-            for p in planets:
-                p_parts = [
-                    str(getattr(p, 'transit_dur', 'nan')),
-                    str(getattr(p, 'rplanet', 'nan')),
-                    str(getattr(p, 'mplanet', 'nan')),
-                    str(getattr(p, 'sma', 'nan')),
-                    str(getattr(p, 'period', 'nan')),
-                    str(getattr(p, 'eq_temp', 'nan')),  # default to nan if not present
-                    str(int(getattr(p, 'is_min_mass', False))),
-                ]
-                out.write(f" {p.planet}: " + " ".join(p_parts[:7]) + "\n")
-
-    print(f"Merged targets written to: {output_txt}")
-
-    # Cleanup temp
-    if os.path.exists(temp_session):
-        os.remove(temp_session)
+    # Update by planet name
+    new_planets = [target.planet for target in new_targets]
+    current_planets = [target.planet for target in current_targets]
+    keep = ~np.isin(current_planets, new_planets)
+    targets = np.concatenate([
+        np.array(current_targets)[keep],
+        new_targets,
+    ])
+    planet_names = [target.planet for target in targets]
+    isort = np.argsort(planet_names)
+    u.save_targets(targets[isort], custom_targets_file)
+    print(f"Updated custom targets to file {repr(custom_targets_file)}")
 
 
-def load_csv_targets(csv_file, output_txt):
+def load_csv_targets(csv_file, output_txt=None):
     """
     Convert NASA-style CSV file to Gen TSO exoplanet file.
     """
@@ -205,8 +167,10 @@ def load_csv_targets(csv_file, output_txt):
                 entry[key] = np.nan
 
     targets = [Target(entry) for entry in entries]
-    os.makedirs(os.path.dirname(output_txt), exist_ok=True)
-    u.save_targets(targets, output_txt)
+    if output_txt is not None:
+        os.makedirs(os.path.dirname(output_txt), exist_ok=True)
+        u.save_targets(targets, output_txt)
+    return targets
 
 
 class Catalog():
