@@ -8,6 +8,7 @@ __all__ = [
     'load_programs',
     'load_targets',
     'load_aliases',
+    'merge_custom_targets',
     '_group_by_target',
 ]
 
@@ -78,7 +79,7 @@ def find_target(targets=None):
 def merge_custom_targets(csv_file, output_txt=None):
     """
     Merge CSV targets into my_custom_targets.txt.
-    Updates existing by planet name, adds new ones.
+    Update existing by planet name, add new ones.
     """
     if output_txt is None:
         output_txt = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
@@ -163,6 +164,9 @@ def load_csv_targets(csv_file, output_txt):
     """
     Convert NASA-style CSV file to Gen TSO exoplanet file.
     """
+    if not os.path.exists(csv_file):
+        raise ValueError(f"csv targets file not found: {repr(csv_file)}")
+
     lines = []
     for line in open(csv_file, newline="", encoding="utf-8"):
         if line.strip() == '' or line.strip().startswith("#"):
