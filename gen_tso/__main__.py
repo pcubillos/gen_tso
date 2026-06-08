@@ -5,6 +5,10 @@ import os
 import sys
 from shiny import run_app
 
+from gen_tso.pandeia_io.pandeia_setup import update_synphot_files
+import gen_tso.catalogs as cat
+from gen_tso.utils import ROOT
+
 
 def main():
     """
@@ -36,15 +40,12 @@ def main():
     """
     if '--update_db' in sys.argv:
         # Import here, otherwise shiny breaks (bc of grequests?)
-        from gen_tso.pandeia_io.pandeia_setup import update_synphot_files
         status = update_synphot_files()
 
     if '--update_exo' in sys.argv:
-        import gen_tso.catalogs as cat
         cat.update_exoplanet_archive()
 
     if '--update_programs' in sys.argv:
-        import gen_tso.catalogs as cat
         cat.update_jwst_programs()
 
     if '--add_custom' in sys.argv:
@@ -58,8 +59,7 @@ def main():
             print(f"ERROR: targets file not found: {targets_path}", file=sys.stderr)
             sys.exit(2)
 
-        from gen_tso.catalogs.catalogs import merge_custom_targets
-        merge_custom_targets(targets_path)
+        cat.merge_custom_targets(targets_path)
 
     if '--load_custom' in sys.argv:
         try:
@@ -75,10 +75,8 @@ def main():
         print(f"Loading custom targets from: {targets_path}")
 
         if targets_path.lower().endswith('.csv'):
-            from gen_tso.catalogs.catalogs import load_csv_targets
-            from gen_tso.utils import ROOT
             session_txt = os.path.join(ROOT, 'data', 'custom_targets_session.txt')
-            load_csv_targets(targets_path, session_txt)
+            cat.load_csv_targets(targets_path, session_txt)
             print(f"Converted CSV to: {session_txt}")
 
     if (
