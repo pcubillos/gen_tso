@@ -55,8 +55,8 @@ def main():
         except Exception:
             print("ERROR: --update_custom requires a path argument", file=sys.stderr)
             sys.exit(2)
-
-        cat.merge_custom_targets(csv_file)
+        cat.update_custom_targets(csv_file)
+        sys.exit(0)
 
     if '--load_custom' in sys.argv:
         try:
