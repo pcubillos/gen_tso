@@ -4,6 +4,7 @@
 __all__ = [
     'ROOT',
     'KNOWN_PROGRAMS',
+    'parser',
     'check_latest_version',
     'get_latest_pandeia_release',
     'get_version_advice',
@@ -15,6 +16,7 @@ __all__ = [
 ]
 
 import os
+import argparse
 from packaging.version import parse
 
 from bs4 import BeautifulSoup
@@ -24,9 +26,10 @@ import pyratbay.tools as pt
 import requests
 from shiny import ui
 
-ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 from .catalogs.utils import as_str
+from .version import __version__ as version
 
+ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 
 # Manually kept:
 KNOWN_PROGRAMS = [
@@ -49,6 +52,98 @@ KNOWN_PROGRAMS = [
     10653, 10674, 10786, 11144, 11253, 11301, 11302, 11672, 11712,
     11779, 11831, 11962, 12157, 12237,
 ]
+
+
+def parser():
+    """
+    Command-line parser for Gen TSO.
+    """
+    parser = argparse.ArgumentParser(
+        prog='tso',
+        description='Launch the Gen TSO interactive application',
+        usage="tso [-h] [-v] [--models PATH] [--targets FILE] [--debug]",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        '-v', '--version',
+        action='version',
+        help="show Gen TSO version",
+        version=f'Gen TSO version {version}',
+    )
+
+    parser.add_argument(
+        '--models',
+        dest='models',
+        metavar='PATH',
+        action='store',
+        help="include custom SED and planet spectra from input path",
+    )
+
+    parser.add_argument(
+        '--targets',
+        dest='targets',
+        metavar='FILE',
+        action='store',
+        help="include custom targets from input file",
+    )
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        default=False,
+        help="run reloading the GUI when the source code is updated",
+    )
+
+    description = (
+        'usage: tso [--update_exo] [--update_programs] [--update_db]\n'
+        '           [--update_custom CSV] [--add_custom CSV]'
+    )
+    group = parser.add_argument_group(
+        'Other functionality',
+        description=description,
+    )
+
+    # Other uses beside the GUI
+    group.add_argument(
+        '--update_exo',
+        action='store_true',
+        default=False,
+        help="update NASA Exoplanet Archive",
+    )
+
+    group.add_argument(
+        '--update_programs',
+        action='store_true',
+        default=False,
+        help="update JWST TSO programs",
+    )
+
+    group.add_argument(
+        '--update_db',
+        action='store_true',
+        default=False,
+        help="check and update SED/synphot atlases",
+    )
+
+    group.add_argument(
+        '--update_custom',
+        dest='update_custom',
+        metavar='CSV',
+        action='store',
+        help="update custom targets from csv file",
+    )
+
+    group.add_argument(
+        '--add_custom',
+        dest='add_custom',
+        metavar='CSV',
+        action='store',
+        help="add new custom targets from csv_file",
+    )
+
+    args, unknown = parser.parse_known_args()
+    return args
 
 
 def check_latest_version(package):
