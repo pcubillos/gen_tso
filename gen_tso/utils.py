@@ -56,12 +56,12 @@ KNOWN_PROGRAMS = [
 
 def parser():
     """
-    Command-line parser for Gen TSO.
+    Command-line parser for Gen TSO
     """
     parser = argparse.ArgumentParser(
         prog='tso',
         description='Launch the Gen TSO interactive application',
-        usage="tso [-h] [-v] [--models PATH] [--targets FILE] [--debug]",
+        usage="tso [-h] [-v] [-m PATH] [-t FILE] [--debug]",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -73,7 +73,7 @@ def parser():
     )
 
     parser.add_argument(
-        '--models',
+        '-m', '--models',
         dest='models',
         metavar='PATH',
         action='store',
@@ -81,7 +81,7 @@ def parser():
     )
 
     parser.add_argument(
-        '--targets',
+        '-t', '--targets',
         dest='targets',
         metavar='FILE',
         action='store',
@@ -139,7 +139,7 @@ def parser():
         dest='add_custom',
         metavar='CSV',
         action='store',
-        help="add new custom targets from csv_file",
+        help="add new custom targets from csv file",
     )
 
     args, unknown = parser.parse_known_args()

@@ -4,7 +4,6 @@
 import json
 import os
 from pathlib import Path
-import sys
 import textwrap
 from datetime import timedelta, datetime
 
@@ -23,6 +22,7 @@ from gen_tso import plotly_io as plots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
     ROOT,
+    parser,
     get_latest_pandeia_release,
     get_version_advice,
     get_pandeia_advice,
@@ -65,8 +65,27 @@ from gen_tso.export_script import (
 )
 
 
+cli_args = parser()
+
+# Custom targets
+default_custom_targets = os.path.join(ROOT, 'data', 'custom_targets.txt')
+if cli_args.targets is not None:
+    if not os.path.exists(cli_args.targets):
+        print(f"\n~ custom targets file not found: {repr(cli_args.targets)} ~\n")
+        custom_targets = None
+    elif cli_args.targets.lower().endswith('.csv'):
+        custom_targets = os.path.join(ROOT, 'data', 'tmp_custom_targets.txt')
+        cat.load_csv_targets(cli_args.targets, custom_targets)
+    else:
+        custom_targets = cli_args.targets
+elif os.path.exists(default_custom_targets):
+    custom_targets = default_custom_targets
+else:
+    custom_targets = None
+
+
 def load_catalog():
-    catalog = cat.Catalog()
+    catalog = cat.Catalog(custom_targets)
     is_jwst = np.array([target.is_jwst_planet for target in catalog.targets])
     is_transit = np.array([target.is_transiting for target in catalog.targets])
     is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
@@ -165,9 +184,9 @@ bookmarked_spectra = {
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
-argv = [arg for arg in sys.argv if arg != '--debug']
-if len(argv) == 2:
-    loading_folders.append(os.path.realpath(argv[1]))
+if cli_args.models is not None:
+    models_path = os.path.realpath(cli_args.models)
+    loading_folders.append(models_path)
 loading_folders.append(f'{ROOT}data/models')
 current_dir = os.path.realpath(os.getcwd())
 
@@ -1005,7 +1024,7 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.save_custom_target)
     def _():
-        """Save modified target to my_custom_targets.txt"""
+        """Save modified target to custom_targets.txt"""
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
@@ -1018,7 +1037,7 @@ def server(input, output, session):
         if input.magnitude_band() == '2mass,ks':
             target.ks_mag = _safe_num(input.magnitude(), default=np.nan)
 
-        custom_catalog = f'{ROOT}data/my_custom_targets.txt'
+        custom_catalog = f'{ROOT}data/custom_targets.txt'
         custom_targets = cat.load_targets(custom_catalog)
         # Search and replace or add custom target
         custom_planets = [target.planet for target in custom_targets]
@@ -1027,8 +1046,6 @@ def server(input, output, session):
             custom_targets[idx] = target
         else:
             custom_targets.append(target)
-
-        custom_catalog = f'{ROOT}data/my_custom_targets.txt'
         cat.save_targets(custom_targets, custom_catalog)
 
         # Update original values to current values after successful save
