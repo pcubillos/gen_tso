@@ -170,6 +170,10 @@ def test_get_configs_miri_lrsslitless():
     inst = configs[0]
     assert inst['mode'] == 'lrsslitless'
     assert inst['mode_label'] == 'Low Resolution Spectroscopy (LRS) Slitless'
+    expected_subarrays = [
+        'slitlessprism', 'slitlessprism_ip', 'slitlessprism_ips',
+    ]
+    assert list(inst['subarrays']) == expected_subarrays
 
 
 def test_get_configs_miri_mrs_ts():
