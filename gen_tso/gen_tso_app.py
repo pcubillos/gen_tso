@@ -477,7 +477,9 @@ app_ui = ui.page_fluid(
                 ),
                 # Customizing buttons
                 ui.panel_conditional(
-                    "input.is_custom",
+                    # Keep hidden while we fine-tune the customs details
+                    #"input.is_custom",
+                    "false",
                     ui.layout_column_wrap(
                         ui.input_action_button(
                             id='save_custom_target',
