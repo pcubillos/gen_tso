@@ -8,10 +8,10 @@
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/pcubillos/gen_tso/quarto-publish.yml?label=docs)](https://pcubillos.github.io/gen_tso/)
 [![PyPI](https://img.shields.io/pypi/v/gen_tso.svg)](https://pypi.org/project/gen_tso)
-[![GitHub](https://img.shields.io/github/license/pcubillos/gen_tso.svg?color=blue)](https://github.com/pcubillos/gen_tso/blob/master/LICENSE)
+[![GitHub License](https://img.shields.io/github/license/pcubillos/gen_tso?style=flat&color=blue)](https://github.com/pcubillos/gen_tso/blob/master/LICENSE)
 
-> ## **Good News!** 🎉 
-> Gen TSO is now ready for **JWST cycle 5** simulations!
+
+> Gen TSO is up to date with ``Pandeia`` version **2026.2**
 
 
 ### Install as:
