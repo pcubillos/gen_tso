@@ -769,7 +769,7 @@ def generate_all_instruments():
             disperser_label = 'Disperser'
             filter_label = ''
             filters = {'': ''}
-            default_indices = 0, 0, 0, 0, 0
+            default_indices = 0, 0, 0, 1, 0
         if mode == 'mrs_ts':
             disperser_label = 'Wavelength Range'
             filter_label = ''
