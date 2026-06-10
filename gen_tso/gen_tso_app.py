@@ -284,22 +284,22 @@ app_ui = ui.page_fluid(
                 "for exoplanet time series ("
             ),
             ui.tooltip(
+                ui.input_action_link(
+                    id='main_status',
+                    label='',
+                    icon=fa.icon_svg("gear", fill='black'),
+                ),
+                "status",
+                placement='bottom',
+            ),
+            ', ',
+            ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("book", fill='black'),
                     href='https://pcubillos.github.io/gen_tso',
                     target="_blank",
                 ),
                 "documentation",
-                placement='bottom',
-            ),
-            ', ',
-            ui.tooltip(
-                ui.input_action_link(
-                    id='main_settings',
-                    label='',
-                    icon=fa.icon_svg("gear", fill='black'),
-                ),
-                "settings",
                 placement='bottom',
             ),
             ', ',
@@ -1063,8 +1063,8 @@ def server(input, output, session):
 
 
     @reactive.effect
-    @reactive.event(input.main_settings)
-    def _():
+    @reactive.event(input.main_status)
+    def status_modal():
         with open(f'{ROOT}/data/last_updated_trexolist.txt', 'r') as f:
             last_trexo = f.readline().replace('_','-')
         with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
@@ -1075,10 +1075,11 @@ def server(input, output, session):
             latest_pandeia.set(get_latest_pandeia_release())
 
         gen_tso_status = get_version_advice(gen_tso)
-        pandeia_status = get_pandeia_advice(
+        pandeia_version_status = get_pandeia_advice(
             pandeia.engine, latest_pandeia.get(),
         )
-        pandeia_ref_status = check_pandeia_ref_data(latest_pandeia.get())
+        pandeia_data_status = check_pandeia_ref_data(latest_pandeia.get())
+        pandeia_psf_status = check_pandeia_ref_data(latest_pandeia.get(), 'psf')
         pysynphot_data = check_pysynphot()
 
         m = ui.modal(
@@ -1124,10 +1125,11 @@ def server(input, output, session):
                 gap='10px',
                 class_="px-0 py-0 mx-0 my-0",
             ),
-            pandeia_status,
-            pandeia_ref_status,
+            pandeia_version_status,
+            pandeia_data_status,
+            pandeia_psf_status,
             ui.hr(),
-            title=ui.markdown("**Settings**"),
+            title=ui.markdown("**Status**"),
             easy_close=True,
             size='l',
         )
