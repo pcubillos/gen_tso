@@ -15,8 +15,9 @@ __all__ = [
     'pretty_print_target',
 ]
 
-import os
 import argparse
+from datetime import date
+import os
 from packaging.version import parse
 
 from bs4 import BeautifulSoup
@@ -58,11 +59,18 @@ def parser():
     """
     Command-line parser for Gen TSO
     """
+    year = date.today().year
+    epilog = (
+        f"This is Gen TSO version {version}"
+        f"\nCopyright (c) 2025-{year} Patricio Cubillos. GPL-2.0 license"
+        "\nDocumentation at: https://pcubillos.github.io/gen_tso"
+    )
     parser = argparse.ArgumentParser(
         prog='tso',
         description='Launch the Gen TSO interactive application',
         usage="tso [-h] [-v] [-m PATH] [-t FILE] [--debug]",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog,
     )
 
     parser.add_argument(
