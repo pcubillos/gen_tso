@@ -276,6 +276,7 @@ def plotly_filters(
 def plotly_sed_spectra(
         sed_models, labels, highlight_model=None,
         wl_range=None, units='mJy', wl_scale='linear', resolution=250.0,
+        flux_scale='linear',
         throughput=None,
     ):
     """
@@ -345,6 +346,7 @@ def plotly_sed_spectra(
     fig.update_yaxes(
         title_text=f'Flux ({units})',
         title_standoff=0,
+        type=flux_scale,
     )
 
     if wl_scale == 'log':

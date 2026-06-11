@@ -396,8 +396,6 @@ def _group_by_target(observations):
 def load_trexolists(grouped=False, trexo_file=None, curate=True):
     """
     Extract the JWST programs' data from a trexolists.csv file.
-    Note that trexolists know targets by their host star, not by
-    individual planets in a given system.
 
     Parameters
     ----------
