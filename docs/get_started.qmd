@@ -19,6 +19,8 @@ A drop down menu lets you search/type for confirmed planets and TESS candidates
 - A link leads you to the NASA Exoplanet Archive
 - A link displays the exisiting JWST programs on the host star
 
+Users can also define their own [custom targets](custom_targets.qmd).
+
 ---
 
 {{< video images/select_target.webm width='800'>}}

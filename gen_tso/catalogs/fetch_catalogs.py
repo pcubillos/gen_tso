@@ -22,7 +22,6 @@ import ssl
 import urllib
 import warnings
 
-
 from astropy.coordinates import SkyCoord
 import numpy as np
 from astroquery.simbad import Simbad
@@ -104,53 +103,6 @@ def get_children(host_aliases, planet_aliases):
         if planet in children
     }
     return aliases
-
-
-def save_catalog(targets, catalog_file):
-    """
-    Write data from a catalog of targets to a plain-text file.
-    Targets will be sorted by host name and then by planet name.
-    """
-    # Save as plain text:
-    with open(catalog_file, 'w') as f:
-        f.write(
-            '# > host: RA(deg) dec(deg) Ks_mag '
-            'rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n'
-            '# planet: T14(h) rplanet(rearth) mplanet(mearth) '
-            'semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n'
-        )
-        hosts = [target.host for target in targets]
-        planets = [target.planet for target in targets]
-        isort = np.lexsort((planets, hosts))
-        host = ''
-        for idx in isort:
-            target = targets[idx]
-            planet = target.planet
-            ra = f'{target.ra:.7f}'
-            dec = f'{target.dec:.7f}'
-            ks_mag = f'{target.ks_mag:.3f}'
-            teff = f'{target.teff:.1f}'
-            rstar = f'{target.rstar:.3f}'
-            mstar = f'{target.mstar:.3f}'
-            logg = f'{target.logg_star:.2f}'
-            metal = f'{target.metal_star:.2f}'
-            rplanet = f'{target.rplanet:.3f}'
-            mplanet = f'{target.mplanet:.3f}'
-            transit_dur = f'{target.transit_dur:.3f}'
-            sma = f'{target.sma:.4f}'
-            period = f'{target.period:.5f}'
-            teq = f'{target.eq_temp:.1f}'
-            is_min_mass = int(target.is_min_mass)
-            if target.host != host:
-                host = target.host
-                f.write(
-                    f">{host}: {ra} {dec} {ks_mag} "
-                    f"{rstar} {mstar} {teff} {logg} {metal}\n",
-                )
-            f.write(
-                f" {planet}: {transit_dur} {rplanet} {mplanet} "
-                f"{sma} {period} {teq} {is_min_mass}\n",
-            )
 
 
 def update_exoplanet_archive(from_scratch=False):
@@ -344,7 +296,7 @@ def fetch_nasa_confirmed_targets():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+hostname,pl_name,default_flag,rowupdate,sy_kmag,sy_pnum,"
-        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,"
+        "ra,dec,st_teff,st_logg,st_met,st_rad,st_mass,st_age,pl_trandur,pl_tranmid,"
         "pl_orbper,pl_orbsmax,pl_rade,pl_masse,pl_msinie,pl_ratdor,pl_ratror+"
         "from+ps+"
         "&format=json"
@@ -380,7 +332,7 @@ def fetch_nasa_confirmed_targets():
             tar.rank_planets(target, entries)
             planets.append(target)
             n_dups.append(len(idx_entry))
-        # Solve stellar parameters (all planets must have the 'same' host)
+        # Solve stellar parameters (all planets must have the same host)
         star = tar.solve_host(planets, n_dups)
 
         # Now, re-do each planet, but using the single host properties
@@ -400,7 +352,7 @@ def fetch_nasa_confirmed_targets():
     catalog_file = f'{ROOT}data/nea_data.txt'
     if os.path.exists(catalog_file):
         current_targets = [
-            target.planet for target in load_targets('nea_data.txt')
+            target.planet for target in load_targets()
         ]
     else:
         current_targets = []
@@ -434,7 +386,7 @@ def fetch_nasa_confirmed_targets():
     )
 
     # Save outputs
-    save_catalog(targets, catalog_file)
+    u.save_targets(targets, catalog_file)
     return new_targets
 
 
@@ -458,7 +410,7 @@ def fetch_nasa_tess_candidates():
     r = requests.get(
         "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query="
         "select+toi,toipfx,pl_trandurh,pl_trandep,pl_rade,pl_eqt,ra,dec,"
-        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,tfopwg_disp,rowupdate+"
+        "st_tmag,st_teff,st_logg,st_rad,pl_orbper,pl_tranmid,tfopwg_disp,rowupdate+"
         "from+toi+"
         "&format=json"
     )
@@ -471,7 +423,7 @@ def fetch_nasa_tess_candidates():
     dates = [entry['rowupdate'][0:10] for entry in entries]
 
     # Discard confirmed planets:
-    targets = load_targets('nea_data.txt')
+    targets = load_targets()
     confirmed_targets = [target.planet for target in targets]
     confirmed_hosts = [target.host for target in targets]
 
@@ -539,7 +491,7 @@ def fetch_nasa_tess_candidates():
 
     # Save temporary data (still need to hunt for Ks mags):
     catalog_file = f'{ROOT}data/tess_candidates_tmp.txt'
-    save_catalog(tess_targets, catalog_file)
+    u.save_targets(tess_targets, catalog_file)
 
     with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
         last_nasa = datetime.strptime(f.readline().strip(),'%Y_%m_%d')
@@ -1019,12 +971,14 @@ def fetch_tess_aliases(new_targets=None):
     >>> aliases = fetch_cat.fetch_tess_aliases(new_targets)
     >>> fetch_cat.crosscheck_tess_candidates()
     """
-    candidates = load_targets('tess_candidates_tmp.txt')
+    tmp_catalog = f'{ROOT}data/tess_candidates_tmp.txt'
+    candidates = load_targets(tmp_catalog)
     if new_targets is None:
         new_targets = np.unique([target.planet for target in candidates])
 
-    if os.path.exists(f'{ROOT}data/tess_data.txt'):
-        known_candidates = load_targets('tess_data.txt')
+    tess_catalog = f'{ROOT}data/tess_data.txt'
+    if os.path.exists(tess_catalog):
+        known_candidates = load_targets(tess_catalog)
         known_tess = [target.planet for target in known_candidates]
     else:
         known_tess = []
@@ -1104,7 +1058,8 @@ def crosscheck_tess_candidates(ncpu=None):
             host_aliases[alias] = host
 
     # Identity alias for targets without aliases
-    candidates = load_targets('tess_candidates_tmp.txt')
+    tmp_catalog = f'{ROOT}data/tess_candidates_tmp.txt'
+    candidates = load_targets(tmp_catalog)
     for target in candidates:
         if target.host not in host_aliases:
             host_aliases[target.host] = target.host
@@ -1127,7 +1082,8 @@ def crosscheck_tess_candidates(ncpu=None):
     # Now I need to collect the Ks-band magnitudes:
     # Zeroth idea, check if I already have the Ks mag:
     if os.path.exists(f'{ROOT}data/tess_data.txt'):
-        known_candidates = load_targets('tess_data.txt')
+        tess_catalog = f'{ROOT}data/tess_data.txt'
+        known_candidates = load_targets(tess_catalog)
         known_hosts = [target.host for target in known_candidates]
         for target in candidates:
             if target.host in known_hosts:
@@ -1192,7 +1148,7 @@ def crosscheck_tess_candidates(ncpu=None):
 
     # Save as plain text:
     catalog_file = f'{ROOT}data/tess_data.txt'
-    save_catalog(candidates, catalog_file)
+    u.save_targets(candidates, catalog_file)
 
 
 def scrap_nea_kmag(target):

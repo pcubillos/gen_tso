@@ -4,6 +4,7 @@
 __all__ = [
     'ROOT',
     'KNOWN_PROGRAMS',
+    'parser',
     'check_latest_version',
     'get_latest_pandeia_release',
     'get_version_advice',
@@ -14,6 +15,8 @@ __all__ = [
     'pretty_print_target',
 ]
 
+import argparse
+from datetime import date
 import os
 from packaging.version import parse
 
@@ -24,27 +27,137 @@ import pyratbay.tools as pt
 import requests
 from shiny import ui
 
-ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 from .catalogs.utils import as_str
+from .version import __version__ as version
 
+ROOT = os.path.realpath(os.path.dirname(__file__)) + '/'
 
 # Manually kept:
 KNOWN_PROGRAMS = [
-    1033, 1118, 1177, 1185, 1201, 1224, 1274, 1279, 1280, 1281, 1312,
-    1331, 1353, 1366, 1442, 1541, 1633, 1729, 1743, 1803, 1846, 1935,
-    1952, 1981, 2001, 2008, 2021, 2055, 2062, 2084, 2113, 2149, 2158,
-    2159, 2304, 2319, 2334, 2347, 2358, 2372, 2420, 2437, 2454, 2488,
-    2498, 2507, 2508, 2512, 2571, 2589, 2594, 2667, 2708, 2722, 2734,
-    2759, 2765, 2783, 2950, 2961, 3077, 3154, 3171, 3231, 3235, 3263,
-    3279, 3315, 3385, 3557, 3615, 3712, 3730, 3731, 3784, 3818, 3838,
-    3860, 3942, 3969, 4008, 4082, 4098, 4102, 4105, 4126, 4195, 4227,
+    # cycle 0
+    1033, 1118, 1442, 1541, 2734,
+    # cycle 1
+    1177, 1185, 1201, 1224, 1274, 1279, 1280, 1281, 1312, 1331, 1353,
+    1366, 1633, 1729, 1743, 1803, 1846, 1935, 1952, 1981, 2001, 2008,
+    2021, 2055, 2062, 2084, 2113, 2149, 2158, 2159, 2304, 2319, 2334,
+    2347, 2358, 2372, 2420, 2437, 2454, 2488, 2498, 2507, 2508, 2512,
+    2571, 2589, 2594, 2667, 2708, 2722, 2765, 2783,
+    # cycle 2
+    2759, 2950, 2961, 3077, 3154, 3171, 3231, 3235, 3263, 3279, 3315,
+    3385, 3557, 3615, 3712, 3730, 3731, 3784, 3818, 3838, 3860, 3942,
+    3969, 4008, 4082, 4098, 4102, 4105, 4126, 4195, 4227, 6543,
+    # cycle 3
     4536, 4711, 4818, 4931, 5022, 5177, 5191, 5268, 5311, 5531, 5634,
     5687, 5799, 5844, 5863, 5866, 5882, 5894, 5924, 5959, 5967, 6045,
-    6193, 6284, 6456, 6457, 6491, 6543,
-    6932, 6978, 7073, 7188, 7251, 7255, 7407, 7675, 7683, 7686, 7849,
-    7875, 7953, 7982, 8004, 8017, 8233, 8309, 8597, 8696, 8739, 8864,
-    8877, 9025, 9033, 9095, 9101, 9235,
+    6193, 6284, 6456, 6457, 6491, 9235,
+    # cycle 4
+    6932, 6978, 7068, 7073, 7188, 7251, 7255, 7407, 7675, 7683, 7686,
+    7849, 7875, 7953, 7982, 8004, 8017, 8233, 8309, 8597, 8696, 8739,
+    8864, 8877, 9025, 9033, 9095, 9101, 9256,
+    # cycle 5
+     9709,  9825,  9942, 10047, 10248, 10290, 10300, 10498, 10586,
+    10653, 10674, 10786, 11144, 11253, 11301, 11302, 11672, 11712,
+    11779, 11831, 11962, 12157, 12237,
 ]
+
+
+def parser():
+    """
+    Command-line parser for Gen TSO
+    """
+    year = date.today().year
+    epilog = (
+        f"This is Gen TSO version {version}"
+        f"\nCopyright (c) 2025-{year} Patricio Cubillos. GPL-2.0 license"
+        "\nDocumentation at: https://pcubillos.github.io/gen_tso"
+    )
+    parser = argparse.ArgumentParser(
+        prog='tso',
+        description='Launch the Gen TSO interactive application',
+        usage="tso [-h] [-v] [-m PATH] [-t FILE] [--debug]",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog,
+    )
+
+    parser.add_argument(
+        '-v', '--version',
+        action='version',
+        help="show Gen TSO version",
+        version=f'Gen TSO version {version}',
+    )
+
+    parser.add_argument(
+        '-m', '--models',
+        dest='models',
+        metavar='PATH',
+        action='store',
+        help="include custom SED and planet spectra from input path",
+    )
+
+    parser.add_argument(
+        '-t', '--targets',
+        dest='targets',
+        metavar='FILE',
+        action='store',
+        help="include custom targets from input file",
+    )
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        default=False,
+        help="run reloading the GUI when the source code is updated",
+    )
+
+    description = (
+        'usage: tso [--update_exo] [--update_programs] [--update_db]\n'
+        '           [--update_custom CSV] [--add_custom CSV]'
+    )
+    group = parser.add_argument_group(
+        'Other functionality',
+        description=description,
+    )
+
+    # Other uses beside the GUI
+    group.add_argument(
+        '--update_exo',
+        action='store_true',
+        default=False,
+        help="update NASA Exoplanet Archive",
+    )
+
+    group.add_argument(
+        '--update_programs',
+        action='store_true',
+        default=False,
+        help="update JWST TSO programs",
+    )
+
+    group.add_argument(
+        '--update_db',
+        action='store_true',
+        default=False,
+        help="check and update SED/synphot atlases",
+    )
+
+    group.add_argument(
+        '--update_custom',
+        dest='update_custom',
+        metavar='CSV',
+        action='store',
+        help="update custom targets from csv file",
+    )
+
+    group.add_argument(
+        '--add_custom',
+        dest='add_custom',
+        metavar='CSV',
+        action='store',
+        help="add new custom targets from csv file",
+    )
+
+    args, unknown = parser.parse_known_args()
+    return args
 
 
 def check_latest_version(package):
@@ -393,6 +506,7 @@ def pretty_print_target(target):
     rprs = as_str(target.rprs, '.3f', '---')
     ars = as_str(target.ars, '.3f', '---')
     period = as_str(target.period, '.3f', '---')
+    epoch = as_str(target.transit_epoch, '.6f', '---')
     t_dur = as_str(target.transit_dur, '.3f', '---')
     eq_temp = as_str(target.eq_temp, '.1f', '---')
 
@@ -424,10 +538,11 @@ def pretty_print_target(target):
         f"{mplanet_label} = {mplanet} m_earth<br>"
         f"semi_major_axis = {sma} AU<br>"
         f"period = {period} d<br>"
-        f"equilibrium_temp = {eq_temp} K<br>"
+        f"transit_epoch = {epoch} BJD<br>"
+        f"t_equilibrium = {eq_temp} K<br>"
         f"transit_duration = {t_dur} h<br>"
-        f"rplanet/rstar = {rprs}<br>"
-        f"a/rstar = {ars}<br>"
+        f"rplanet_rstar = {rprs}<br>"
+        f"a_rstar = {ars}<br>"
     )
 
     star_info = ui.HTML(
@@ -438,7 +553,7 @@ def pretty_print_target(target):
         f"mstar = {mstar} m_sun<br>"
         f"log_g = {logg}<br>"
         f"metallicity = {metal}<br>"
-        f"effective_temp = {teff} K<br>"
+        f"t_effective = {teff} K<br>"
         f"Ks_mag = {ks_mag}<br>"
         f"RA = {target.ra:.3f} deg<br>"
         f"dec = {target.dec:.3f} deg<br>"

@@ -8,10 +8,10 @@
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/pcubillos/gen_tso/quarto-publish.yml?label=docs)](https://pcubillos.github.io/gen_tso/)
 [![PyPI](https://img.shields.io/pypi/v/gen_tso.svg)](https://pypi.org/project/gen_tso)
-[![GitHub](https://img.shields.io/github/license/pcubillos/gen_tso.svg?color=blue)](https://github.com/pcubillos/gen_tso/blob/master/LICENSE)
+[![GitHub License](https://img.shields.io/github/license/pcubillos/gen_tso?style=flat&color=blue)](https://github.com/pcubillos/gen_tso/blob/master/LICENSE)
 
-> ## **Good News!** 🎉 
-> Gen TSO is now ready for **JWST cycle 5** simulations!
+
+> Gen TSO is up to date with ``Pandeia`` version **2026.2**
 
 
 ### Install as:
@@ -27,6 +27,46 @@ To launch the application use this prompt command:
 ```
 tso
 ```
+
+
+Run with ``-h`` to display the full list of command line options:
+```
+tso -h
+```
+
+<details>
+<summary>Click to expand</summary>
+
+```shell
+usage: tso [-h] [-v] [-m PATH] [-t FILE] [--debug]
+
+Launch the Gen TSO interactive application
+
+options:
+  -h, --help            show this help message and exit
+  -v, --version         show Gen TSO version
+  -m PATH, --models PATH
+                        include custom SED and planet spectra from input path
+  -t FILE, --targets FILE
+                        include custom targets from input file
+  --debug               run reloading the GUI when the source code is updated
+
+Other functionality:
+  usage: tso [--update_exo] [--update_programs] [--update_db]
+             [--update_custom CSV] [--add_custom CSV]
+
+  --update_exo          update NASA Exoplanet Archive
+  --update_programs     update JWST TSO programs
+  --update_db           check and update SED/synphot atlases
+  --update_custom CSV   update custom targets from csv file
+  --add_custom CSV      add new custom targets from csv file
+
+This is Gen TSO version 1.4.0
+Copyright (c) 2025-2026 Patricio Cubillos. GPL-2.0 license
+Documentation at: https://pcubillos.github.io/gen_tso
+```
+
+</details>
 
 ### Take the tour (docs):
 

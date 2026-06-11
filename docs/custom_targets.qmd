@@ -1,0 +1,90 @@
+---
+title: Customizing targets
+page-navigation: true
+---
+
+## Pre-defined custom targets
+
+Users can predefine a custom list of targets by compiling a .csv file
+with the same format as one downloaded from the NASA Exoplanet Archive.
+The relevant header columns are these:
+
+- `hostname`: host name
+- `pl_name`: planet name
+- `st_mass`: stellar mass (solar masses)
+- `st_rad`: stellar radius (solar radii)
+- `st_teff`: stellar effective temperature (K)
+- `st_logg`: stellar surface gravity (log CGS units)
+- `st_met`: stellar metallicity
+- `sy_kmag`: stellar Ks magnitude
+- `ra`: right ascention (deg)
+- `dec`: declination (deg)
+- `pl_bmasse` or `pl_masse`: planet mass (Earth masses)
+- `pl_msinie`: planet mass * sin(inclination)
+- `pl_rade`: planet radius (Earth radii)
+- `pl_orbsmax`: orbital semi-major axis (AU)
+- `pl_orbper`: orbital period (d)
+- `pl_tranmid`: transit mid time (or conjunction) epoch (BJD)
+- `pl_ratdor`: planet-to-star radius ratio
+- `pl_ratror`: semi-major axis to stellar radius ratio
+- `pl_trandur`: transit duration (h)
+- `pl_eqt`: planet equilibrium temperature (K)
+
+The recommendation is to download a csv target list from the NASA
+archive and work your way from there to create your custom targets.
+
+::: {.callout-note}
+Note that not all values are strictly needed, e.g., `pl_ratdor` is redundant when both `st_rad` and `pl_rade` are defined.
+:::
+
+
+To update the custom target list, run this command from the prompt:
+
+```bash
+tso --update_custom exoplanet_file.csv
+```
+
+To replace the custom target list, simply run `tso --update_custom`
+with a new input csv file.  To add new custom targets to the current
+custom target list, run this command from the prompt:
+
+```bash
+tso --add_custom exoplanet_file.csv
+```
+
+This list of custom targets will be remain, and will be loaded any
+time the GUI is launched.
+
+::: {.callout-note}
+Note that if a custom target has the same name as an existing target
+in the NASA exoplanet catalog, the custom values will override the
+ones from NASA. Otherwise, new custom targets will be appended to the
+existing ones.
+:::
+
+
+You can find the current custom target list with this Python script:
+```python
+from gen_tso.utils import ROOT
+print(f'{ROOT}data/custom_targets.txt')
+```
+```python
+/home/user/env/.../gen_tso/data/custom_targets.txt
+```
+----
+
+## Temporary custom targets
+
+Users can also run the GUI with a temporary custom target list that
+will be loaded only for the current session.  For this, launch the
+application with the ``-t`` argument followed by a csv target list:
+
+```bash
+tso -t exoplanet_file.csv
+```
+
+::: {.callout-note}
+When a temporary custom target list is specified, the pre-defined
+custom list will not be loaded.
+:::
+

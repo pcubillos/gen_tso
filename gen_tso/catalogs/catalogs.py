@@ -8,12 +8,14 @@ __all__ = [
     'load_programs',
     'load_targets',
     'load_aliases',
+    'load_csv_targets',
+    'update_custom_targets',
     '_group_by_target',
 ]
 
 import csv
 from datetime import datetime
-import json
+import os
 
 from astropy.io import ascii
 import numpy as np
@@ -41,8 +43,9 @@ def find_target(targets=None):
     >>> target = cat.find_target()
     """
     if targets is None:
-        targets = load_targets('nea_data.txt', is_confirmed=True)
-        targets += load_targets('tess_data.txt', is_confirmed=False)
+        targets = load_targets(is_confirmed=True)
+        tess_catalog = f'{ROOT}data/tess_data.txt'
+        targets += load_targets(tess_catalog, is_confirmed=False)
     planets = [target.planet for target in targets]
     aliases = []
     for target in targets:
@@ -72,6 +75,101 @@ def find_target(targets=None):
     return None
 
 
+def update_custom_targets(csv_file, mode='replace'):
+    """
+    Update custom_targets.txt file with targets from csv file.
+
+    Parameters
+    ----------
+    csv_file: String
+        A csv file in the format of the NASA Exoplanet Archive.
+    mode: String
+        Update mode.
+        - 'replace': Replace custom_targets.txt with new csv targets
+        - 'add': Add csv targets, replacing targets with a same planet name.
+    """
+    if mode not in ['add', 'replace']:
+        raise ValueError("Update mode must be either 'add' or 'replace'")
+
+    custom_targets_file = os.path.join(ROOT, 'data', 'custom_targets.txt')
+
+    # Load new targets from csv file
+    custom_file = custom_targets_file if mode == 'replace' else None
+    new_targets = load_csv_targets(csv_file, custom_file)
+    if mode == 'replace':
+        return
+
+    # Load current custom targets
+    if os.path.exists(custom_targets_file):
+        current_targets = load_targets(custom_targets_file, is_confirmed=True)
+    else:
+        current_targets = []
+
+    # Update by planet name
+    new_planets = [target.planet for target in new_targets]
+    current_planets = [target.planet for target in current_targets]
+    keep = ~np.isin(current_planets, new_planets)
+    targets = np.concatenate([
+        np.array(current_targets)[keep],
+        new_targets,
+    ])
+    planet_names = [target.planet for target in targets]
+    isort = np.argsort(planet_names)
+    u.save_targets(targets[isort], custom_targets_file)
+    print(f"Updated custom targets to file {repr(custom_targets_file)}")
+
+
+def load_csv_targets(csv_file, output_txt=None):
+    """
+    Convert NASA-style CSV file to Gen TSO exoplanet file.
+    """
+    if not os.path.exists(csv_file):
+        raise ValueError(f"csv targets file not found: {repr(csv_file)}")
+
+    lines = []
+    for line in open(csv_file, newline="", encoding="utf-8"):
+        if line.strip() == '' or line.strip().startswith("#"):
+            continue
+        lines.append(line)
+    entries = list(csv.DictReader(lines))
+
+    if len(lines) == 0:
+        raise ValueError('No data in input CSV file')
+    if len(entries) == 0:
+        raise ValueError('Missing header with column names in input CSV file')
+
+    required = np.array(['hostname', 'pl_name'])
+    missing_fields = ~np.isin(required, list(entries[0]))
+    if np.any(missing_fields):
+        missing = required[missing_fields]
+        raise ValueError(f'Missing {missing} header fields in input CSV file')
+
+    numeric_fields = [
+        'st_mass', 'st_rad', 'st_teff', 'st_logg', 'st_met', 'sy_kmag', 'ra', 'dec',
+        'pl_masse', 'pl_msinie', 'pl_rade', 'pl_orbsmax', 'pl_orbper',
+        'pl_tranmid', 'pl_ratdor', 'pl_ratror', 'pl_trandur', 'pl_eqt',
+    ]
+
+    for entry in entries:
+        if 'pl_bmasse' in entry and not 'pl_masse' in entry:
+            entry['pl_masse'] = entry['pl_bmasse']
+
+        for key in numeric_fields:
+            if key not in entry or entry[key] == '':
+                entry[key] = np.nan
+                continue
+            try:
+                entry[key] = float(entry[key])
+            except:
+                entry[key] = np.nan
+
+    targets = [Target(entry) for entry in entries]
+    if output_txt is not None:
+        os.makedirs(os.path.dirname(output_txt), exist_ok=True)
+        u.save_targets(targets, output_txt)
+    return targets
+
+
 class Catalog():
     """
     Load the entire catalog.
@@ -83,27 +181,39 @@ class Catalog():
     """
     def __init__(self, custom_targets=None):
         # Confirmed planets and TESS candidates
-        nea_targets = load_targets('nea_data.txt', is_confirmed=True)
-        tess_targets = load_targets('tess_data.txt', is_confirmed=False)
-        self.targets = nea_targets + tess_targets
+        nea_targets = load_targets(is_confirmed=True)
+        tess_catalog = f'{ROOT}data/tess_data.txt'
+        tess_targets = load_targets(tess_catalog, is_confirmed=False)
+        targets = nea_targets + tess_targets
+
+        # User-defined targets
         if custom_targets is not None:
             custom = load_targets(custom_targets, is_confirmed=True)
-            self.targets += custom
+            # Add or replace into base targets by planet name
+            base_names = [target.planet for target in targets]
+            for target in custom:
+                target.is_custom = True
+                if target.planet in base_names:
+                    idx = base_names.index(target.planet)
+                    targets[idx] = target
+                else:
+                    targets.append(target)
 
-        # TBD: a switch between load_trexolists() and load_programs()?
+        self.targets = targets
+
         programs = load_trexolists(grouped=True)
         njwst = len(programs)
         host_aliases = load_aliases('host')
 
         jwst_hosts = []
-        for jwst_target in programs:
-            host_names = [obs['target'] for obs in jwst_target]
+        for target_programs in programs:
+            host_names = [obs['target'] for obs in target_programs]
             nea_host = np.unique([
                 host_aliases[host] if host in host_aliases else host
                 for host in host_names
             ])
             jwst_hosts += list(nea_host)
-            for obs in jwst_target:
+            for obs in target_programs:
                 obs['nea_host'] = nea_host
         jwst_hosts = np.unique(jwst_hosts)
 
@@ -111,23 +221,27 @@ class Catalog():
         planets_aka = u.invert_aliases(planet_aliases)
 
         for target in self.targets:
+            if target.planet in planets_aka:
+                target.aliases = planets_aka[target.planet]
+
             target.is_jwst_host = target.host in jwst_hosts
             if target.is_jwst_host:
                 for j in range(njwst):
-                    if target.host == programs[j][0]['nea_host']:
+                    if target.host in programs[j][0]['nea_host']:
                         break
                 target.programs = programs[j]
                 planets = []
                 for obs in programs[j]:
                     planets += obs['planets']
                 planets = np.unique(planets)
-                letter = u.get_letter(target.planet).strip()
-                target.is_jwst_planet = letter in planets
+                names = [target.planet] + target.aliases
+                letter_ids = np.unique([
+                    u.get_letter(name).strip()
+                    for name in names
+                ])
+                target.is_jwst_planet = np.any(np.isin(letter_ids, planets))
             else:
                 target.is_jwst_planet = False
-
-            if target.planet in planets_aka:
-                target.aliases = planets_aka[target.planet]
 
         self._transit_mask = [target.is_transiting for target in self.targets]
         self._jwst_mask = [target.is_jwst_host for target in self.targets]
@@ -170,14 +284,13 @@ class Catalog():
         if is_confirmed is not None:
             mask &= np.array(self._confirmed_mask) == is_confirmed
 
-        targets = [target for target,flag in zip(self.targets,mask) if flag]
-
         if name is None:
+            targets = [target for target,flag in zip(self.targets,mask) if flag]
             return find_target(targets)
 
         target = u.normalize_name(name)
-        for target in targets:
-            if name == target.planet or name in target.aliases:
+        for target,flag in zip(self.targets, mask):
+            if flag and (name == target.planet or name in target.aliases):
                 return target
 
     def show_target(
@@ -190,25 +303,32 @@ class Catalog():
         print(target)
 
 
-def load_targets(database='nea_data.txt', is_confirmed=np.nan):
+def load_targets(catalog_file=None, is_confirmed=np.nan):
     """
     Unpack star and planet properties from plain text file.
 
     Parameters
     ----------
-    database: String
-        nea_data.txt or tess_data.txt
+    catalog_file: String
+        A plant text file containing a target catalog. See format in save_targets().
+        If None, default to Gen TSO's nea_data.txt catalog.
+    is_confirmed: Bool
+        set confirmed status of targets.
 
     Returns
     -------
     targets: List of Target
+        Targets in catalog.
 
     Examples
     --------
     >>> import gen_tso.catalogs as cat
-    >>> nea_data = cat.load_nea_targets_table()
+    >>> nea_data = cat.load_targets()
     """
-    with open(f'{ROOT}data/{database}', 'r') as f:
+    if catalog_file is None:
+        catalog_file = f'{ROOT}data/nea_data.txt'
+
+    with open(catalog_file, 'r') as f:
         lines = f.readlines()
 
     lines = [
@@ -226,7 +346,7 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
             name_len = line.find(':')
             planet = line[1:name_len].strip()
             planet_vals = np.array(line[name_len+1:].split(), float)
-            t_dur, rplanet, mplanet, sma, period, teq, min_mass = planet_vals
+            t_dur, rplanet, mplanet, sma, period, epoch, teq, min_mass = planet_vals
 
             target = Target(
                 host=host,
@@ -235,47 +355,14 @@ def load_targets(database='nea_data.txt', is_confirmed=np.nan):
                 ks_mag=ks_mag, ra=ra, dec=dec,
                 planet=planet,
                 mplanet=mplanet, rplanet=rplanet,
-                period=period, sma=sma, transit_dur=t_dur,
+                period=period, transit_epoch=epoch,
+                sma=sma, transit_dur=t_dur,
                 is_confirmed=is_confirmed,
                 is_min_mass=bool(min_mass),
             )
             targets.append(target)
 
     return targets
-
-
-def _add_planet_info(observations):
-    """
-    Add planet letter info to a list of observations
-    and other corrections
-    """
-    planets_file = f'{ROOT}data/programs/planets_per_program.json'
-    with open(planets_file, "r") as f:
-        planet_data = json.load(f)
-
-    known_obs = []
-    for obs in observations:
-        pid = obs['pid']
-        obs_id = obs['observation']
-        key = f'{pid}_{obs_id}'
-        known_obs.append(key)
-        if key in planet_data:
-            for var, value in planet_data[key].items():
-                obs[var] = value
-
-    for key,obs in planet_data.items():
-        if key not in known_obs and 'missing' in obs:
-            obs.pop('missing')
-            date_format = "%Y-%m-%d %H:%M:%S"
-            val = obs['date_start']
-            if isinstance(val, str):
-                obs['date_start'] = datetime.strptime(val, date_format)
-            val = obs['date_end']
-            if isinstance(val, str):
-                obs['date_end'] = datetime.strptime(val, date_format)
-            observations.append(obs)
-
-    return observations
 
 
 def _group_by_target(observations):
@@ -306,7 +393,7 @@ def _group_by_target(observations):
     return grouped_data
 
 
-def load_trexolists(grouped=False, trexo_file=None):
+def load_trexolists(grouped=False, trexo_file=None, curate=True):
     """
     Extract the JWST programs' data from a trexolists.csv file.
     Note that trexolists know targets by their host star, not by
@@ -320,6 +407,9 @@ def load_trexolists(grouped=False, trexo_file=None):
     trexo_file: String
         If None, extract data from default Gen TSO location.
         Otherwise, a path to a trexolists.csv file.
+    curate: Bool
+        If True, use curated database from load_programs() as base
+        to ensure list is complete and accurate.
 
     Returns
     -------
@@ -383,6 +473,11 @@ def load_trexolists(grouped=False, trexo_file=None):
         format='csv', guess=False, fast_reader=False, comment='#',
     )
 
+    # Curated programs
+    gt_obs = load_programs() if curate else []
+    gt_programs = [f"{o['pid']}_{o['observation']}" for o in gt_obs]
+    is_new = [True for _ in gt_programs]
+
     nirspec_filter = {
         'G395H': 'F290LP',
         'G395M': 'F290LP',
@@ -404,61 +499,68 @@ def load_trexolists(grouped=False, trexo_file=None):
 
     observations = []
     for i,data in enumerate(trexolist_data):
-        obs = {}
-        obs['category'] = str(data['ProposalCategory'])
-        obs['pi'] = str(data['LastName'])
-        obs['pid'] = str(data['ProposalID'])
-        obs['cycle'] = str(data['Cycle'])
-        obs['proprietary_period'] = int(data['ProprietaryPeriod'])
+        pid = str(data['ProposalID'])
+        oid = str(data['Observation'])
+        if f"{pid}_{oid}" in gt_programs:
+            j = gt_programs.index(f"{pid}_{oid}")
+            obs = gt_obs[j]
+            is_new[j] = False
+        else:
+            obs = {}
+            obs['category'] = str(data['ProposalCategory'])
+            obs['pi'] = str(data['LastName'])
+            obs['pid'] = pid
+            obs['cycle'] = str(data['Cycle'])
+            obs['proprietary_period'] = int(data['ProprietaryPeriod'])
 
-        target = str(data['hostname_nn'])
-        obs['target'] = u.normalize_name(target)
-        obs['target_in_program'] = target
-        obs['planets'] = data['letter_nn'].split('+')
-        obs['event'] = data['Event'].lower().replace('phasec', 'phase curve')
+            target = str(data['hostname_nn'])
+            obs['target'] = u.normalize_name(target)
+            obs['target_in_program'] = target
+            obs['planets'] = data['letter_nn'].split('+')
+            obs['event'] = data['Event'].lower().replace('phasec', 'phase curve')
 
-        obs['observation'] = str(data['Observation'])
-        obs['visit'] = '1'
-        obs['status'] = str(data['Status'])
-        coordinates = data['EquatorialCoordinates'].split()
-        obs['ra'] = ':'.join(coordinates[0:3])
-        obs['dec'] = ':'.join(coordinates[3:6])
+            obs['observation'] = oid
+            obs['visit'] = '1'
+            obs['status'] = str(data['Status'])
+            coordinates = data['EquatorialCoordinates'].split()
+            obs['ra'] = ':'.join(coordinates[0:3])
+            obs['dec'] = ':'.join(coordinates[3:6])
 
-        mode = str(data['ObservingMode'])
-        disperser = obs['disperser'] = str(data['GratingGrism'])
-        inst = obs['instrument'] = instrument[mode]
-        if mode == 'SOSS':
-            disperser = 'None'
-            filter = 'CLEAR'
-        elif mode == 'LRS':
-            disperser = 'None'
-            filter = 'None'
-        elif mode == 'MRS':
-            disperser = 'unknown'
-            filter = 'None'
-        elif inst == 'MIRI':
-            # disperser will be fixed below by _add_planet_info()
-            disperser = 'None'
-            filter = mode
-            mode = 'Imaging TS'
-        elif mode == 'GTS':
-            mode = 'GRISMR TS'
-            disperser, filter = disperser.split('+')
-            if '_' in data['Subarray']:
-                disperser = f'DHS0,{disperser}'
-                # hard-coded, known up to Cycle4:
-                # will be fixed below by _add_planet_info()
-                filter = f'F150W2,{filter}'
-        elif inst == 'NIRSPEC':
-            filter = nirspec_filter[disperser]
-        obs['mode'] = mode
-        obs['disperser'] = disperser
-        obs['filter'] = filter
+            mode = str(data['ObservingMode'])
+            disperser = obs['disperser'] = str(data['GratingGrism'])
+            inst = obs['instrument'] = instrument[mode]
+            if mode == 'SOSS':
+                disperser = 'None'
+                filter = 'CLEAR'
+            elif mode == 'LRS':
+                disperser = 'None'
+                filter = 'None'
+            elif mode == 'MRS':
+                disperser = 'unknown'
+                filter = 'None'
+            elif inst == 'MIRI':
+                disperser = 'None'
+                filter = mode
+                mode = 'Imaging TS'
+            elif mode == 'GTS':
+                mode = 'GRISMR TS'
+                disperser, filter = disperser.split('+')
+                if '_' in data['Subarray']:
+                    disperser = f'DHS0,{disperser}'
+                    # hard-coded, known up to Cycle 5
+                    filter = f'F150W2,{filter}'
+            elif inst == 'NIRSPEC':
+                filter = nirspec_filter[disperser]
+            obs['mode'] = mode
+            obs['disperser'] = disperser
+            obs['filter'] = filter
 
-        obs['subarray'] = str(data['Subarray'])
-        obs['readout'] = str(data['ReadoutPattern'])
-        obs['groups'] = int(data['Groups'])
+            obs['subarray'] = str(data['Subarray'])
+            obs['readout'] = str(data['ReadoutPattern'])
+            obs['groups'] = int(data['Groups'])
+            obs['duration'] = float(data['Hours'])
 
+        # Now get the latest dates from trexolist
         window = str(data['PlanWindow'])
         if window == 'X':
             obs['plan_window'] = None
@@ -470,8 +572,6 @@ def load_trexolists(grouped=False, trexo_file=None):
             obs['plan_window'] = f"{start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}"
         else:
             obs['plan_window'] = window
-
-        obs['duration'] = float(data['Hours'])
 
         date = data['StartTime']
         if date == 'X':
@@ -486,7 +586,9 @@ def load_trexolists(grouped=False, trexo_file=None):
 
         observations.append(obs)
 
-    observations = _add_planet_info(observations)
+
+    if np.any(is_new):
+        observations += [obs for flag,obs in zip(is_new,gt_obs) if flag]
 
     if grouped:
         return _group_by_target(observations)
@@ -529,10 +631,13 @@ def load_programs(grouped=False, csv_file=None):
     int_keys = ['cycle', 'groups', 'integrations', 'proprietary_period']
     float_keys = ['duration', 'period', 'phase_start', 'phase_duration']
     date_keys = ['date_start', 'date_end']
+    eval_keys = ['special_reqs', 'phase_reqs', 'between_reqs']
     for obs in observations:
         for key,val in obs.items():
             if val == '':
                 obs[key] = None
+            elif key == 'planets':
+                obs[key] = val.split()
             elif key in int_keys:
                 obs[key] = int(val)
             elif key in float_keys:
@@ -540,7 +645,7 @@ def load_programs(grouped=False, csv_file=None):
             elif key in date_keys:
                 date_format = "%Y-%m-%d %H:%M:%S"
                 obs[key] = datetime.strptime(val, date_format)
-            elif key == 'planets':
+            elif key in eval_keys:
                 obs[key] = eval(obs[key])
 
     if grouped:
@@ -632,13 +737,48 @@ def load_aliases(style='planet', aliases_file=None):
     with open(aliases_file, 'r') as f:
         lines = f.readlines()
 
-    if style != 'system':
+    if style == 'host':
+        catalog = f'{ROOT}data/nea_data.txt'
+        hosts = [
+            line[1:line.index(':')]
+            for line in open(catalog, 'r')
+            if line.strip().startswith('>')
+        ]
+        catalog = f'{ROOT}data/tess_data.txt'
+        hosts += [
+            line[1:line.index(':')]
+            for line in open(catalog, 'r')
+            if line.strip().startswith('>')
+        ]
+
+        aliases = {}
+        for line in lines:
+            loc = line.index(':')
+            name = parse(line[:loc], style)
+            names = [name] + [
+                parse(alias, style)
+                for alias in line[loc+1:].strip().split(',')
+            ]
+
+            for name in names:
+                if name in hosts:
+                    host = name
+                    break
+
+            for name in names:
+                if name == host:
+                    continue
+                aliases[name] = host
+        return aliases
+
+    if style == 'planet':
         aliases = {}
         for line in lines:
             loc = line.index(':')
             name = parse(line[:loc], style)
             for alias in line[loc+1:].strip().split(','):
-                aliases[parse(alias,style)] = name
+                parse_alias = parse(alias, style)
+                aliases[parse_alias] = name
             aliases[name] = name
         return aliases
 

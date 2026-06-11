@@ -413,16 +413,26 @@ def guess_event_type(obs):
     label = obs['label']
     event = ''
 
+    # Hardcoded patches for missing information:
+    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9256', '9709', '11831']:
+        return 'transit'
+    if pid=='1274' and obs['observation'] in ['4', '5']:
+        return 'eclipse'
+    if pid in ['2488', '2765', '7686', '10300', '11712']:
+        return 'phase curve'
+    if pid in ['7068']:
+        return 'stare'
+
     # Guess from orbital phase when phase constraints exist:
     if obs['period'] is not None:
         phase = obs['phase_start']
         duration = obs['phase_duration']
         if duration > 1.0:
             event = 'phase curve'
-        elif (phase<1.0) and (phase+duration>1.0):
-            event = 'transit'
-        else:
+        elif np.abs(phase-0.5) < 0.25:
             event = 'eclipse'
+        else:
+            event = 'transit'
 
     # Use label (can override phase-guess, and that's intentional):
     if 'trans' in label:
@@ -431,12 +441,6 @@ def guess_event_type(obs):
         event = 'phase curve'
     elif 'eclipse' in label or 'emis' in label or 'occultat' in label:
         event = 'eclipse'
-
-    # Hardcoded patches for missing information:
-    if pid in ['2149', '2589', '3385', '5177', '5882', '6456']:
-        event = 'transit'
-    elif pid in ['2488', '2765']:
-        event = 'phase curve'
 
     if event == '':
         obs_id = obs['observation']
@@ -592,6 +596,7 @@ def parse_program(pid, path=None, to_csv=None):
                     for child in obs.find(".//apt:SpecialRequirements", ns)
                 ]).tolist()
                 phase_reqs = obs.find(".//apt:PeriodZeroPhase", ns)
+                between_reqs = obs.findall(".//apt:Between", ns)
                 time_series_reqs = obs.find(".//apt:TimeSeriesObservation", ns)
                 if time_series_reqs is None:
                     continue
@@ -615,7 +620,7 @@ def parse_program(pid, path=None, to_csv=None):
                 norm_target = normalize_name(target_name)
                 observation['target'] = norm_target
                 observation['target_in_program'] = target_name
-
+                observation['planets'] = 'none'
                 observation['ra'] = targets[target_id]['ra']
                 observation['dec'] = targets[target_id]['dec']
                 observation['instrument'] = obs.find('apt:Instrument', ns).text
@@ -638,6 +643,12 @@ def parse_program(pid, path=None, to_csv=None):
                 observation['phase_reqs'] = None
                 if phase_reqs is not None:
                     observation['phase_reqs'] = phase_reqs.attrib
+                observation['between_reqs'] = None
+                if between_reqs is not None:
+                    observation['between_reqs'] = [
+                        bet_req.attrib for bet_req in between_reqs
+                    ]
+
                 # Add orbital-phase information when possible
                 period, phase, obs_duration = _get_phase_info(observation)
                 if period is None:
@@ -657,7 +668,7 @@ def parse_program(pid, path=None, to_csv=None):
         if target.is_transiting
     ]
     for obs in observations:
-        obs['planets'] = get_planet_letters(obs, targets)
+        obs['planets'] = ' '.join(get_planet_letters(obs, targets))
 
     # Write to CSV file
     if to_csv is not None:
@@ -833,12 +844,23 @@ def get_planet_letters(obs, targets, verbose=False):
         return ['d']
     if pid=='9235' and obs_id=='5':
         return ['b']
+    if pid in ['7068', '10300']:
+        return ['none']
+    if pid=='11302':
+        return ['b']
 
-    target_name = obs['target']
+    target_name = obs['target_in_program']
     # The planet is in the 'target'
     if target_name[-1].lower() == 'b' and not target_name[-2].isalpha():
         name = target_name[:-1]
         planet_letters = ['b']
+        if verbose:
+            print(f'{info}{target_name:15}  {planet_letters}')
+        return planet_letters
+
+    if target_name[-2:] == '_c':
+        name = target_name[:-2]
+        planet_letters = ['c']
         if verbose:
             print(f'{info}{target_name:15}  {planet_letters}')
         return planet_letters
@@ -849,7 +871,7 @@ def get_planet_letters(obs, targets, verbose=False):
     planets = []
     for target in targets:
         aliases = [target.planet] + target.aliases
-        hosts = [get_host(alias) for alias in aliases]
+        hosts = [target.host] + [get_host(alias) for alias in aliases]
         if name in hosts:
             planets.append(target)
 

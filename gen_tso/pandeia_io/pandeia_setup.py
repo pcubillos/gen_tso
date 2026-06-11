@@ -32,7 +32,7 @@ def check_latest_pandeia_version():
     return last_pandeia
 
 
-def check_pandeia_ref_data(latest_version):
+def check_pandeia_ref_data(latest_version, data_type='data'):
     """
     Check that the Pandeia reference data environment variable exists.
     Check that the path exists.
@@ -45,36 +45,42 @@ def check_pandeia_ref_data(latest_version):
     pandeia_url = (
         "https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation"
     )
+    if data_type == 'data':
+        env_var = 'pandeia_refdata'
+    elif data_type == 'psf':
+        env_var = 'PSF_DIR'
+    version_file = f'VERSION_{data_type.upper()}'
 
-    if "pandeia_refdata" not in os.environ:
-        output = "Missing '$pandeia_refdata' environment variable"
+    if env_var not in os.environ:
+        output = f"Missing '${env_var}' environment variable"
     else:
-        refdata_path = os.environ['pandeia_refdata']
+        refdata_path = os.environ[env_var]
         try:
-            with open(f"{refdata_path}/VERSION_PSF") as fp:
+            with open(f"{refdata_path}/{version_file}") as fp:
                 data_version = fp.readline().strip()
             if data_version == latest_version:
                 output = (
-                    f"Pandeia reference data version {data_version} is up to "
-                    f"date<br>$pandeia_refdata={refdata_path}"
+                    f"Pandeia {data_type} version {data_version} is up to "
+                    f"date<br>${env_var}={refdata_path}"
                 )
             else:
                 output = (
-                    f"Pandeia reference data version: {data_version} < "
+                    f"Pandeia {data_type} version: {data_version} < "
                     f"pandeia.engine version {latest_version}"
                 )
         except OSError:
-            output = f"Invalid 'pandeia_refdata' path: {repr(refdata_path)}"
+            output = f"Invalid '${env_var}' path, could not reach '{version_file}' in: {repr(refdata_path)}"
 
     if 'up to date' in output:
-        return ui.HTML(f'<span style="color:#0B980D">{output}</span>')
+        return ui.HTML(f'<p><span style="color:#0B980D">{output}</span></p>')
 
     return ui.span(
         ui.HTML(
-            f'<span style="color:red">{output}.</span> '
+            f'<p><span style="color:red">{output}.</span> '
             'Please follow the instructions in section 3.1 of '
         ),
         ui.tags.a(pandeia_url, href=pandeia_url, target="_blank"),
+        ui.HTML('</p>'),
     )
 
 
