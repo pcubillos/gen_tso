@@ -244,6 +244,7 @@ def normalize_name(target):
     name = name.replace('WOLF-', 'Wolf ')
     name = name.replace('HATP', 'HAT-P-')
     name = name.replace('AU-MIC', 'AU Mic')
+    name = name.replace('PSOJ', 'PSO J')
 
     # Custom correction before going over prefixes
     if name.startswith('NAME-'):
@@ -252,7 +253,7 @@ def normalize_name(target):
     name = name.replace('GL', 'GJ')
     prefixes = [
         'L', 'G', 'HD', 'GJ', 'LTT', 'LHS', 'HIP', 'WD',
-        'LP', '2MASS', 'PSR', 'IRAS', 'TYC', 'TIC', 'PSO',
+        'LP', '2MASS', 'PSR', 'IRAS', 'TYC', 'TIC',
     ]
     for prefix in prefixes:
         prefix_len = len(prefix)
