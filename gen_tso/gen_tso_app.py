@@ -2,10 +2,8 @@
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 import json
-import math
 import os
 from pathlib import Path
-import sys
 import textwrap
 from datetime import timedelta, datetime
 
@@ -24,6 +22,7 @@ from gen_tso import plotly_io as plots
 from gen_tso import custom_shiny as cs
 from gen_tso.utils import (
     ROOT,
+    parser,
     get_latest_pandeia_release,
     get_version_advice,
     get_pandeia_advice,
@@ -66,8 +65,27 @@ from gen_tso.export_script import (
 )
 
 
+cli_args = parser()
+
+# Custom targets
+default_custom_targets = os.path.join(ROOT, 'data', 'custom_targets.txt')
+if cli_args.targets is not None:
+    if not os.path.exists(cli_args.targets):
+        print(f"\n~ custom targets file not found: {repr(cli_args.targets)} ~\n")
+        custom_targets = None
+    elif cli_args.targets.lower().endswith('.csv'):
+        custom_targets = os.path.join(ROOT, 'data', 'tmp_custom_targets.txt')
+        cat.load_csv_targets(cli_args.targets, custom_targets)
+    else:
+        custom_targets = cli_args.targets
+elif os.path.exists(default_custom_targets):
+    custom_targets = default_custom_targets
+else:
+    custom_targets = None
+
+
 def load_catalog():
-    catalog = cat.Catalog()
+    catalog = cat.Catalog(custom_targets)
     is_jwst = np.array([target.is_jwst_planet for target in catalog.targets])
     is_transit = np.array([target.is_transiting for target in catalog.targets])
     is_confirmed = np.array([target.is_confirmed for target in catalog.targets])
@@ -166,9 +184,9 @@ bookmarked_spectra = {
 
 # Load spectra from user-defined folder and/or from default folder
 loading_folders = []
-argv = [arg for arg in sys.argv if arg != '--debug']
-if len(argv) == 2:
-    loading_folders.append(os.path.realpath(argv[1]))
+if cli_args.models is not None:
+    models_path = os.path.realpath(cli_args.models)
+    loading_folders.append(models_path)
 loading_folders.append(f'{ROOT}data/models')
 current_dir = os.path.realpath(os.getcwd())
 
@@ -184,7 +202,7 @@ for location in loading_folders:
 
 nasa_url = 'https://exoplanetarchive.ipac.caltech.edu/overview'
 stsci_url = 'https://www.stsci.edu/jwst/science-execution/program-information?id=PID'
-cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/'
+cdnjs = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/'
 
 # Depth and SED units, ensure they are consistent with u.read_spectrum_file()
 depth_units = [
@@ -263,8 +281,18 @@ app_ui = ui.page_fluid(
         ui.span(
             ui.HTML(
                 "<b>Gen TSO</b>: A general JWST simulator "
-                "for exoplanet time-series observations ("
+                "for exoplanet time series ("
             ),
+            ui.tooltip(
+                ui.input_action_link(
+                    id='main_status',
+                    label='',
+                    icon=fa.icon_svg("gear", fill='black'),
+                ),
+                "status",
+                placement='bottom',
+            ),
+            ', ',
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("book", fill='black'),
@@ -274,24 +302,14 @@ app_ui = ui.page_fluid(
                 "documentation",
                 placement='bottom',
             ),
-            ',',
+            ', ',
             ui.tooltip(
                 ui.input_action_link(
-                    id='main_settings',
-                    label='',
-                    icon=fa.icon_svg("gear", fill='black'),
-                ),
-                "settings",
-                placement='bottom',
-            ),
-            ',',
-            ui.tooltip(
-                ui.input_action_link(
-                    id='BibTex_Citation',
+                    id='bibtex',
                     label='',
                     icon=fa.icon_svg("book-open-reader", fill='black'),
                 ),
-                "BibTex Citation",
+                "citation",
                 placement='bottom',
             ),
 
@@ -434,6 +452,54 @@ app_ui = ui.page_fluid(
                     placement="right",
                     id="targets_popover",
                 ),
+                # Hidden section to hold switches for conditionals
+                ui.panel_conditional(
+                    'false',
+                    ui.input_action_button(
+                        id="konami_sequence_trigger",
+                        label="",
+                    ),
+                    ui.input_switch(
+                        id="is_custom",
+                        label="custom",
+                        value=False,
+                    ),
+                    ui.input_switch(
+                        id="has_sed_bookmarks",
+                        label="has SED",
+                        value=False,
+                    ),
+                    ui.input_switch(
+                        id="has_depth_bookmarks",
+                        label="has transits",
+                        value=False,
+                    ),
+                ),
+                # Customizing buttons
+                ui.panel_conditional(
+                    # Keep hidden while we fine-tune the customs details
+                    #"input.is_custom",
+                    "false",
+                    ui.layout_column_wrap(
+                        ui.input_action_button(
+                            id='save_custom_target',
+                            label='Save changes',
+                            class_='btn btn-outline-success btn-sm',
+                        ),
+                        #ui.input_action_button(
+                        #    id='clear_custom',
+                        #    label='Clear changes',
+                        #    class_='btn btn-outline-success btn-sm',
+                        #),
+                        width=1/2,
+                        fixed_width=False,
+                        heights_equal='all',
+                        gap='7px',
+                        fill=False,
+                        fillable=True,
+                    ),
+                ),
+                # The target
                 ui.output_ui('target_label'),
                 ui.input_selectize(
                     id='target',
@@ -446,10 +512,10 @@ app_ui = ui.page_fluid(
                 ui.layout_column_wrap(
                     # Row 1
                     ui.p("T_eff (K):"),
-                    ui.input_numeric("t_eff", "", value=1400.0, min=0, step=10.0),
+                    ui.input_numeric("t_eff", "", value=1400, min=100, step=100),
                     # Row 2
                     ui.p("log(g):"),
-                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.05),
+                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.1),
                     # Row 3
                     ui.input_select(
                         id='magnitude_band',
@@ -462,7 +528,6 @@ app_ui = ui.page_fluid(
                         label="",
                         value=10.0,
                         step=0.1,
-                        #placeholder="magnitude",
                     ),
                     width=1/2,
                     fixed_width=False,
@@ -547,7 +612,7 @@ app_ui = ui.page_fluid(
                     ),
                     # Row 2
                     ui.output_text('transit_dur_label'),
-                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.05),
+                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.1),
                     # Row 3
                     ui.p("Obs_dur (h):"),
                     ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
@@ -558,9 +623,6 @@ app_ui = ui.page_fluid(
                     fill=False,
                     fillable=True,
                 ),
-                # Dynamic save button - only shows when there are unsaved changes
-                ui.output_ui("save_changes_button"),
-                
                 ui.input_select(
                     id="planet_model_type",
                     label=ui.output_ui('depth_label_text'),
@@ -914,181 +976,95 @@ def server(input, output, session):
     latest_pandeia = reactive.Value(None)
 
     # Track if current target has unsaved changes
-    has_changes = reactive.value(False)
     original_values = reactive.value({})
 
     @reactive.effect
     @reactive.event(input.target)
-    def _():
-        """Store original values when target selected"""
+    def load_target_defaults():
+        """Store target's original values when selected"""
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
-        
-        # Store original values from the target object itself (not UI)
-        # This captures the catalog values before any user modifications
-        def safe_float(val, default=0.0):
-            try:
-                if val is None or (isinstance(val, float) and np.isnan(val)):
-                    return default
-                return float(val)
-            except (ValueError, TypeError):
-                return default
-        
-        # Get magnitude band - default to 2mass,ks
-        band = '2mass,ks'
-        magnitude = safe_float(target.ks_mag, 10.0)
-        
+
         original_values.set({
-            't_eff': safe_float(target.teff, 1400.0),
-            'log_g': safe_float(target.logg_star, 4.5),
-            'magnitude': magnitude,
-            'magnitude_band': band,
-            't_dur': safe_float(target.transit_dur, 2.0),
+            't_eff': target.teff,
+            'log_g': target.logg_star,
+            'ks_mag': target.ks_mag,
+            't_dur': target.transit_dur,
         })
-        has_changes.set(False)
+        ui.update_switch('is_custom', value=False)
 
     @reactive.effect
     @reactive.event(input.t_eff, input.log_g, input.magnitude, input.magnitude_band, input.t_dur)
-    def _():
-        """Detect changes in any input field"""
+    def detect_target_changes():
+        """Detect changes in target input fields"""
         orig = original_values.get()
         if not orig:
             return
-        
-        try:
-            current_t_eff = float(input.t_eff())
-            current_log_g = float(input.log_g())
-            current_magnitude = float(input.magnitude())
-            current_band = input.magnitude_band()
-            current_t_dur = float(input.t_dur())
-            
-            orig_t_eff = float(orig.get('t_eff', 0))
-            orig_log_g = float(orig.get('log_g', 0))
-            orig_magnitude = float(orig.get('magnitude', 0))
-            orig_band = orig.get('magnitude_band', '')
-            orig_t_dur = float(orig.get('t_dur', 0))
-            
-            changed = (
-                current_t_eff != orig_t_eff or
-                current_log_g != orig_log_g or
-                current_magnitude != orig_magnitude or
-                current_band != orig_band or
-                current_t_dur != orig_t_dur
-            )
-            has_changes.set(changed)
-        except (ValueError, TypeError):
-            has_changes.set(False)
 
-    @render.ui
-    def save_changes_button():
-        """Show save button only when there are changes"""
-        if has_changes.get():
-            return ui.input_action_button('save_target', 'Save Changes', class_='btn-success')
-        return ui.TagList()
+        orig_t_eff = orig.get('t_eff')
+        orig_log_g = orig.get('log_g')
+        orig_ks_mag = orig.get('ks_mag')
+        orig_t_dur = orig.get('t_dur')
+
+        t_eff = input.t_eff()
+        log_g = input.log_g()
+        band = input.magnitude_band()
+        mag = input.magnitude()
+        t_dur = input.t_dur()
+
+        is_custom = bool(
+            t_eff != orig_t_eff or
+            log_g != orig_log_g or
+            (band == '2mass,ks' and mag != orig_ks_mag) or
+            t_dur != orig_t_dur
+        )
+        ui.update_switch('is_custom', value=is_custom)
+
 
     @reactive.effect
-    @reactive.event(input.save_target)
+    @reactive.event(input.save_custom_target)
     def _():
-        """Save modified target to my_custom_targets.txt"""
-        import os
-        
+        """Save modified target to custom_targets.txt"""
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         if target is None:
             return
-        
-        # Update target object with current UI values (convert to proper types)
-        try:
-            target.teff = float(input.t_eff())
-        except (ValueError, TypeError):
-            target.teff = np.nan
-            
-        try:
-            target.logg_star = float(input.log_g())
-        except (ValueError, TypeError):
-            target.logg_star = np.nan
-        
-        try:
-            target.transit_dur = float(input.t_dur())
-        except (ValueError, TypeError):
-            target.transit_dur = np.nan
-        
-        # Update ks_mag if magnitude_band is 2mass,ks
+
+        # Update target with UI values
+        target.teff = _safe_num(input.t_eff(), default=np.nan)
+        target.logg_star = _safe_num(input.log_g(), default=np.nan)
+        target.transit_dur = _safe_num(input.t_dur(), default=np.nan)
         if input.magnitude_band() == '2mass,ks':
-            try:
-                target.ks_mag = float(input.magnitude())
-            except (ValueError, TypeError):
-                target.ks_mag = np.nan
-        
-        def fmt(val):
-            if val is None or (isinstance(val, float) and np.isnan(val)):
-                return 'nan'
-            return str(val)
-        
-        # Read existing custom targets
-        custom_file = os.path.join(ROOT, 'data', 'my_custom_targets.txt')
-        try:
-            existing_lines = []
-            target_found = False
-            
-            if os.path.exists(custom_file):
-                with open(custom_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                
-                # Find and replace existing target or keep other lines
-                i = 0
-                while i < len(lines):
-                    line = lines[i]
-                    if line.startswith('>'):
-                        host_name = line.split(':')[0][1:].strip()
-                        if host_name == target.host:
-                            # Found the target, skip it and its planet line(s)
-                            target_found = True
-                            i += 1
-                            # Skip planet lines (lines starting with space)
-                            while i < len(lines) and lines[i].startswith(' '):
-                                i += 1
-                            continue
-                    existing_lines.append(line)
-                    i += 1
-            
-            # Write back all lines plus the updated target
-            with open(custom_file, 'w', encoding='utf-8', newline='\n') as out:
-                # Write header if file was empty
-                if not existing_lines or not any(line.startswith('#') for line in existing_lines):
-                    out.write("# > host: RA(deg) dec(deg) Ks_mag rstar(rsun) mstar(msun) teff(K) log_g metallicity(dex)\n")
-                    out.write("# planet: T14(h) rplanet(rearth) mplanet(mearth) semi-major_axis(AU) period(d) t_eq(K) is_min_mass\n")
-                
-                # Write existing targets
-                for line in existing_lines:
-                    out.write(line)
-                
-                # Add the updated/new target with proper formatting
-                is_min = 0 if target.is_min_mass is False or target.is_min_mass == 0 else 1
-                out.write(f">{target.host}: {fmt(target.ra)} {fmt(target.dec)} {fmt(target.ks_mag)} {fmt(target.rstar)} {fmt(target.mstar)} {fmt(target.teff)} {fmt(target.logg_star)} {fmt(target.metal_star)}\n")
-                out.write(f" {target.planet}: {fmt(target.transit_dur)} {fmt(target.rplanet)} {fmt(target.mplanet)} {fmt(target.sma)} {fmt(target.period)} nan {is_min}\n")
-            
-            # Update original values to current values after successful save
-            original_values.set({
-                't_eff': input.t_eff(),
-                'log_g': input.log_g(),
-                'magnitude': input.magnitude(),
-                'magnitude_band': input.magnitude_band(),
-                't_dur': input.t_dur(),
-            })
-            has_changes.set(False)
-            ui.notification_show(f"Saved changes for {target.planet} to {custom_file}", type='message', duration=3)
-        except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"Error saving target: {error_details}")
-            ui.notification_show(f"Error saving: {str(e)}", type='error', duration=5)
+            target.ks_mag = _safe_num(input.magnitude(), default=np.nan)
+
+        custom_catalog = f'{ROOT}data/custom_targets.txt'
+        custom_targets = cat.load_targets(custom_catalog)
+        # Search and replace or add custom target
+        custom_planets = [target.planet for target in custom_targets]
+        if target.planet in custom_planets:
+            idx = custom_planets.index(target.planet)
+            custom_targets[idx] = target
+        else:
+            custom_targets.append(target)
+        cat.save_targets(custom_targets, custom_catalog)
+
+        # Update original values to current values after successful save
+        original_values.set({
+            't_eff': input.t_eff(),
+            'log_g': input.log_g(),
+            'ks_mag': input.magnitude(),
+            't_dur': input.t_dur(),
+        })
+        ui.update_switch('is_custom', value=False)
+        msg = f"Updated {target.planet} into {custom_catalog}"
+        ui.notification_show(msg, type='message', duration=6)
+
 
     @reactive.effect
-    @reactive.event(input.main_settings)
-    def _():
+    @reactive.event(input.main_status)
+    def status_modal():
         with open(f'{ROOT}/data/last_updated_trexolist.txt', 'r') as f:
             last_trexo = f.readline().replace('_','-')
         with open(f'{ROOT}/data/last_updated_nea.txt', 'r') as f:
@@ -1099,10 +1075,11 @@ def server(input, output, session):
             latest_pandeia.set(get_latest_pandeia_release())
 
         gen_tso_status = get_version_advice(gen_tso)
-        pandeia_status = get_pandeia_advice(
+        pandeia_version_status = get_pandeia_advice(
             pandeia.engine, latest_pandeia.get(),
         )
-        pandeia_ref_status = check_pandeia_ref_data(latest_pandeia.get())
+        pandeia_data_status = check_pandeia_ref_data(latest_pandeia.get())
+        pandeia_psf_status = check_pandeia_ref_data(latest_pandeia.get(), 'psf')
         pysynphot_data = check_pysynphot()
 
         m = ui.modal(
@@ -1148,19 +1125,20 @@ def server(input, output, session):
                 gap='10px',
                 class_="px-0 py-0 mx-0 my-0",
             ),
-            pandeia_status,
-            pandeia_ref_status,
+            pandeia_version_status,
+            pandeia_data_status,
+            pandeia_psf_status,
             ui.hr(),
-            title=ui.markdown("**Settings**"),
+            title=ui.markdown("**Status**"),
             easy_close=True,
             size='l',
         )
         ui.modal_show(m)
 
     @reactive.effect
-    @reactive.event(input.BibTex_Citation)
+    @reactive.event(input.bibtex)
     def _():
-        bibtex = textwrap.dedent("""
+        bibtex = textwrap.dedent("""\
         @ARTICLE{Cubillos2024paspGenTSO,
             author = {Cubillos, Patricio E.},
             title = "{Gen TSO: A General JWST Simulator for Exoplanet Time-series Observations}",
@@ -1181,8 +1159,13 @@ def server(input, output, session):
         }
         """)
 
+        color_syntax_bibtex = ui.HTML(
+            f'<pre><code class="language-java">{bibtex}</code></pre>'
+            "<script>hljs.highlightAll();</script>"
+        )
+
         m = ui.modal(
-            ui.HTML(f'<pre style=" font-size:13px; margin:0;">{bibtex}</pre>'),
+            ui.HTML(f'<pre style=" font-size:13px; margin:0;">{color_syntax_bibtex}</pre>'),
             ui.div(
                 ui.input_action_button(
                     id='copy_bibtex',
@@ -1191,13 +1174,13 @@ def server(input, output, session):
                 ),
                 class_='d-flex justify-content-end mb-2'
             ),
-            title="BibTex Citation",
+            title="Gen TSO bibtex citation",
             size='l',
             easy_close=True,
             fade=True,
         )
         clipboard.set(bibtex)
-        ui.modal_show(m) 
+        ui.modal_show(m)
 
     @reactive.Effect
     @reactive.event(input.update_trexo)
@@ -1553,7 +1536,7 @@ def server(input, output, session):
             if target_focus == 'science':
                 ui.update_select('magnitude_band', selected=norm_band)
                 ui.update_numeric('magnitude', value=float(norm_mag))
-                                  
+
         # sed_type, sed_model, norm_band, norm_mag, sed_label
         if target_focus == 'science':
             ui.update_select('sed_type', selected=sed_type)
@@ -1605,7 +1588,7 @@ def server(input, output, session):
             ui.update_numeric('tso_wl_min', value=min_wl)
             ui.update_numeric('tso_wl_max', value=max_wl)
 
-            resolution = _safe_num(input.tso_resolution.get(), default=250, cast=int)
+            resolution = _safe_num(input.tso_resolution.get(), default=250)
             n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
             tso_draw.set(draw(tso['tso'], resolution, n_obs))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
@@ -2010,23 +1993,21 @@ def server(input, output, session):
     @reactive.event(input.target_filter, update_catalog_flag)
     def _():
         update_catalog_flag.get()
-        # precompute custom mask
-        custom_mask = np.array([getattr(t, 'is_custom', False) for t in catalog.targets], dtype=bool)
+        custom_mask = np.array(
+            [getattr(t, 'is_custom', False) for t in catalog.targets],
+            dtype=bool,
+        )
 
-        # If user requests "custom" -> show only custom targets
+        mask = np.zeros(nplanets, bool)
+        if 'jwst' in input.target_filter.get():
+            mask |= is_jwst
+        if 'transit' in input.target_filter.get():
+            mask |= is_transit
+        if 'non_transit' in input.target_filter.get():
+            mask |= ~is_transit
+        if 'tess' in input.target_filter.get():
+            mask |= ~is_confirmed
         if 'custom' in input.target_filter.get():
-            mask = custom_mask.copy()
-        else:
-            mask = np.zeros(nplanets, bool)
-            if 'jwst' in input.target_filter.get():
-                mask |= is_jwst
-            if 'transit' in input.target_filter.get():
-                mask |= is_transit
-            if 'non_transit' in input.target_filter.get():
-                mask |= ~is_transit
-            if 'tess' in input.target_filter.get():
-                mask |= ~is_confirmed
-            # always include custom targets unless "custom only" selected
             mask |= custom_mask
 
         targets = [
@@ -2273,16 +2254,13 @@ def server(input, output, session):
             )
 
         custom_badge = None
-        if target is not None:
-            is_custom = getattr(target, "is_custom", False)
-            if is_custom:
-                custom_badge = ui.tooltip(
-                    ui.tags.span(
-                        fa.icon_svg("tag", fill='green'),
-                    ),
-                    "This is a custom target",
-                    placement='top',
-                )
+        is_custom = getattr(target, "is_custom", False)
+        if is_custom:
+            custom_badge = ui.tooltip(
+                fa.icon_svg("circle-info", fill='#15B01A'),
+                "This is a custom target",
+                placement='top',
+            )
 
         return ui.span(
             'Science target ',
@@ -2313,17 +2291,17 @@ def server(input, output, session):
         if name in target.aliases:
             ui.update_selectize('target', selected=target.planet)
 
-        def to_float(v):
-            """Convert value to float, return math.nan for empty/invalid"""
+        def to_float(value):
+            """Convert value to float, return NaN for empty/invalid"""
+            if value is None:
+                return np.nan
             try:
-                if v is None:
-                    return math.nan
-                s = str(v).strip()
+                s = str(value).strip()
                 if s == '':
-                    return math.nan
+                    return np.nan
                 return float(s)
             except Exception:
-                return math.nan
+                return np.nan
 
         # Physical properties:
         if target.planet in cache_target:
@@ -2370,7 +2348,7 @@ def server(input, output, session):
         else:
             teq_planet = np.round(target.eq_temp, decimals=1)
             if np.isnan(teq_planet):
-                teq_planet =  0.0
+                teq_planet = 0.0
             rprs_square = target.rprs**2.0
             if np.isnan(rprs_square):
                 rprs_square = 0.0
@@ -2466,7 +2444,7 @@ def server(input, output, session):
         """Clear all bookmarked SEDs"""
         bookmarked_spectra['sed'].clear()
         bookmarked_sed.set(False)
-        update_sed_flag.set('cleared')  # trigger UI updates
+        update_sed_flag.set('cleared')
         ui.notification_show("Cleared all SED bookmarks", type="message", duration=3)
 
 
@@ -2532,7 +2510,7 @@ def server(input, output, session):
         obs_geometry = input.obs_geometry.get()
         bookmarked_spectra[obs_geometry].clear()
         bookmarked_depth.set(False)
-        update_depth_flag.set('cleared')  # trigger UI updates
+        update_depth_flag.set('cleared')
         ui.notification_show(f"Cleared all {obs_geometry} depth bookmarks", type="message", duration=3)
 
 
@@ -2610,7 +2588,7 @@ def server(input, output, session):
             return
         transit_dur = t_dur_val
         settling = req(input.settling_time).get()
-        
+
         baseline = req(input.baseline_time).get()
         min_baseline = req(input.min_baseline_time).get()
         baseline = np.clip(baseline*transit_dur, min_baseline, np.inf)
@@ -2813,45 +2791,26 @@ def server(input, output, session):
         """Switch to make the integrations match observation duration"""
         if input.mode.get() == 'target_acq':
             return
+
         match_dur = input.integs_switch.get()
         if not match_dur:
             ui.update_numeric('integrations', value=1)
             return
 
-        # Handles empty or invalid observation duration when pressing match integrations
-        obs_val = req(input.obs_dur).get()
-        if obs_val is None or obs_val == "":
-            ui.notification_show(
-                ui.markdown("**Error:**<br>Observation duration is empty — enter a value to match integrations"),
-                type="error",
-                duration=5,
-            )
-            ui.update_numeric('integrations', value=1)
+        obs_dur = input.obs_dur.get()
+        ngroup = input.ngroup.get()
+        if obs_dur is None or ngroup is None:
             return
-        try:
-            obs_dur = float(obs_val)
-        except (ValueError, TypeError):
-            ui.notification_show(
-                ui.markdown("**Error:**<br>Observation duration is not a valid number"),
-                type="error",
-                duration=5,
-            )
-            ui.update_numeric('integrations', value=1)
-            return
-
-        #obs_dur = float(req(input.obs_dur).get())
 
         inst = input.instrument.get().lower()
-        ngroup = input.ngroup.get()
         readout = input.readout.get()
         subarray = input.subarray.get()
-        if ngroup is None:
-            return
         integs, exp_time = jwst.bin_search_exposure_time(
             inst, subarray, readout, ngroup, obs_dur,
         )
         if exp_time == 0.0:
             return
+
         ui.update_numeric('integrations', value=integs)
 
 
@@ -3072,7 +3031,7 @@ def server(input, output, session):
             return
         key, tso_label = tso_key.split('_', maxsplit=1)
         tso = tso_runs[key][tso_label]
-        resolution = int(_safe_num(input.tso_resolution.get(), default=250, cast=int))
+        resolution = _safe_num(input.tso_resolution.get(), default=250)
         units = input.plot_tso_units.get()
 
         min_depth, max_depth, step = jwst._get_tso_depth_range(
@@ -3092,7 +3051,7 @@ def server(input, output, session):
         tso = tso_runs[key][tso_label]
 
         n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
-        resolution = _safe_num(input.tso_resolution.get(), default=250, cast=int)
+        resolution = _safe_num(input.tso_resolution.get(), default=250)
         tso_draw.set(draw(tso['tso'], resolution, n_obs))
 
 
@@ -3125,9 +3084,6 @@ def server(input, output, session):
             cache_acquisition[target.host]['selected'] is not None
         )
 
-        depth_label = parse_obs(input)[1]
-        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
-
         if ngroup is None or parse_sed(input, spectra)[-1] is None:
             warning_text.set(warnings)
             return ui.HTML('<pre> </pre>')
@@ -3138,6 +3094,7 @@ def server(input, output, session):
             depth_label = ''
         else:
             run_type = obs_geometry.capitalize()
+            depth_label = parse_obs(input)[1]
 
         report_text = jwst._print_pandeia_exposure(
             inst, subarray, readout, ngroup, nint,
@@ -3177,26 +3134,13 @@ def server(input, output, session):
             ngroup, nint, run_type, sed_label, depth_label,
         )
 
-        tso_run = None
-        display_key = input.display_tso_run.get()
-        if display_key:
-            try:
-                dkey, dlabel = display_key.split('_', maxsplit=1)
-            except Exception:
-                dkey = dlabel = None
-            if dkey == run_type and dlabel in tso_runs.get(run_type, {}):
-                tso_run = tso_runs[run_type][dlabel]
-
-        if tso_run is None and tso_label in tso_runs.get(run_type, {}):
+        if tso_label in tso_runs[run_type]:
             tso_run = tso_runs[run_type][tso_label]
-
-        if tso_run is not None:
             warnings = tso_run['warnings']
-            try:
-                stored_td = float(tso_run.get('transit_dur', 0.0))
-            except Exception:
-                stored_td = 0.0
-            if abs(transit_dur - stored_td) < 1e-6:
+            transit_dur = _safe_num(input.t_dur.get(), default=-1.0)
+            stored_dur = tso_run.get('transit_dur', 0.0)
+            relative_diff = np.abs(1.0 - transit_dur/stored_dur)
+            if relative_diff < 0.01:
                 report_text += f'<br><br>{tso_run["stats"]}'
 
         warning_text.set(warnings)

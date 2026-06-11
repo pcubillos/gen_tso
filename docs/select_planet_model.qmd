@@ -53,14 +53,14 @@ application.  Users can do this by indicating a folder from where to
 look for models when initializing the application from the prompt, e.g.:
 
 ```bash
-tso path_to_model_files
+tso -m path_to_model_files
 ```
 
 A convenient technique is to `cd` into the folder where one has the models
 and then start the application with:
 
 ```bash
-tso .
+tso -m .
 ```
 
 Transit models in the selected folder will be identified as such if they

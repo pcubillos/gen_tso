@@ -37,7 +37,7 @@ The executable will be located inside the `bin` subfolder. We will need to
 get the absolute path to it, It should be something like:
 
 ```bash
-/Applications/APT\\ 2025.1/bin/apt
+/Applications/APT\\ 2025.7.2/bin/apt
 ```
 
 The following script shows how to fetch the APT and status for the programs:
@@ -45,11 +45,11 @@ The following script shows how to fetch the APT and status for the programs:
 ```python
 import gen_tso.catalogs as cat
 from gen_tso.utils import KNOWN_PROGRAMS
-# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 4
+# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 5
 
 
 # Path to APT executable:
-apt_command = '/Applications/APT\\ 2025.1/bin/apt'
+apt_command = '/Applications/APT\\ 2025.7.2/bin/apt'
 
 # Fetch all TSO programs:
 programs = KNOWN_PROGRAMS
@@ -62,7 +62,7 @@ After you installed APT on Linux, search for the folder where it was
 installed.  The path to the executable should be something like this:
 
 ```bash
-/home/user/ast/apt/APT_2025.1/APT
+/home/user/ast/apt/APT_2025.7.2/APT
 ```
 
 The following script shows how to fetch the APT and status for the programs:
@@ -70,11 +70,11 @@ The following script shows how to fetch the APT and status for the programs:
 ```python
 import gen_tso.catalogs as cat
 from gen_tso.utils import KNOWN_PROGRAMS
-# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 4
+# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 5
 
 
 # Path to APT executable:
-apt_command = '/home/user/ast/apt/APT_2025.1/APT'
+apt_command = '/home/user/ast/apt/APT_2025.7.2/APT'
 
 # Fetch all TSO programs:
 programs = KNOWN_PROGRAMS
@@ -87,7 +87,7 @@ Either on a Linux or OSX machine, you can create an environmental variable
 in your bash pointing to the APT executable, e.g.:
 
 ```bash
-export APT='/Applications/APT\ 2025.1/bin/apt'
+export APT='/Applications/APT\ 2025.7.2/bin/apt'
 ```
 
 then you can directly use that environmental variable in the script.
@@ -96,7 +96,7 @@ The following script shows how to fetch the APT and status for the programs:
 ```python
 import gen_tso.catalogs as cat
 from gen_tso.utils import KNOWN_PROGRAMS
-# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 4
+# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 5
 
 
 # APT's environmental variable:
@@ -179,7 +179,7 @@ csv file if desired.  Here's how:
 ```python
 from gen_tso import catalogs as cat
 from gen_tso.utils import KNOWN_PROGRAMS
-# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 4
+# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 5
 
 
 # A list of observations from all TSO programs
@@ -195,7 +195,7 @@ Set the `to_csv` argument to save the observations to a .csv file.
 ```python
 from gen_tso import catalogs as cat
 from gen_tso.utils import KNOWN_PROGRAMS
-# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 4
+# KNOWN_PROGRAMS is a list containing all known TSO PIDs up to cycle 5
 
 
 # Parse and save all programs to default .csv file

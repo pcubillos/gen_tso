@@ -77,11 +77,12 @@ def parse_depth_source(
         return transit_depth_script
 
     elif model_type == 'Blackbody':
+        teq = _safe_num(input.teq_planet.get(), default=1000.0)
         if rprs_text is None:
             rprs = np.sqrt(input.eclipse_depth.get() * 0.01)
             rprs_text = f'{rprs:.5f}'
         if teq_text is None:
-            teq_text = f'{input.teq_planet.get():.1f}'
+            teq_text = f'{teq:.1f}'
         transit_depth_script = f"""
     # The planet's {obs_geometry} spectrum:
     obs_type = {repr(obs_geometry)}
@@ -135,7 +136,7 @@ def export_script_fixed_values(
     sed_model = {{'wl': sed_wl, 'flux': flux}}
     """.strip()
     elif sed_type == 'blackbody':
-        t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
+        t_eff = _safe_num(input.t_eff.get(), default=1000.0)
         sed_script = f"sed_model = {t_eff}"
     else:
         sed_script = f"sed_model = {repr(sed_model)}"
@@ -175,7 +176,7 @@ def export_script_fixed_values(
     else:
         # Transit depth
         transit_depth_script = parse_depth_source(input, spectra)
-        transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+        transit_dur = _safe_num(input.t_dur.get())
         script += f"""
     {transit_depth_script}
 
@@ -242,15 +243,15 @@ def export_script_calculated_values(
         target_acq_mag = None
 
     req_saturation = saturation_fraction.get()
-    transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+    transit_dur = _safe_num(input.t_dur.get())
     planet_model_type, depth_label, rprs_sq, teq_planet = parse_obs(input)
 
     sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(
         input, spectra, target_acq_mag=target_acq_mag,
     )
     sed_warning = ""
-    t_eff = _safe_num(input.t_eff.get(), default=1400.0, cast=float)
-    log_g = _safe_num(input.log_g.get(), default=4.5, cast=float)
+    t_eff = _safe_num(input.t_eff.get(), default=1000.0)
+    log_g = _safe_num(input.log_g.get(), default=4.5)
     teff_text = 'target.teff' if t_eff == target.teff else f'{t_eff}'
     logg_text = 'target.logg_star' if log_g == target.logg_star else f'{log_g}'
 
@@ -313,8 +314,8 @@ def export_script_calculated_values(
         )
 
     # obs_duration
-    obs_dur = _safe_num(input.obs_dur.get(), default=1.0, cast=float)
-    transit_dur = _safe_num(input.t_dur.get(), default=2.0, cast=float)
+    obs_dur = _safe_num(input.obs_dur.get())
+    transit_dur = _safe_num(input.t_dur.get())
     is_target_tdur = np.abs(transit_dur - target.transit_dur) < 0.01
     tdur_text = 'target.transit_dur' if is_target_tdur else f'{transit_dur}'
 
@@ -374,7 +375,7 @@ def export_script_calculated_values(
     # The target ({name}):\
 """
 
-    teq = input.teq_planet.get()
+    teq = _safe_num(input.teq_planet.get(), default=1000.0)
     teq_text = 'target.eq_temp' if np.abs(teq-target.eq_temp)<1.0 else f'{teq}'
 
     rprs = np.sqrt(input.eclipse_depth.get() * 0.01)

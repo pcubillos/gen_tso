@@ -1,2 +1,3 @@
 nbformat
 nbclient
+griffe<2.0

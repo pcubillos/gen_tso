@@ -14,9 +14,9 @@ page-navigation: true
 A general TSO simulator for exoplanets with JWST
 </div>
 
-::: {.callout-note title="**Good News!**"}
+::: {.callout-note title="**Status**"}
 <span style="font-size: 1.2em; font-weight: bold; color: #1a73e8;">
-Gen TSO is now ready for JWST cycle 5 simulations! 🎉
+Gen TSO is up to date with Pandeia version 2026.2
 </span>
 :::
 
@@ -56,6 +56,45 @@ Then, you can launch the `Gen TSO` application with this prompt command:
 ```bash
 tso
 ```
+Run with ``-h`` to display the full list of command line options:
+```
+tso -h
+```
+
+<details>
+<summary>Click to expand command-line documentation</summary>
+
+```bash
+usage: tso [-h] [-v] [-m PATH] [-t FILE] [--debug]
+
+Launch the Gen TSO interactive application
+
+options:
+  -h, --help            show this help message and exit
+  -v, --version         show Gen TSO version
+  -m PATH, --models PATH
+                        include custom SED and planet spectra from input path
+  -t FILE, --targets FILE
+                        include custom targets from input file
+  --debug               run reloading the GUI when the source code is updated
+
+Other functionality:
+  usage: tso [--update_exo] [--update_programs] [--update_db]
+             [--update_custom CSV] [--add_custom CSV]
+
+  --update_exo          update NASA Exoplanet Archive
+  --update_programs     update JWST TSO programs
+  --update_db           check and update SED/synphot atlases
+  --update_custom CSV   update custom targets from csv file
+  --add_custom CSV      add new custom targets from csv file
+
+This is Gen TSO version 1.4.0
+Copyright (c) 2025-2026 Patricio Cubillos. GPL-2.0 license
+Documentation at: https://pcubillos.github.io/gen_tso
+```
+
+</details>
+
 
 ---
 
@@ -85,10 +124,10 @@ These are the available TSO modes for each instrument:
   <tbody>
     <tr>
         <td rowspan="3"><span data-qmd="__miri__"></span></td>
-        <td>lrsslitless</td> <td>5.0 &#8211; 12</td>
+        <td>lrsslitless</td> <td>5.0 &#8211; 12.5</td>
     </tr>
     <tr>
-        <td>lrsslit</td> <td>5.0 &#8211; 12</td>
+        <td>lrsslit</td> <td>5.0 &#8211; 12.5</td>
     </tr>
     <tr>
         <td>mrs_ts</td> <td>5.0 &#8211; 28</td>

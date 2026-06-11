@@ -32,16 +32,19 @@ If you find Numpy compilation issues when instaling `gen_tso`, it's better to in
 
 To use `pandeia` you need to download some files as per their [documentation](https://outerspace.stsci.edu/display/PEN/Pandeia+Engine+Installation).
 
-### 2.1 Reference data
+### 2.1 Reference data and PSF
 
-If you don't have it yet, download the latest pandeia reference data,
-unzip it, and place it in the folder pointed by `$pandeia_refdata`.
-Here's the current latest version:
-[https://stsci.box.com/v/pandeia-refdata-v2025p7-jwst](https://stsci.box.com/v/pandeia-refdata-v2025p7-jwst)
+The `pandeia` python package, you will need to download
+the respective (1) [reference
+data](https://stsci.box.com/v/pandeia-data-v2026p2-jwst) and (2) [PSF](https://stsci.box.com/v/pandeia-psfs-v2026p2-jwst) files.
 
-If this is your first time using pandeia, you likely need to setup a
-`$pandeia_refdata` environment variable (e.g., in your `~/.bashrc`,
-`~/.bash_profile`, or whichever bash file your machine uses).
+After unzipping them, make sure the environmental variables
+`$pandeia_refdata` and `$PSF_DIR` point to the respective folders
+containing `VERSION_DATA` and `VERSION_PSF` in the respective files.
+
+If this is your first time using pandeia, you likely need to setup the
+`$pandeia_refdata` and `$PSF_DIR` in your `~/.bashrc`,
+`~/.bash_profile`, or whichever bash file your machine uses.
 
 Then you will need to start a new prompt terminal or source your bash
 file, e.g.:
@@ -54,7 +57,11 @@ You should end up with something like this:
 
 ```bash
 echo $pandeia_refdata
-/home/USERNAME/data/pandeia_data-2025.7-jwst
+/home/USERNAME/data/.../pandeia_data-2025.7-jwst
+
+echo $PSF_DIR
+/home/USERNAME/data/.../pandeia_psfs-2026.2-jwst
+
 ```
 
 ### 2.2 Atlases data

@@ -36,11 +36,11 @@ bands_dict = {
     'johnson,v': 'V mag',
 }
 
-# Catch empty or invalid numerical values
-# Anytime a input is called as such: varname = input.varname.get()
-# replace with: varname = _safe_num(input.varname.get(), default=..., cast=...)
-# Only neccessary when val cant be empty string or None
+
 def _safe_num(val, default=0.0, cast=float):
+    """
+    Parse inputs from GUI, set default values for empty or invalid fields.
+    """
     if val is None or val == "":
         return default
     try:
@@ -159,7 +159,7 @@ def planet_model_name(input):
         return f'Flat transit ({transit_depth:.3f}%)'
     elif planet_model_type == 'Blackbody':
         eclipse_depth = input.eclipse_depth.get()
-        t_planet = input.teq_planet.get()
+        t_planet = _safe_num(input.teq_planet.get(), default=1000.0)
         return f'Blackbody({t_planet:.0f}K, rprs\u00b2={eclipse_depth:.3f}%)'
 
 
