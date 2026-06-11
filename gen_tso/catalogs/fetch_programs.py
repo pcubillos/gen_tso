@@ -414,12 +414,14 @@ def guess_event_type(obs):
     event = ''
 
     # Hardcoded patches for missing information:
-    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9709', '11831']:
+    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9256', '9709', '11831']:
         return 'transit'
     if pid=='1274' and obs['observation'] in ['4', '5']:
         return 'eclipse'
-    if pid in ['2488', '2765', '10300', '11712']:
+    if pid in ['2488', '2765', '7686', '10300', '11712']:
         return 'phase curve'
+    if pid in ['7068']:
+        return 'stare'
 
     # Guess from orbital phase when phase constraints exist:
     if obs['period'] is not None:
@@ -618,7 +620,7 @@ def parse_program(pid, path=None, to_csv=None):
                 norm_target = normalize_name(target_name)
                 observation['target'] = norm_target
                 observation['target_in_program'] = target_name
-
+                observation['planets'] = 'none'
                 observation['ra'] = targets[target_id]['ra']
                 observation['dec'] = targets[target_id]['dec']
                 observation['instrument'] = obs.find('apt:Instrument', ns).text
@@ -666,7 +668,7 @@ def parse_program(pid, path=None, to_csv=None):
         if target.is_transiting
     ]
     for obs in observations:
-        obs['planets'] = get_planet_letters(obs, targets)
+        obs['planets'] = ' '.join(get_planet_letters(obs, targets))
 
     # Write to CSV file
     if to_csv is not None:
@@ -842,8 +844,8 @@ def get_planet_letters(obs, targets, verbose=False):
         return ['d']
     if pid=='9235' and obs_id=='5':
         return ['b']
-    if pid=='9709' and 'TOI-2134' in obs['target_in_program']:
-        return ['b']
+    if pid in ['7068', '10300']:
+        return ['none']
     if pid=='11302':
         return ['b']
 
