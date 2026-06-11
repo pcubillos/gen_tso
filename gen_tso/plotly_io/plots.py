@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Patricio Cubillos
+# Copyright (c) 2025-2026 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
@@ -276,6 +276,7 @@ def plotly_filters(
 def plotly_sed_spectra(
         sed_models, labels, highlight_model=None,
         wl_range=None, units='mJy', wl_scale='linear', resolution=250.0,
+        flux_scale='linear',
         throughput=None,
     ):
     """
@@ -345,6 +346,7 @@ def plotly_sed_spectra(
     fig.update_yaxes(
         title_text=f'Flux ({units})',
         title_standoff=0,
+        type=flux_scale,
     )
 
     if wl_scale == 'log':

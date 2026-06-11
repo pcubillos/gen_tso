@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Patricio Cubillos
+# Copyright (c) 2025-2026 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
@@ -396,8 +396,6 @@ def _group_by_target(observations):
 def load_trexolists(grouped=False, trexo_file=None, curate=True):
     """
     Extract the JWST programs' data from a trexolists.csv file.
-    Note that trexolists know targets by their host star, not by
-    individual planets in a given system.
 
     Parameters
     ----------

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Patricio Cubillos
+# Copyright (c) 2025-2026 Patricio Cubillos
 # Gen TSO is open-source software under the GPL-2.0 license (see LICENSE)
 
 __all__ = [
@@ -1276,6 +1276,7 @@ def save_tso(filename, tso, lightweight=True):
 
 def simulate_tso(
         tso, n_obs=1, resolution=None, bins=None, noiseless=False,
+        err_scale=1.0,
     ):
     """
     Given a TSO dict from a pandeia TSO run, simulate a transit/eclipse
@@ -1294,6 +1295,8 @@ def simulate_tso(
         by this array.
     noiseless: Bool
         If True, do not add scatter noise to the spectrum.
+    err_scale: Float
+        Scale the uncertainties by error scale factor.
 
     Returns
     -------
@@ -1349,8 +1352,8 @@ def simulate_tso(
     dt_out = tso['time_out']
     flux_in = tso['flux_in'] * n_obs
     flux_out = tso['flux_out'] * n_obs
-    var_in = tso['var_in'] * n_obs
-    var_out = tso['var_out'] * n_obs
+    var_in = tso['var_in'] * n_obs * err_scale**2.0
+    var_out = tso['var_out'] * n_obs * err_scale**2.0
     wl = tso['wl']
 
     # Photometry
