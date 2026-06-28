@@ -236,6 +236,7 @@ layout_kwargs = dict(
     class_="pb-2 pt-0 m-0",
 )
 
+card_style = "background:#F5F5F5; !important;"
 
 app_ui = ui.page_fluid(
     # ESA Sky
@@ -251,6 +252,13 @@ app_ui = ui.page_fluid(
         });
         """
     ),
+    # NASA link
+    ui.tags.script("""
+        Shiny.addCustomMessageHandler("set_nasa_href", function(msg) {
+            const link = document.getElementById("nasa_link");
+            if (link) link.href = msg.url;
+        });
+    """),
     # Copy to clipboard
     ui.HTML("""
         <script>
@@ -272,8 +280,30 @@ app_ui = ui.page_fluid(
     ),
     ui.tags.style(
         """
+        #run_pandeia{
+            font-weight: bold;
+            background-color: #EEBA0B;
+            color: #FFFFFF;
+            border-color: #CC9C00;
+        }
+        #run_pandeia:hover{
+            color:#000000;
+            background-color: #ffc60a;
+            border-color: #EEBA0B;
+        }
+        .warning {
+            color: #ffa500;
+            font-weight: bold;
+        }
+        .danger {
+            color: red;
+            font-weight: bold;
+        }
         .popover {
-            --bs-popover-max-width: 500px;
+            --bs-popover-max-width: 600px;
+        }
+        .action-link .action-label:empty {
+            margin-left: 0.0em !important;
         }
         """
     ),
@@ -292,7 +322,18 @@ app_ui = ui.page_fluid(
                 "status",
                 placement='bottom',
             ),
-            ', ',
+            ui.HTML(', '),
+            ui.tooltip(
+                ui.input_action_link(
+                    id='bibtex',
+                    label='',
+                    icon=fa.icon_svg("book-open-reader", fill='black',
+                    ),
+                ),
+                "citation",
+                placement='bottom',
+            ),
+            ui.HTML(', '),
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("book", fill='black'),
@@ -302,18 +343,7 @@ app_ui = ui.page_fluid(
                 "documentation",
                 placement='bottom',
             ),
-            ', ',
-            ui.tooltip(
-                ui.input_action_link(
-                    id='bibtex',
-                    label='',
-                    icon=fa.icon_svg("book-open-reader", fill='black'),
-                ),
-                "citation",
-                placement='bottom',
-            ),
-
-            ')',
+            ui.HTML(')'),
             style="font-size: 26px;",
         ),
         ui.output_image("tso_logo", height='50px', inline=True),
@@ -460,6 +490,11 @@ app_ui = ui.page_fluid(
                         label="",
                     ),
                     ui.input_switch(
+                        id="is_candidate",
+                        label="candidate",
+                        value=False,
+                    ),
+                    ui.input_switch(
                         id="is_custom",
                         label="custom",
                         value=False,
@@ -500,7 +535,57 @@ app_ui = ui.page_fluid(
                     ),
                 ),
                 # The target
-                ui.output_ui('target_label'),
+                ui.span(
+                    ui.HTML('<b>Science target</b> '),
+                    ui.tooltip(
+                        ui.input_action_link(
+                            id='show_info',
+                            label='',
+                            icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
+                        ),
+                        'System info',
+                        id='target_info_tooltip',
+                        placement='top',
+                    ),
+                    #url has to be set with javascript, output_ui does not render nicely, ui.input_action_link() does not open in server side.
+                    ui.tooltip(
+                        ui.tags.a(
+                            fa.icon_svg("circle-info", fill='black'),
+                            id='nasa_link',
+                            href=f'{nasa_url}',
+                            target="_blank",
+                        ),
+                        "Open target's NASA Exoplanet Archive",
+                        id='nasa_tooltip',
+                        placement='top',
+                    ),
+                    ui.tooltip(
+                        ui.input_action_link(
+                            id='show_observations',
+                            label='',
+                            icon=fa.icon_svg("circle-info", fill='gray'),
+                        ),
+                        'not a JWST target (yet)',
+                        id='jwst_tooltip',
+                        placement='top',
+                    ),
+                    ui.panel_conditional(
+                        "input.is_custom",
+                        ui.tooltip(
+                            fa.icon_svg("circle-info", fill='#15B01A', margin_left='-0.3em'),
+                            ui.markdown("This is a custom target"),
+                            placement='top',
+                        ),
+                    ),
+                    ui.panel_conditional(
+                        "input.is_candidate",
+                        ui.tooltip(
+                            fa.icon_svg("triangle-exclamation", fill='darkorange', margin_left='-0.3em'),
+                            ui.markdown("This is a *candidate* planet"),
+                            placement='top',
+                        ),
+                    ),
+                ),
                 ui.input_selectize(
                     id='target',
                     label='',
@@ -556,6 +641,7 @@ app_ui = ui.page_fluid(
                 ),
                 class_="px-2 pt-2 pb-0 m-0",
             ),
+
             # The planet
             ui.panel_well(
                 ui.popover(
@@ -949,7 +1035,6 @@ app_ui = ui.page_fluid(
         col_widths=[3, 3, 6],
     ),
     title='Gen TSO',
-    theme=f'{ROOT}/data/base_theme.css',
 )
 
 
@@ -2026,6 +2111,21 @@ def server(input, output, session):
 
 
     @reactive.effect
+    @reactive.event(input.target)
+    async def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return ''
+
+        url = f'{nasa_url}/{target.planet}'
+        await session.send_custom_message(
+            "set_nasa_href",
+            {"url": url}
+        )
+
+
+    @reactive.effect
     @reactive.event(input.show_info)
     def _():
         """
@@ -2085,6 +2185,8 @@ def server(input, output, session):
         """
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None or not hasattr(target, 'programs'):
+            return
 
         programs_info.set(target.programs)
 
@@ -2197,87 +2299,47 @@ def server(input, output, session):
         )
 
 
-    @render.ui
+    @reactive.effect
     @reactive.event(input.target)
-    def target_label():
+    def update_target_icons():
         name = input.target.get()
-        target = next((t for t in catalog.targets if t.planet == name), None)
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        # Aliases
+        if target is None:
+            info_label = 'System info'
+        else:
+            aliases = [alias for alias in target.aliases if alias != name]
+            if len(aliases) > 0:
+                aliases = ', '.join(aliases)
+                info_label = f"Also known as: {aliases}"
+            else:
+                info_label = 'System info'
+        ui.update_tooltip('target_info_tooltip', info_label)
+
+        # JWST flag
+        if target is None:
+            icon_color = 'gray'
+            tip = 'not a JWST target (yet)'
+        elif target.is_jwst_planet:
+            icon_color = '#FAC205'
+            tip = 'This is a JWST target'
+        elif target.is_jwst_host:
+            icon_color = 'goldenrod'
+            tip = ui.markdown("This *host* is a JWST target")
+        else:
+            icon_color = 'gray'
+            tip = 'not a JWST target (yet)'
+        icon = fa.icon_svg("circle-info", fill=icon_color)
+
+        ui.update_action_link('show_observations', icon=icon)
+        ui.update_tooltip('jwst_tooltip', tip)
 
         if target is None:
-            return ui.span('Science target')
+            return
 
-        if len(target.aliases) > 0:
-            aliases = ', '.join(target.aliases)
-            info_label = f"Also known as: {aliases}"
-        else:
-            info_label = 'System info'
-        info_tooltip = ui.tooltip(
-            ui.input_action_link(
-                id='show_info',
-                label='',
-                icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
-            ),
-            info_label,
-            placement='top',
-        )
-
-        if target.is_jwst_host:
-            if target.is_jwst_planet:
-                tip = "This is a JWST target"
-                fill_color = '#FAC205'
-            else:
-                tip = ui.markdown("This *host* is a JWST target")
-                fill_color = 'goldenrod'
-            trexolists_tooltip = ui.tooltip(
-                ui.input_action_link(
-                    id='show_observations',
-                    label='',
-                    icon=fa.icon_svg("circle-info", fill=fill_color),
-                ),
-                tip,
-                placement='top',
-            )
-        else:
-            trexolists_tooltip = ui.tooltip(
-                fa.icon_svg("circle-info", fill='gray'),
-                'not a JWST target (yet)',
-                placement='top',
-            )
-
-        if target.is_confirmed:
-            candidate_tooltip = None
-        else:
-            candidate_tooltip = ui.tooltip(
-                fa.icon_svg("triangle-exclamation", fill='darkorange'),
-                ui.markdown("This is a *candidate* planet"),
-                placement='top',
-            )
-
-        custom_badge = None
-        is_custom = getattr(target, "is_custom", False)
-        if is_custom:
-            custom_badge = ui.tooltip(
-                fa.icon_svg("circle-info", fill='#15B01A'),
-                "This is a custom target",
-                placement='top',
-            )
-
-        return ui.span(
-            'Science target ',
-            info_tooltip,
-            ui.tooltip(
-                ui.tags.a(
-                    fa.icon_svg("circle-info", fill='black'),
-                    href=f'{nasa_url}/{target.planet}',
-                    target="_blank",
-                ),
-                'See this target on the NASA Exoplanet Archive',
-                placement='top',
-            ),
-            trexolists_tooltip,
-            candidate_tooltip,
-            custom_badge,
-        )
+        # Confirmed or candidate
+        ui.update_switch('is_candidate', value=not target.is_confirmed)
 
 
     @reactive.effect
