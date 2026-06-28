@@ -460,72 +460,161 @@ app_ui = ui.page_fluid(
         # The target
         cs.custom_card(
             ui.card_header("Target", class_="bg-primary"),
-            ui.panel_well(
-                ui.popover(
-                    ui.span(
-                        fa.icon_svg("gear"),
-                        style="position:absolute; top: 5px; right: 7px;",
-                    ),
-                    ui.input_checkbox_group(
-                        id="target_filter",
-                        label='',
-                        choices={
-                            "transit": "transiting",
-                            "jwst": "JWST targets",
-                            "custom": "custom targets",
-                            "tess": "TESS candidates",
-                            "non_transit": "non-transiting",
-                        },
-                        selected=['jwst', 'transit'],
-                    ),
-                    title='Filter targets',
-                    placement="right",
-                    id="targets_popover",
-                ),
-                # Hidden section to hold switches for conditionals
-                ui.panel_conditional(
-                    'false',
-                    ui.input_action_button(
-                        id="konami_sequence_trigger",
-                        label="",
-                    ),
-                    ui.input_switch(
-                        id="is_candidate",
-                        label="candidate",
-                        value=False,
-                    ),
-                    ui.input_switch(
-                        id="is_custom",
-                        label="custom",
-                        value=False,
-                    ),
-                    ui.input_switch(
-                        id="has_sed_bookmarks",
-                        label="has SED",
-                        value=False,
-                    ),
-                    ui.input_switch(
-                        id="has_depth_bookmarks",
-                        label="has transits",
-                        value=False,
-                    ),
-                ),
-                # Customizing buttons
-                ui.panel_conditional(
-                    # Keep hidden while we fine-tune the customs details
-                    #"input.is_custom",
-                    "false",
-                    ui.layout_column_wrap(
-                        ui.input_action_button(
-                            id='save_custom_target',
-                            label='Save changes',
-                            class_='btn btn-outline-success btn-sm',
+            ui.card(
+                ui.card_body(
+                    ui.popover(
+                        ui.span(
+                            fa.icon_svg("gear"),
+                            style="position:absolute; top: 5px; right: 7px;",
                         ),
-                        #ui.input_action_button(
-                        #    id='clear_custom',
-                        #    label='Clear changes',
-                        #    class_='btn btn-outline-success btn-sm',
-                        #),
+                        ui.input_checkbox_group(
+                            id="target_filter",
+                            label='',
+                            choices={
+                                "transit": "transiting",
+                                "jwst": "JWST targets",
+                                "custom": "custom targets",
+                                "tess": "TESS candidates",
+                                "non_transit": "non-transiting",
+                            },
+                            selected=['jwst', 'transit'],
+                        ),
+                        title='Filter targets',
+                        placement="right",
+                        id="targets_popover",
+                    ),
+                    # Hidden section to hold switches for conditionals
+                    ui.panel_conditional(
+                        'false',
+                        ui.input_action_button(
+                            id="konami_sequence_trigger",
+                            label="",
+                        ),
+                        ui.input_switch(
+                            id="is_candidate",
+                            label="candidate",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="is_custom",
+                            label="custom",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="has_sed_bookmarks",
+                            label="has SED",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="has_depth_bookmarks",
+                            label="has transits",
+                            value=False,
+                        ),
+                    ),
+                    # Customizing buttons
+                    ui.panel_conditional(
+                        # Keep hidden while we fine-tune the customs details
+                        #"input.is_custom",
+                        "false",
+                        ui.layout_column_wrap(
+                            ui.input_action_button(
+                                id='save_custom_target',
+                                label='Save changes',
+                                class_='btn btn-outline-success btn-sm',
+                            ),
+                            #ui.input_action_button(
+                            #    id='clear_custom',
+                            #    label='Clear changes',
+                            #    class_='btn btn-outline-success btn-sm',
+                            #),
+                            width=1/2,
+                            fixed_width=False,
+                            heights_equal='all',
+                            gap='7px',
+                            fill=False,
+                            fillable=True,
+                        ),
+                    ),
+                    # The target
+                    ui.span(
+                        ui.HTML('<b>Science target</b> '),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='show_info',
+                                label='',
+                                icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
+                            ),
+                            'System info',
+                            id='target_info_tooltip',
+                            placement='top',
+                        ),
+                        #url has to be set with javascript, output_ui does not render nicely, ui.input_action_link() does not open in server side.
+                        ui.tooltip(
+                            ui.tags.a(
+                                fa.icon_svg("circle-info", fill='black'),
+                                id='nasa_link',
+                                href=f'{nasa_url}',
+                                target="_blank",
+                            ),
+                            "Open target's NASA Exoplanet Archive",
+                            id='nasa_tooltip',
+                            placement='top',
+                        ),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='show_observations',
+                                label='',
+                                icon=fa.icon_svg("circle-info", fill='gray'),
+                            ),
+                            'not a JWST target (yet)',
+                            id='jwst_tooltip',
+                            placement='top',
+                        ),
+                        ui.panel_conditional(
+                            "input.is_custom",
+                            ui.tooltip(
+                                fa.icon_svg("circle-info", fill='#15B01A', margin_left='-0.3em'),
+                                ui.markdown("This is a custom target"),
+                                placement='top',
+                            ),
+                        ),
+                        ui.panel_conditional(
+                            "input.is_candidate",
+                            ui.tooltip(
+                                fa.icon_svg("triangle-exclamation", fill='darkorange', margin_left='-0.3em'),
+                                ui.markdown("This is a *candidate* planet"),
+                                placement='top',
+                            ),
+                        ),
+                    ),
+                    ui.input_selectize(
+                        id='target',
+                        label='',
+                        choices=[target.planet for target in catalog.targets],
+                        selected='WASP-80 b',
+                        multiple=False,
+                    ),
+                    # Target props
+                    ui.layout_column_wrap(
+                        # Row 1
+                        ui.p("T_eff (K):"),
+                        ui.input_numeric("t_eff", "", value=1400, min=100, step=100),
+                        # Row 2
+                        ui.p("log(g):"),
+                        ui.input_numeric("log_g", "", value=4.5, min=0, step=0.1),
+                        # Row 3
+                        ui.input_select(
+                            id='magnitude_band',
+                            label='',
+                            choices=bands_dict,
+                            selected='2mass,ks',
+                        ),
+                        ui.input_numeric(
+                            id="magnitude",
+                            label="",
+                            value=10.0,
+                            step=0.1,
+                        ),
                         width=1/2,
                         fixed_width=False,
                         heights_equal='all',
@@ -533,236 +622,156 @@ app_ui = ui.page_fluid(
                         fill=False,
                         fillable=True,
                     ),
-                ),
-                # The target
-                ui.span(
-                    ui.HTML('<b>Science target</b> '),
-                    ui.tooltip(
-                        ui.input_action_link(
-                            id='show_info',
-                            label='',
-                            icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
-                        ),
-                        'System info',
-                        id='target_info_tooltip',
-                        placement='top',
-                    ),
-                    #url has to be set with javascript, output_ui does not render nicely, ui.input_action_link() does not open in server side.
-                    ui.tooltip(
-                        ui.tags.a(
-                            fa.icon_svg("circle-info", fill='black'),
-                            id='nasa_link',
-                            href=f'{nasa_url}',
-                            target="_blank",
-                        ),
-                        "Open target's NASA Exoplanet Archive",
-                        id='nasa_tooltip',
-                        placement='top',
-                    ),
-                    ui.tooltip(
-                        ui.input_action_link(
-                            id='show_observations',
-                            label='',
-                            icon=fa.icon_svg("circle-info", fill='gray'),
-                        ),
-                        'not a JWST target (yet)',
-                        id='jwst_tooltip',
-                        placement='top',
-                    ),
-                    ui.panel_conditional(
-                        "input.is_custom",
-                        ui.tooltip(
-                            fa.icon_svg("circle-info", fill='#15B01A', margin_left='-0.3em'),
-                            ui.markdown("This is a custom target"),
-                            placement='top',
-                        ),
-                    ),
-                    ui.panel_conditional(
-                        "input.is_candidate",
-                        ui.tooltip(
-                            fa.icon_svg("triangle-exclamation", fill='darkorange', margin_left='-0.3em'),
-                            ui.markdown("This is a *candidate* planet"),
-                            placement='top',
-                        ),
-                    ),
-                ),
-                ui.input_selectize(
-                    id='target',
-                    label='',
-                    choices=[target.planet for target in catalog.targets],
-                    selected='WASP-80 b',
-                    multiple=False,
-                ),
-                # Target props
-                ui.layout_column_wrap(
-                    # Row 1
-                    ui.p("T_eff (K):"),
-                    ui.input_numeric("t_eff", "", value=1400, min=100, step=100),
-                    # Row 2
-                    ui.p("log(g):"),
-                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.1),
-                    # Row 3
                     ui.input_select(
-                        id='magnitude_band',
-                        label='',
-                        choices=bands_dict,
-                        selected='2mass,ks',
+                        id="sed_type",
+                        label=ui.output_ui('stellar_sed_label'),
+                        choices={
+                            "phoenix": "phoenix",
+                            "k93models": "kurucz (k93models)",
+                            "bt_settl": "BT-Settl MLT (bt_settl)",
+                            "blackbody": "blackbody",
+                            "input": "input",
+                        },
+                        selected='phoenix',
                     ),
-                    ui.input_numeric(
-                        id="magnitude",
+                    ui.input_select(
+                        id="sed",
                         label="",
-                        value=10.0,
-                        step=0.1,
+                        choices=sed_dict['phoenix'],
+                        selected='g0v',
                     ),
-                    width=1/2,
-                    fixed_width=False,
-                    heights_equal='all',
-                    gap='7px',
-                    fill=False,
-                    fillable=True,
+                    class_="px-2 py-1 pb-2 m-0 gap-2",
+                    style=card_style,
                 ),
-                ui.input_select(
-                    id="sed_type",
-                    label=ui.output_ui('stellar_sed_label'),
-                    choices={
-                        "phoenix": "phoenix",
-                        "k93models": "kurucz (k93models)",
-                        "bt_settl": "BT-Settl MLT (bt_settl)",
-                        "blackbody": "blackbody",
-                        "input": "input",
-                    },
-                    selected='phoenix',
-                ),
-                ui.input_select(
-                    id="sed",
-                    label="",
-                    choices=sed_dict['phoenix'],
-                    selected='g0v',
-                ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
             ),
 
             # The planet
-            ui.panel_well(
-                ui.popover(
-                    ui.span(
-                        fa.icon_svg("gear"),
-                        style="position:absolute; top: 5px; right: 7px;",
-                    ),
-                    # Tdwell = 1.0 + 0.75 + T14 + 2*max(1, T14/2)
-                    ui.markdown(
-                        '*T*<sub>dur</sub> = *T*<sub>start</sub> + '
-                        '*T*<sub>set</sub> + *T*<sub>base</sub> + '
-                        '*T*<sub>tran</sub> + *T*<sub>base</sub>',
-                    ),
-                    ui.markdown(
-                        'Start time window (*T*<sub>start</sub>): 1h',
-                    ),
-                    ui.input_numeric(
-                        id="settling_time",
-                        label=ui.markdown(
-                            'Settling time (*T*<sub>set</sub>, h):',
+            ui.card(
+                ui.card_body(
+                    ui.popover(
+                        ui.span(
+                            fa.icon_svg("gear"),
+                            style="position:absolute; top: 5px; right: 7px;",
                         ),
-                        value = 0.75,
-                        step = 0.25,
-                    ),
-                    ui.input_numeric(
-                        id="baseline_time",
-                        label=ui.markdown(
-                            'Baseline time (*T*<sub>base</sub>, t_dur):',
+                        # Tdwell = 1.0 + 0.75 + T14 + 2*max(1, T14/2)
+                        ui.markdown(
+                            '*T*<sub>dur</sub> = *T*<sub>start</sub> + '
+                            '*T*<sub>set</sub> + *T*<sub>base</sub> + '
+                            '*T*<sub>tran</sub> + *T*<sub>base</sub>',
                         ),
-                        value = 0.5,
-                        step = 0.25,
+                        ui.markdown(
+                            'Start time window (*T*<sub>start</sub>): 1h',
+                        ),
+                        ui.input_numeric(
+                            id="settling_time",
+                            label=ui.markdown(
+                                'Settling time (*T*<sub>set</sub>, h):',
+                            ),
+                            value = 0.75,
+                            step = 0.25,
+                        ),
+                        ui.input_numeric(
+                            id="baseline_time",
+                            label=ui.markdown(
+                                'Baseline time (*T*<sub>base</sub>, t_dur):',
+                            ),
+                            value = 0.5,
+                            step = 0.25,
+                        ),
+                        ui.input_numeric(
+                            id="min_baseline_time",
+                            label='Minimum baseline time (h):',
+                            value = 1.0,
+                            step = 0.25,
+                        ),
+                        title='Observation duration',
+                        placement="right",
+                        id="obs_popover",
                     ),
-                    ui.input_numeric(
-                        id="min_baseline_time",
-                        label='Minimum baseline time (h):',
-                        value = 1.0,
-                        step = 0.25,
-                    ),
-                    title='Observation duration',
-                    placement="right",
-                    id="obs_popover",
-                ),
-                ui.markdown("Observation"),
-                ui.layout_column_wrap(
-                    # Row 1
-                    ui.p("Type:"),
-                    ui.input_select(
-                        id='obs_geometry',
-                        label='',
-                        choices={
-                            'transit': 'Transit',
-                            'eclipse': 'Eclipse',
-                        }
-                    ),
-                    # Row 2
-                    ui.output_text('transit_dur_label'),
-                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.1),
-                    # Row 3
-                    ui.p("Obs_dur (h):"),
-                    ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
-                    width=1/2,
-                    fixed_width=False,
-                    heights_equal='all',
-                    gap='7px',
-                    fill=False,
-                    fillable=True,
-                ),
-                ui.input_select(
-                    id="planet_model_type",
-                    label=ui.output_ui('depth_label_text'),
-                    choices=["Input"],
-                ),
-                ui.panel_conditional(
-                    "input.planet_model_type == 'Input'",
-                    ui.tooltip(
+                    ui.markdown("Observation"),
+                    ui.layout_column_wrap(
+                        # Row 1
+                        ui.p("Type:"),
                         ui.input_select(
-                            id="depth",
-                            label="",
-                            choices=list(spectra['transit']),
+                            id='obs_geometry',
+                            label='',
+                            choices={
+                                'transit': 'Transit',
+                                'eclipse': 'Eclipse',
+                            }
                         ),
-                        '',
-                        id='depth_tooltip',
-                        placement='right',
+                        # Row 2
+                        ui.output_text('transit_dur_label'),
+                        ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.1),
+                        # Row 3
+                        ui.p("Obs_dur (h):"),
+                        ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
+                        width=1/2,
+                        fixed_width=False,
+                        heights_equal='all',
+                        gap='7px',
+                        fill=False,
+                        fillable=True,
                     ),
-                ),
-                ui.panel_conditional(
-                    "input.planet_model_type == 'Flat'",
-                    ui.layout_column_wrap(
-                        ui.p("Depth (%):"),
-                        ui.input_numeric(
-                            id="transit_depth",
-                            label="",
-                            value=0.5,
-                            step=0.1,
-                        ),
-                        **layout_kwargs,
+                    ui.input_select(
+                        id="planet_model_type",
+                        label=ui.output_ui('depth_label_text'),
+                        choices=["Input"],
                     ),
-                ),
-                ui.panel_conditional(
-                    "input.planet_model_type == 'Blackbody'",
-                    ui.layout_column_wrap(
-                        ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
-                        ui.input_numeric(
-                            id="eclipse_depth",
-                            label="",
-                            value=0.05,
-                            step=0.1,
+                    ui.panel_conditional(
+                        "input.planet_model_type == 'Input'",
+                        ui.tooltip(
+                            ui.input_select(
+                                id="depth",
+                                label="",
+                                choices=list(spectra['transit']),
+                            ),
+                            '',
+                            id='depth_tooltip',
+                            placement='right',
                         ),
-                        ui.p("Temp (K):"),
-                        ui.input_numeric(
-                            id="teq_planet",
-                            label="",
-                            value=2000.0,
-                            step=100,
-                        ),
-                        **layout_kwargs,
                     ),
+                    ui.panel_conditional(
+                        "input.planet_model_type == 'Flat'",
+                        ui.layout_column_wrap(
+                            ui.p("Depth (%):"),
+                            ui.input_numeric(
+                                id="transit_depth",
+                                label="",
+                                value=0.5,
+                                step=0.1,
+                            ),
+                            **layout_kwargs,
+                        ),
+                    ),
+                    ui.panel_conditional(
+                        "input.planet_model_type == 'Blackbody'",
+                        ui.layout_column_wrap(
+                            ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
+                            ui.input_numeric(
+                                id="eclipse_depth",
+                                label="",
+                                value=0.05,
+                                step=0.1,
+                            ),
+                            ui.p("Temp (K):"),
+                            ui.input_numeric(
+                                id="teq_planet",
+                                label="",
+                                value=2000.0,
+                                step=100,
+                            ),
+                            **layout_kwargs,
+                        ),
+                    ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
-            body_args=dict(class_="p-2 m-0"),
+            body_args=dict(class_="p-2 m-0 gap-3"),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -773,180 +782,200 @@ app_ui = ui.page_fluid(
                 class_="bg-primary",
             ),
             # pairing / aperture / disperser / filter
-            ui.panel_well(
-                ui.panel_conditional(
-                    "input.mode == 'sw_ts'",
-                    ui.input_select(
-                        id="pairing",
-                        label="LW Pairing",
-                        choices=pairings,
-                        selected=list(pairings)[1],
+            ui.card(
+                ui.card_body(
+                    ui.panel_conditional(
+                        "input.mode == 'sw_ts'",
+                        ui.input_select(
+                            id="pairing",
+                            label="LW Pairing",
+                            choices=pairings,
+                            selected=list(pairings)[1],
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "['sw_tsgrism', 'bots', 'sw_ts', 'lw_ts', 'target_acq'].includes(input.mode)",
-                    ui.input_select(
-                        id="aperture",
-                        label="Aperture",
-                        choices={},
-                        selected='',
+                    ui.panel_conditional(
+                        "['sw_tsgrism', 'bots', 'sw_ts', 'lw_ts', 'target_acq'].includes(input.mode)",
+                        ui.input_select(
+                            id="aperture",
+                            label="Aperture",
+                            choices={},
+                            selected='',
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "!['target_acq', 'imaging_ts', 'sw_ts', 'lw_ts', 'bots'].includes(input.mode)",
-                    ui.input_select(
-                        id="disperser",
-                        label="Disperser",
-                        choices={},
-                        selected='',
+                    ui.panel_conditional(
+                        "!['target_acq', 'imaging_ts', 'sw_ts', 'lw_ts', 'bots'].includes(input.mode)",
+                        ui.input_select(
+                            id="disperser",
+                            label="Disperser",
+                            choices={},
+                            selected='',
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "!['lrsslitless', 'lrsslit', 'mrs_ts'].includes(input.mode)",
-                    ui.input_select(
-                        id="filter",
-                        label="Filter",
-                        choices={},
-                        selected='',
+                    ui.panel_conditional(
+                        "!['lrsslitless', 'lrsslit', 'mrs_ts'].includes(input.mode)",
+                        ui.input_select(
+                            id="filter",
+                            label="Filter",
+                            choices={},
+                            selected='',
+                        ),
                     ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
             # subarray / readout / order
-            ui.panel_well(
-                ui.input_select(
-                    id="subarray",
-                    label="Subarray",
-                    choices=[''],
-                    selected='',
-                ),
-                ui.input_select(
-                    id="readout",
-                    label="Readout pattern",
-                    choices=[''],
-                    selected='',
-                ),
-                ui.panel_conditional(
-                    "input.mode == 'soss' && input.filter == 'clear'",
+            ui.card(
+                ui.card_body(
                     ui.input_select(
-                        id="order",
-                        label="Order",
-                        choices=['1'],
-                        selected='1',
+                        id="subarray",
+                        label="Subarray",
+                        choices=[''],
+                        selected='',
                     ),
+                    ui.input_select(
+                        id="readout",
+                        label="Readout pattern",
+                        choices=[''],
+                        selected='',
+                    ),
+                    ui.panel_conditional(
+                        "input.mode == 'soss' && input.filter == 'clear'",
+                        ui.input_select(
+                            id="order",
+                            label="Order",
+                            choices=['1'],
+                            selected='1',
+                        ),
+                    ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
             # groups and integrations
-            ui.panel_well(
-                cs.label_tooltip_button(
-                    label='Groups per integration ',
-                    icons=fa.icon_svg("circle-play", fill='black'),
-                    tooltips='Estimate saturation level',
-                    button_ids='calc_saturation',
-                    class_='pb-1',
-                ),
-                ui.panel_conditional(
-                    "input.mode == 'target_acq'",
-                    ui.input_select(
-                        id="ngroup_acq",
-                        label="",
-                        choices=['3'],
-                        selected='3',
+            ui.card(
+                ui.card_body(
+                    cs.label_tooltip_button(
+                        label='Groups per integration ',
+                        icons=fa.icon_svg("circle-play", fill='black'),
+                        tooltips='Estimate saturation level',
+                        button_ids='calc_saturation',
+                        class_='pb-1',
                     ),
-                ),
-                ui.panel_conditional(
-                    "input.mode != 'target_acq'",
-                    ui.input_numeric(
-                        id="ngroup",
-                        label="",
-                        value=2,
-                        min=2, max=10000,
+                    ui.panel_conditional(
+                        "input.mode == 'target_acq'",
+                        ui.input_select(
+                            id="ngroup_acq",
+                            label="",
+                            choices=['3'],
+                            selected='3',
+                        ),
                     ),
-                    ui.layout_columns(
+                    ui.panel_conditional(
+                        "input.mode != 'target_acq'",
                         ui.input_numeric(
-                            id="integrations",
-                            label="Integrations",
-                            value=1,
-                            min=1, max=100000,
+                            id="ngroup",
+                            label="",
+                            value=2,
+                            min=2, max=10000,
                         ),
-                        ui.input_switch(
-                            "integs_switch",
-                            "Match obs. duration",
-                            False,
+                        ui.layout_columns(
+                            ui.input_numeric(
+                                id="integrations",
+                                label="Integrations",
+                                value=1,
+                                min=1, max=100000,
+                            ),
+                            ui.input_switch(
+                                "integs_switch",
+                                "Match obs. duration",
+                                False,
+                            ),
+                            col_widths=[12,12],
+                            gap='4px',
+                            class_="px-0 pb-2 m-0",
                         ),
-                        col_widths=[12,12],
-                        gap='4px',
-                        class_="px-0 pb-2 m-0",
                     ),
+                    # Saturation goal
+                    ui.p("Saturation fraction (%):", class_='py-0 my-0'),
+                    ui.layout_column_wrap(
+                        ui.input_numeric(
+                            id="saturation_input_text",
+                            label="",
+                            value=80.0,
+                            min=1.0, max=100.0,
+                        ),
+                        ui.tooltip(
+                            ui.input_action_button(
+                                id="saturation_button",
+                                label="Set groups",
+                                class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
+                            ),
+                            'Update groups up to the saturation fraction',
+                            id="saturation_tooltip",
+                            placement="top",
+                        ),
+                        width=1/2,
+                        fixed_width=False,
+                        heights_equal='all',
+                        gap='7px',
+                        fill=False,
+                        fillable=True,
+                        class_="px-0 pt-0 pb-2 m-0",
+                    ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                # Saturation goal
-                ui.p("Saturation fraction (%):", class_='py-0 my-0'),
-                ui.layout_column_wrap(
-                    ui.input_numeric(
-                        id="saturation_input_text",
-                        label="",
-                        value=80.0,
-                        min=1.0, max=100.0,
-                    ),
-                    ui.tooltip(
-                        ui.input_action_button(
-                            id="saturation_button",
-                            label="Set groups",
-                            class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
-                        ),
-                        'Update groups up to the saturation fraction',
-                        id="saturation_tooltip",
-                        placement="top",
-                    ),
-                    width=1/2,
-                    fixed_width=False,
-                    heights_equal='all',
-                    gap='7px',
-                    fill=False,
-                    fillable=True,
-                    class_="px-0 pt-0 pb-2 m-0",
-                ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
             # Search nearby Gaia targets for acquisition
             ui.panel_conditional(
                 "input.mode == 'target_acq'",
-                ui.panel_well(
-                    ui.tooltip(
-                        ui.markdown('Acquisition targets'),
-                        'Gaia targets within 80" of science target',
-                        id="gaia_tooltip",
-                        placement="top",
+                ui.card(
+                    ui.card_body(
+                        ui.tooltip(
+                            ui.markdown('Acquisition targets'),
+                            'Gaia targets within 80" of science target',
+                            id="gaia_tooltip",
+                            placement="top",
+                        ),
+                        ui.layout_column_wrap(
+                            ui.input_task_button(
+                                id="search_gaia_ta",
+                                label="Search nearby targets",
+                                label_busy="processing...",
+                                class_='btn btn-outline-secondary btn-sm',
+                            ),
+                            ui.p("Select TA's SED:"),
+                            ui.input_select(
+                                id="ta_sed",
+                                label="",
+                                choices=[],
+                                selected='',
+                            ),
+                            ui.input_action_button(
+                                id="get_acquisition_target",
+                                label="Print acq. target data",
+                                class_='btn btn-outline-secondary btn-sm',
+                            ),
+                            width=1,
+                            heights_equal='row',
+                            gap='7px',
+                            class_="px-0 py-0 mx-0 my-0",
+                        ),
+                        class_="px-2 py-1 m-0 gap-2",
+                        style=card_style,
                     ),
-                    ui.layout_column_wrap(
-                        ui.input_task_button(
-                            id="search_gaia_ta",
-                            label="Search nearby targets",
-                            label_busy="processing...",
-                            class_='btn btn-outline-secondary btn-sm',
-                        ),
-                        ui.p("Select TA's SED:"),
-                        ui.input_select(
-                            id="ta_sed",
-                            label="",
-                            choices=[],
-                            selected='',
-                        ),
-                        ui.input_action_button(
-                            id="get_acquisition_target",
-                            label="Print acq. target data",
-                            class_='btn btn-outline-secondary btn-sm',
-                        ),
-                        width=1,
-                        heights_equal='row',
-                        gap='7px',
-                        class_="px-0 py-0 mx-0 my-0",
-                    ),
-                    class_="px-2 pt-2 pb-2 m-0",
+                    fill=False,
+                    class_="p-0 m-0",
                 ),
             ),
-            body_args=dict(class_="p-2 m-0"),
+            body_args=dict(class_="p-2 m-0 gap-3"),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
