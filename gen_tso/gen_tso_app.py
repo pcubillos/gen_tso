@@ -500,7 +500,7 @@ app_ui = ui.page_fluid(
                     ),
                     # Hidden section to hold switches for conditionals
                     ui.panel_conditional(
-                        'false',
+                        'true',
                         ui.input_action_button(
                             id="konami_sequence_trigger",
                             label="",
@@ -642,9 +642,48 @@ app_ui = ui.page_fluid(
                         fill=False,
                         fillable=True,
                     ),
+                    ui.span(
+                        ui.HTML('<b>Stellar SED</b> '),
+                        # bookmarks
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='bookmark_sed',
+                                label='',
+                                icon=fa.icon_svg("star", fill='black'),
+                            ),
+                            'Bookmark SED',
+                            id='sed_book_tooltip',
+                            placement='top',
+                        ),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='upload_sed',
+                                label='',
+                                icon=fa.icon_svg("file-arrow-up", fill='black'),
+                            ),
+                            'Upload SED',
+                            id='sed_up_tooltip',
+                            placement='top',
+                        ),
+                        # clear
+                        ui.panel_conditional(
+                            "input.has_sed_bookmarks",
+                            ui.tooltip(
+                                ui.input_action_link(
+                                    id='clear_sed_bookmarks',
+                                    label='',
+                                    icon=fa.icon_svg("circle-xmark", style='regular', fill='black'),
+                                ),
+                                'Clear all SED bookmarks',
+                                id='sed_clear_tooltip',
+                                placement='top',
+                            ),
+                        ),
+                    ),
+
                     ui.input_select(
                         id="sed_type",
-                        label=ui.output_ui('stellar_sed_label'),
+                        label='',
                         choices={
                             "phoenix": "phoenix",
                             "k93models": "kurucz (k93models)",
@@ -709,7 +748,7 @@ app_ui = ui.page_fluid(
                         placement="right",
                         id="obs_popover",
                     ),
-                    ui.markdown("Observation"),
+                    ui.markdown("**Observation**"),
                     ui.layout_column_wrap(
                         # Row 1
                         ui.p("Type:"),
@@ -1119,6 +1158,15 @@ def server(input, output, session):
     tso_draw = reactive.Value(None)
     clipboard = reactive.Value('')
     latest_pandeia = reactive.Value(None)
+
+
+    # Invisible flags
+    @reactive.effect
+    @reactive.event(bookmarked_sed)
+    def _():
+        value = len(bookmarked_spectra['sed']) > 0
+        ui.update_switch('has_sed_bookmarks', value=value)
+
 
     # Track if current target has unsaved changes
     original_values = reactive.value({})
@@ -2485,41 +2533,24 @@ def server(input, output, session):
         ui.update_select("sed", choices=choices, selected=selected)
 
 
-    @render.ui
+    @reactive.effect
     @reactive.event(
         bookmarked_sed, input.sed,
         input.t_eff, input.magnitude_band, input.magnitude,
     )
-    def stellar_sed_label():
+    def update_sed_bookmark_icon():
         """Check current SED is bookmarked"""
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         is_bookmarked = sed_label in bookmarked_spectra['sed']
         bookmarked_sed.set(is_bookmarked)
-        if is_bookmarked:
-            sed_icon = fa.icon_svg("star", style='solid', fill='gold')
-        else:
-            sed_icon = fa.icon_svg("star", style='regular', fill='black')
-
-        icons = [
-            sed_icon,
-            fa.icon_svg("file-arrow-up", fill='black'),
-            fa.icon_svg("circle-xmark", style='regular', fill='black'),
-        ]
-        texts = [
-            'Bookmark SED',
-            'Upload SED',
-            'Clear all SED bookmarks',
-        ]
-        return cs.label_tooltip_button(
-            label='Stellar SED model: ',
-            icons=icons,
-            tooltips=texts,
-            button_ids=['sed_bookmark', 'upload_sed', 'clear_sed_bookmarks']
-        )
+        style = 'solid' if is_bookmarked else 'regular'
+        fill = 'gold' if is_bookmarked else 'black'
+        sed_icon = fa.icon_svg("star", style=style, fill=fill)
+        ui.update_action_link('bookmark_sed', icon=sed_icon)
 
 
     @reactive.Effect
-    @reactive.event(input.sed_bookmark)
+    @reactive.event(input.bookmark_sed)
     def _():
         """Toggle bookmarked SED"""
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
@@ -3010,7 +3041,7 @@ def server(input, output, session):
         bookmarked_sed.get() # (make panel reactive to remove all bookmarks)
         update_sed_flag.get()
 
-        input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
+        input.bookmark_sed.get()  # (make panel reactive to bookmark_sed)
         throughput = get_throughput(input, evaluate=True)
         if throughput is None:
             return
