@@ -226,6 +226,21 @@ heatmaps = {
     '2d_groups': 'ngroups_map',
 }
 
+# Instrument warnings
+stripes = [
+     'sub17stripe_soss',
+     'sub60stripe_soss',
+     'sub204stripe_soss',
+     'sub680stripe_soss',
+]
+nircam_warning = (
+    'WARNING: The SW Grism Time Series mode is still being calibrated; '
+    'the SNR and saturation estimates provided by the ETC '
+    'may therefore be outside the expected 10% accuracy level'
+)
+soss_warning = 'WARNING: The SOSS multi-stripe subarray is still being calibrated'
+
+
 layout_kwargs = dict(
     width=1/2,
     fixed_width=False,
@@ -510,6 +525,11 @@ app_ui = ui.page_fluid(
                             label="has transits",
                             value=False,
                         ),
+                        ui.input_switch(
+                            id="raise_detector_warning",
+                            label="detector warning",
+                            value=False,
+                        ),
                     ),
                     # Customizing buttons
                     ui.panel_conditional(
@@ -778,7 +798,18 @@ app_ui = ui.page_fluid(
         # The detector setup
         cs.custom_card(
             ui.card_header(
-                ui.output_ui(id='detector_label'),
+                ui.div(
+                    'Detector setup ',
+                    ui.panel_conditional(
+                        "input.raise_detector_warning",
+                        ui.tooltip(
+                            fa.icon_svg("triangle-exclamation", fill='gold'),
+                            'warning',
+                            id='detector_warning_tooltip',
+                            placement='top',
+                        ),
+                    ),
+                ),
                 class_="bg-primary",
             ),
             # pairing / aperture / disperser / filter
@@ -1805,42 +1836,19 @@ def server(input, output, session):
         ui.update_select('mode', choices=mode_choices, selected=selected)
 
 
-    @render.ui
+    @reactive.effect
     @reactive.event(input.mode, input.subarray)
-    def detector_label():
+    def set_detector_label():
         mode = input.mode.get()
         subarray = input.subarray.get()
-        stripes = [
-             'sub17stripe_soss',
-             'sub60stripe_soss',
-             'sub204stripe_soss',
-             'sub680stripe_soss',
-        ]
-
         if mode == 'sw_tsgrism':
-            warning_txt = (
-                'The SW Grism Time Series mode is still being calibrated; '
-                'the SNR and saturation estimates provided by the ETC '
-                'may therefore be outside the expected 10% accuracy level'
-            )
+            ui.update_tooltip('detector_warning_tooltip', nircam_warning)
+            ui.update_switch('raise_detector_warning', value=True)
         elif subarray in stripes:
-            warning_txt = (
-                'The SOSS multi-stripe subgroup is still being calibrated; '
-                'particularly, ETC (pandeia) exposure times are per stripe.  '
-                'Gen TSO corrects it to match the APT values, as '
-                'recommended in the Jwebbinar 43.'
-            )
+            ui.update_tooltip('detector_warning_tooltip', soss_warning)
+            ui.update_switch('raise_detector_warning', value=True)
         else:
-            return 'Detector setup'
-
-        return ui.tooltip(
-            ui.div(
-                'Detector setup ',
-                fa.icon_svg("triangle-exclamation", fill='gold'),
-            ),
-            warning_txt,
-            placement='top',
-        )
+            ui.update_switch('raise_detector_warning', value=False)
 
 
     @reactive.Effect(priority=2)
