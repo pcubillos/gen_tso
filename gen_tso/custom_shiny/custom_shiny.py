@@ -3,7 +3,6 @@
 
 __all__ = [
     'custom_card',
-    'label_tooltip_button',
     'navset_card_tab_jwst',
 ]
 
@@ -36,51 +35,6 @@ def custom_card(*args, body_args={}, **kwargs):
         header,
         card_body(*args, **body_args),
         **kwargs,
-    )
-
-
-
-def label_tooltip_button(
-        label, icons, tooltips, button_ids, placement='top',
-        class_=None,
-    ):
-    """
-    A label text which has one or more clickable icons (with tooltips).
-
-    Parameters
-    ----------
-    label: String
-        The label before the icons.
-    icons: favicon.icon_svg() instance(s)
-        This could be an icon_svg instance of a list of them.
-        If it is a list, assume that tooltips and button_ids also are.
-    tooltips: String(s)
-        The tooltips for each icon.
-    button_ids: String(s)
-        The id for each button assigned to the icons.
-    """
-    if not isinstance(icons, list):
-        icons = [icons]
-        tooltips = [tooltips]
-        button_ids = [button_ids]
-
-    # TBD: if icon is None, make a ui.output_ui('id')
-    icon_buttons = [
-        ui.tooltip(
-            ui.input_action_link(
-                id=button_id,
-                label='',
-                icon=icon,
-            ),
-            text,
-            placement=placement,
-        )
-        for icon, text, button_id in zip(icons, tooltips, button_ids)
-    ]
-    return ui.div(
-        label,
-        *icon_buttons,
-        class_=class_,
     )
 
 
