@@ -406,66 +406,68 @@ app_ui = ui.page_fluid(
         cs.custom_card(
             # current setup and TSO runs
             ui.layout_columns(
-                # Left
-                ui.input_select(
-                    id="display_tso_run",
-                    label=ui.tooltip(
-                        "Display TSO run:",
-                        "TSO runs will show here after a 'Run Pandeia' call",
-                        placement='right',
-                    ),
-                    choices=make_tso_labels(tso_runs),
-                    selected=[''],
-                    width='100%',
-                ),
-                # TBD: Set disabled based on existing TSOs
                 ui.layout_column_wrap(
+                    ui.card_header("TSO runs"),
+                    ui.tooltip(
+                        ui.input_select(
+                            id="display_tso_run",
+                            label='',
+                            choices=make_tso_labels(tso_runs),
+                            selected=[''],
+                            width='100%',
+                        ),
+                        "TSO runs will show here after a 'Run Pandeia' call",
+                        placement='top',
+                    ),
+                    ui.input_task_button(
+                        id="run_pandeia",
+                        label="Run Pandeia",
+                        label_busy="processing...",
+                        width='100%',
+                    ),
+                    heights_equal=False,
+                    width=1,
+                    gap='3px',
+                    class_="p-0 pb-2 m-0",
+                ),
+                ui.layout_column_wrap(
+                    # TBD: Set disabled based on existing TSOs
                     ui.input_action_button(
                         id="save_button",
                         label="Save TSO",
                         class_="btn btn-outline-success btn-sm",
                         disabled=False,
-                        width='110px',
+                        width='100%',
                     ),
                     ui.input_action_button(
                         id="delete_button",
                         label="Delete TSO",
                         class_='btn btn-outline-danger btn-sm',
                         disabled=False,
-                        width='110px',
+                        width='100%',
                     ),
+                    ui.panel_conditional(
+                        "input.mode == 'target_acq'",
+                        ui.input_radio_buttons(
+                            id='target_focus',
+                            label='',
+                            choices={
+                                'science': 'science target',
+                                'acquisition': 'acquisition',
+                            },
+                            selected='science',
+                        ),
+                    ),
+                    gap='1px',
                     width=1,
-                    gap='5px',
-                    class_="px-0 py-0 mx-0 my-0",
+                    class_="p-0 pt-2 m-0",
                 ),
                 col_widths=(9,3),
-                fill=True,
-                fillable=True,
+                heights_equal=False,
+                gap='8px',
+                class_="p-0 m-0",
             ),
-            ui.layout_columns(
-                ui.input_task_button(
-                    id="run_pandeia",
-                    label="Run Pandeia",
-                    label_busy="processing...",
-                    width='100%',
-                ),
-                ui.panel_conditional(
-                    "input.mode == 'target_acq'",
-                    ui.input_radio_buttons(
-                        id='target_focus',
-                        label='',
-                        choices={
-                            'science': 'sci target',
-                            'acquisition': 'acq target',
-                        },
-                        selected='science',
-                    ),
-                ),
-                col_widths=(9,3),
-                gap='10px',
-                class_="px-0 py-0 mx-0 my-0",
-            ),
-            body_args=dict(class_="p-2 m-1"),
+            body_args=dict(class_="py-0 px-2 m-0"),
         ),
         col_widths=[6,6],
     ),
@@ -1012,7 +1014,7 @@ app_ui = ui.page_fluid(
                         ),
                     ),
                     # Saturation goal
-                    ui.p("Saturation fraction (%):", class_='py-0 my-0'),
+                    ui.p("Saturation fraction (%)", class_='py-0 my-0'),
                     ui.layout_column_wrap(
                         ui.input_numeric(
                             id="saturation_input_text",
@@ -1050,7 +1052,7 @@ app_ui = ui.page_fluid(
                 ui.card(
                     ui.card_body(
                         ui.tooltip(
-                            ui.markdown('Acquisition targets'),
+                            ui.markdown('**Acquisition targets**'),
                             'Gaia targets within 80" of science target',
                             id="gaia_tooltip",
                             placement="top",
@@ -1676,7 +1678,7 @@ def server(input, output, session):
         order = tso['order']
         ngroup = tso['ngroup']
 
-        ui.update_navs('instrument', selected=instrument)
+        ui.update_navset('instrument', selected=instrument)
         mode_choices = modes[instrument]
         ui.update_select('mode', choices=mode_choices, selected=mode)
 
