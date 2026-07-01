@@ -361,11 +361,12 @@ app_ui = ui.page_fluid(
             ui.HTML(')'),
             style="font-size: 26px;",
         ),
-        ui.output_image("tso_logo", height='50px', inline=True),
-        col_widths=(11,1),
+        ui.output_image("tso_logo", inline=True),
+        col_widths=(11, 1),
         fixed_width=False,
         fill=False,
         fillable=True,
+        class_="p-0 m-0",
     ),
     # Instrument and detector modes:
     ui.layout_columns(
@@ -1847,7 +1848,7 @@ def server(input, output, session):
     def tso_logo():
         img = {
             "src": f'{ROOT}data/images/gen_tso_logo.png',
-            "height": "50px",
+            "height": "45px",
         }
         return img
 
