@@ -1423,20 +1423,20 @@ def server(input, output, session):
         clipboard.set(bibtex)
         ui.modal_show(m)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.update_trexo)
     def _():
         cat.fetch_trexolist()
         catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.update_nasa)
     def _():
         cat.update_exoplanet_archive()
         catalog, is_jwst, is_transit, is_confirmed = load_catalog()
         update_catalog_flag.set(~update_catalog_flag.get())
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.update_pysynphot)
     def _():
         status = update_synphot_files()
@@ -1918,7 +1918,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
-    @reactive.Effect(priority=3)
+    @reactive.effect(priority=3)
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
@@ -1947,7 +1947,7 @@ def server(input, output, session):
             ui.update_switch('raise_detector_warning', value=False)
 
 
-    @reactive.Effect(priority=2)
+    @reactive.effect(priority=2)
     @reactive.event(input.instrument, input.mode, input.pairing)
     def update_aperture_and_disperser():
         config = parse_instrument(input, 'mode', 'detector')
@@ -2003,7 +2003,7 @@ def server(input, output, session):
         )
 
 
-    @reactive.Effect(priority=2)
+    @reactive.effect(priority=2)
     @reactive.event(input.instrument, input.mode, input.aperture)
     def update_filter():
         config = parse_instrument(input, 'mode', 'aperture', 'detector')
@@ -2028,7 +2028,7 @@ def server(input, output, session):
         )
 
 
-    @reactive.Effect(priority=1)
+    @reactive.effect(priority=1)
     @reactive.event(
         input.instrument, input.mode,
         input.aperture, input.disperser, input.filter,
@@ -2055,7 +2055,7 @@ def server(input, output, session):
         ui.update_select('subarray', choices=choices, selected=subarray)
 
 
-    @reactive.Effect(priority=1)
+    @reactive.effect(priority=1)
     @reactive.event(
         input.instrument, input.mode,
         input.aperture, input.disperser, input.subarray,
@@ -2081,7 +2081,7 @@ def server(input, output, session):
         ui.update_select('readout', choices=choices, selected=readout)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.run_pandeia)
     def _():
         target_focus = input.target_focus.get()
@@ -2207,7 +2207,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.target_filter, update_catalog_flag)
     def _():
         update_catalog_flag.get()
@@ -2556,7 +2556,7 @@ def server(input, output, session):
             ui.update_numeric('teq_planet', value=teq_planet)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.sed_type, input.t_eff, input.log_g, update_sed_flag)
     def choose_sed():
         sed_type = input.sed_type.get()
@@ -2597,7 +2597,7 @@ def server(input, output, session):
         ui.update_action_link('bookmark_sed', icon=sed_icon)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.bookmark_sed)
     def _():
         """Toggle bookmarked SED"""
@@ -2656,7 +2656,7 @@ def server(input, output, session):
         ui.update_action_link('bookmark_depth', icon=icon)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.bookmark_depth)
     def _():
         """Toggle bookmarked depth model"""
@@ -2679,7 +2679,7 @@ def server(input, output, session):
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.clear_depth_bookmarks)
     def _():
         """Clear bookmarked depth models for the current geometry"""
@@ -2753,7 +2753,7 @@ def server(input, output, session):
         n_warn = len(warnings)
         return ui.HTML(f'<div style="color:red;">Warnings ({n_warn})</div>')
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(
         input.t_dur, input.settling_time, input.baseline_time,
         input.min_baseline_time,
@@ -2891,7 +2891,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.mode, input.subarray)
     def update_orders():
         config = parse_instrument(input, 'mode', 'subarray', 'detector')
@@ -2906,7 +2906,7 @@ def server(input, output, session):
         ui.update_select('order', choices=choices, selected=order)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.mode, input.subarray)
     def update_groups_input():
         config = parse_instrument(
@@ -2932,7 +2932,7 @@ def server(input, output, session):
             ui.update_numeric(id="ngroup", value=ngroup)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
         config = parse_instrument(
@@ -2965,7 +2965,7 @@ def server(input, output, session):
         saturation_label.set(sat_label)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(
         input.integs_switch, input.obs_dur, input.mode,
         input.instrument, input.ngroup, input.readout, input.subarray,
@@ -2997,7 +2997,7 @@ def server(input, output, session):
         ui.update_numeric('integrations', value=integs)
 
 
-    @reactive.Effect
+    @reactive.effect
     def _():
         """
         Update the desired saturation limit only when there is a valid
@@ -3367,7 +3367,7 @@ def server(input, output, session):
             )
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.search_gaia_ta)
     def _():
         name = input.target.get()
