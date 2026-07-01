@@ -965,12 +965,17 @@ app_ui = ui.page_fluid(
             # groups and integrations
             ui.card(
                 ui.card_body(
-                    cs.label_tooltip_button(
-                        label='Groups per integration ',
-                        icons=fa.icon_svg("circle-play", fill='black'),
-                        tooltips='Estimate saturation level',
-                        button_ids='calc_saturation',
-                        class_='pb-1',
+                    ui.span(
+                        'Groups per integration ',
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='calc_saturation',
+                                label='',
+                                icon=fa.icon_svg("circle-play", fill='black'),
+                            ),
+                            'Estimate saturation level',
+                            placement='top',
+                        ),
                     ),
                     ui.panel_conditional(
                         "input.mode == 'target_acq'",
