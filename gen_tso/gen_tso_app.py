@@ -500,7 +500,7 @@ app_ui = ui.page_fluid(
                     ),
                     # Hidden section to hold switches for conditionals
                     ui.panel_conditional(
-                        'true',
+                        'false',
                         ui.input_action_button(
                             id="konami_sequence_trigger",
                             label="",
@@ -644,7 +644,7 @@ app_ui = ui.page_fluid(
                     ),
                     ui.span(
                         ui.HTML('<b>Stellar SED</b> '),
-                        # bookmarks
+                        # bookmarks, upload, and clear
                         ui.tooltip(
                             ui.input_action_link(
                                 id='bookmark_sed',
@@ -665,7 +665,6 @@ app_ui = ui.page_fluid(
                             id='sed_up_tooltip',
                             placement='top',
                         ),
-                        # clear
                         ui.panel_conditional(
                             "input.has_sed_bookmarks",
                             ui.tooltip(
@@ -773,9 +772,46 @@ app_ui = ui.page_fluid(
                         fill=False,
                         fillable=True,
                     ),
+                    ui.span(
+                        ui.output_ui('depth_label'),
+                        # bookmarks, upload, and clear
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='bookmark_depth',
+                                label='',
+                                icon=None,
+                            ),
+                            'Bookmark depth model',
+                            id='depth_book_tooltip',
+                            placement='top',
+                        ),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='upload_depth',
+                                label='',
+                                icon=fa.icon_svg("file-arrow-up", fill='black'),
+                            ),
+                            "Upload depth model",
+                            id='depth_up_tooltip',
+                            placement='top',
+                        ),
+                        ui.panel_conditional(
+                            "input.has_depth_bookmarks",
+                            ui.tooltip(
+                                ui.input_action_link(
+                                    id='clear_depth_bookmarks',
+                                    label='',
+                                    icon=fa.icon_svg("circle-xmark", style='regular', fill='black'),
+                                ),
+                                'Clear all depth bookmarks',
+                                id='depth_clear_tooltip',
+                                placement='top',
+                            ),
+                        ),
+                    ),
                     ui.input_select(
                         id="planet_model_type",
-                        label=ui.output_ui('depth_label_text'),
+                        label='',
                         choices=["Input"],
                     ),
                     ui.panel_conditional(
@@ -1166,6 +1202,13 @@ def server(input, output, session):
     def _():
         value = len(bookmarked_spectra['sed']) > 0
         ui.update_switch('has_sed_bookmarks', value=value)
+
+    @reactive.effect
+    @reactive.event(bookmarked_depth)
+    def _():
+        obs_geometry = input.obs_geometry.get()
+        value = len(bookmarked_spectra[obs_geometry]) > 0
+        ui.update_switch('has_depth_bookmarks', value=value)
 
 
     # Track if current target has unsaved changes
@@ -2568,7 +2611,7 @@ def server(input, output, session):
         else:
             bookmarked_spectra['sed'].remove(sed_label)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.clear_sed_bookmarks)
     def _():
         """Clear all bookmarked SEDs"""
@@ -2578,36 +2621,34 @@ def server(input, output, session):
         ui.notification_show("Cleared all SED bookmarks", type="message", duration=3)
 
 
-    @render.ui
+    @reactive.effect
+    @reactive.event(input.obs_geometry)
+    def _():
+        """Set depth model label"""
+        obs_geometry = f'{input.obs_geometry.get()} depth'
+        ui.update_tooltip('depth_up_tooltip', f'Upload {obs_geometry} spectrum')
+        ui.update_tooltip('depth_book_tooltip', f'Bookmark {obs_geometry} spectrum')
+        ui.update_tooltip(
+            'depth_clear_tooltip',
+            f'Clear all bookmarked {obs_geometry} spectra',
+        )
+
+
+    @reactive.effect
     @reactive.event(
         bookmarked_depth, input.obs_geometry, input.planet_model_type,
         input.depth, input.transit_depth, input.eclipse_depth, input.teq_planet,
     )
-    def depth_label_text():
-        """Set depth model label"""
+    def update_depth_bookmark_icon():
+        """Check current transit-depth is bookmarked"""
         obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
-
         is_bookmarked = depth_label in bookmarked_spectra[obs_geometry]
         bookmarked_depth.set(is_bookmarked)
+
         fill = 'royalblue' if is_bookmarked else 'gray'
-        depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
-        icons = [
-            depth_icon,
-            fa.icon_svg("file-arrow-up", fill='black'),
-            fa.icon_svg("circle-xmark", style='regular', fill='black'),
-        ]
-        texts = [
-            f'Bookmark {obs_geometry} depth model',
-            f'Upload {obs_geometry} depth model',
-            f'Clear all {obs_geometry} depth bookmarks',
-        ]
-        return cs.label_tooltip_button(
-            label=f"{obs_geometry.capitalize()} depth spectrum: ",
-            icons=icons,
-            tooltips=texts,
-            button_ids=['bookmark_depth', 'upload_depth', 'clear_depth_bookmarks'],
-        )
+        icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
+        ui.update_action_link('bookmark_depth', icon=icon)
 
 
     @reactive.Effect
@@ -2678,6 +2719,13 @@ def server(input, output, session):
             tooltip_text = f'Upload an {obs_geometry} depth spectrum'
         ui.update_tooltip('depth_tooltip', tooltip_text)
 
+
+    @render.ui
+    @reactive.event(input.obs_geometry)
+    def depth_label():
+        """Set depth model label"""
+        obs_geometry = input.obs_geometry.get()
+        return ui.HTML(f'<b>{obs_geometry.capitalize()} spectra</b> '),
 
     @render.text
     @reactive.event(input.obs_geometry)
