@@ -357,6 +357,12 @@ def _get_configs(instrument=None, obs_type=None):
                 key = subarray if subarray in group_constraints else 'default'
                 constraints[subarray] = group_constraints[key]
             inst_dict['constraints']['groups'] = {'subarrays': constraints}
+        if mode == 'lrsslitless':
+            inst_dict['readouts'] = {
+                key: val
+                for key,val in inst_dict['readouts'].items()
+                if key=='fastr1'
+            }
 
         # NIRCam
         if mode == 'sw_tsgrism':
@@ -431,13 +437,12 @@ def _get_configs(instrument=None, obs_type=None):
                 for disp in inst_dict['dispersers']
             }
             inst_dict['constraints']['filters'] = {'dispersers': constraints}
-            constraints = {}
-            for disperser in inst_dict['dispersers']:
-                subs = list(inst_dict['subarrays'])
-                if disperser == 'prism':
-                    subs.remove('sub1024a')
-                constraints[disperser] = subs
+            constraints = {
+                disp: get_constraints(config, 'subarrays', mode, dispersers=disp)
+                for disp in inst_dict['dispersers']
+            }
             inst_dict['constraints']['subarrays'] = {'dispersers': constraints}
+            inst_dict['constraints']['subarrays']['dispersers']['prism'].remove('sub1024a')
 
         # NIRISS
         if mode == 'soss':
@@ -797,7 +802,7 @@ def generate_all_instruments():
                         label = f"{dispersers[disperser]}/{filters[filter]}"
                         gratings[f'{disperser}/{filter}'] = label
             filters = gratings
-            default_indices = 0, 0, 7, 4, 1
+            default_indices = 0, 0, 6, 4, 1
         if mode == 'soss':
             disperser_label = 'Disperser'
             filter_label = 'Filter'
