@@ -34,9 +34,10 @@ To use `pandeia` you need to download some files as per their [documentation](ht
 
 ### 2.1 Reference data and PSF
 
-The `pandeia` python package, you will need to download
-the respective (1) [reference
-data](https://stsci.box.com/v/pandeia-data-v2026p2-jwst) and (2) [PSF](https://stsci.box.com/v/pandeia-psfs-v2026p2-jwst) files.
+The `pandeia` python package, you will need to download the respective
+(1) [reference
+data](https://stsci.box.com/v/pandeia-data-v2026p7-jwst) and (2)
+[PSF](https://stsci.box.com/v/pandeia-psfs-v2026p7-jwst) files.
 
 After unzipping them, make sure the environmental variables
 `$pandeia_refdata` and `$PSF_DIR` point to the respective folders
@@ -57,10 +58,10 @@ You should end up with something like this:
 
 ```bash
 echo $pandeia_refdata
-/home/USERNAME/data/.../pandeia_data-2025.7-jwst
+/home/USERNAME/data/.../pandeia_data-2026.7-jwst
 
 echo $PSF_DIR
-/home/USERNAME/data/.../pandeia_psfs-2026.2-jwst
+/home/USERNAME/data/.../pandeia_psfs-2026.7-jwst
 
 ```
 

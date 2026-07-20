@@ -16,7 +16,7 @@ A general TSO simulator for exoplanets with JWST
 
 ::: {.callout-note title="**Status**"}
 <span style="font-size: 1.2em; font-weight: bold; color: #1a73e8;">
-Gen TSO is up to date with Pandeia version 2026.2
+Gen TSO is up to date with Pandeia version 2026.7 (cycle 6) 🎉
 </span>
 :::
 
