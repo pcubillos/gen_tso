@@ -75,13 +75,13 @@ def read_noise_variance(report, ins_config):
     report_config = report['input']['configuration']['instrument']
     if report_config['mode'] in ['sw_tsgrism', 'sw_ts']:
         aperture = report_config['aperture']
-        noise = ins_config['detector_config']['sw']['rn']
+        noise = ins_config['detector_config']['sw']['readnoise']
         if aperture not in noise:
             aperture = 'default'
         read_noise = noise[aperture]
         return read_noise
 
-    if report_config['mode'] in ['mrs_ts', 'lrsslit']:
+    if report_config['mode'] == 'mrs_ts':
         aperture = report_config['aperture']
         aperture = ins_config['aperture_config'][aperture]['detector']
     else:
@@ -90,7 +90,7 @@ def read_noise_variance(report, ins_config):
     if aperture not in ins_config['detector_config']:
         aperture = 'default'
 
-    read_noise = ins_config['detector_config'][aperture]['rn']
+    read_noise = ins_config['detector_config'][aperture]['readnoise']
     if isinstance(read_noise, dict):
         read_noise = read_noise['default']
 

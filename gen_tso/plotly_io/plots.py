@@ -845,12 +845,6 @@ def plotly_tso_2d(tso, heatmap_name):
     elif mode == 'mrs_ts':
         xlabel = 'arcsec'
         ylabel = 'arcsec'
-    elif mode == 'lrsslit':
-        y_min = report['transform']['wave_det_min']
-        y_max = report['transform']['wave_det_max']
-        y = np.linspace(y_min, y_max, ny)
-        xlabel = 'dispersion (arcsec)'
-        ylabel = 'wavelength (microns)'
     elif mode == 'lrsslitless':
         y = np.flip(y)
         xlabel = 'dispersion (arcsec)'
@@ -916,7 +910,7 @@ def plotly_tso_2d(tso, heatmap_name):
                 color= 'limegreen'
                 dash = 'dash'
             showlegend = i in [0,2]
-            if mode in ['lrsslit', 'lrsslitless']:
+            if mode == 'lrsslitless':
                 xx = aper
                 yy = [np.amin(y), np.amax(y)]
             else:
@@ -932,9 +926,6 @@ def plotly_tso_2d(tso, heatmap_name):
             ))
 
     range = None
-    if mode == 'lrsslit':
-        range = [np.amax(y), np.amin(y)]
-
     fig.update_yaxes(
         title_text=ylabel,
         title_standoff=0,

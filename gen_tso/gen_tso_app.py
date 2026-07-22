@@ -921,7 +921,7 @@ app_ui = ui.page_fluid(
                         ),
                     ),
                     ui.panel_conditional(
-                        "!['lrsslitless', 'lrsslit', 'mrs_ts'].includes(input.mode)",
+                        "!['lrsslitless', 'mrs_ts'].includes(input.mode)",
                         ui.input_select(
                             id="filter",
                             label="Filter",

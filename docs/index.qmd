@@ -123,11 +123,8 @@ These are the available TSO modes for each instrument:
 
   <tbody>
     <tr>
-        <td rowspan="3"><span data-qmd="__miri__"></span></td>
+        <td rowspan="2"><span data-qmd="__miri__"></span></td>
         <td>lrsslitless</td> <td>5.0 &#8211; 12.5</td>
-    </tr>
-    <tr>
-        <td>lrsslit</td> <td>5.0 &#8211; 12.5</td>
     </tr>
     <tr>
         <td>mrs_ts</td> <td>5.0 &#8211; 28</td>
