@@ -865,9 +865,28 @@ def plotly_tso_2d(tso, heatmap_name):
             np.tile(-annulus[1], 2),
         ]
 
-    fig = go.Figure(
-        data=go.Heatmap(z=heatmap, x=x, y=y, showscale=False),
+    data = heatmap
+    if heatmap_name == 'ngroups_map':
+        z_safe = np.maximum(heatmap, 0.1)
+        heatmap = np.log10(z_safe)
+        val_fmt = 'value: %{customdata:.0f}'
+    else:
+        data = heatmap
+        val_fmt = 'value: %{customdata:.3f}'
+
+    hovertemplate = (
+        "x: %{x:.3f}<br>"
+        "y: %{y:.3f}<br>"
+        f"{val_fmt}"
+        "<extra></extra>"
     )
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=heatmap, x=x, y=y, showscale=False,
+            customdata=data, hovertemplate=hovertemplate,
+        ),
+    )
+
     if mode == 'mrs_ts':
         t = np.linspace(0.0, 2.0*np.pi, 100)
         for i, aper in enumerate(apertures):
