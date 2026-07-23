@@ -1031,7 +1031,7 @@ def make_saturation_label(
         order = f'_O{order[0]}' if len(order)==1 else ''
         sat_label = f'{order}'
     elif mode == 'sw_tsgrism':
-        sat_label = f'_{aperture}_{subarray}'
+        sat_label = f'_{aperture}'
     elif mode == 'sw_ts':
         sat_label = f'_{aperture}'
     elif mode == 'mrs_ts':
