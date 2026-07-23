@@ -521,7 +521,7 @@ def plotly_tso_spectra(
             bin_err = sim_depths[i]['uncert']
             wl_err = sim_depths[i]['wl_widths']
 
-        mode = tso['report_in']['input']['configuration']['instrument']['mode']
+        mode = tso['report']['input']['configuration']['instrument']['mode']
         if mode in jwst._photo_modes:
             input_wl, input_depth = tso['input_depth']
             wl_min = np.amin(input_wl)
@@ -568,12 +568,10 @@ def plotly_tso_spectra(
         ymax = np.amax([ymax, np.amax(spec)])
         ymin = np.amin([ymin, np.amin(spec)])
 
-    # Saturation (take report with highest e-/sec)
-    hi_flux = 'report_out' if obs_geometry=='transit' else 'report_in'
     partial_saturation = []
     full_saturation = []
     for i,tso in enumerate(tso_list):
-        report = tso[hi_flux]
+        report = tso['report']
         wl, partial = report['1d']['n_partial_saturated']
         wl, full = report['1d']['n_full_saturated']
         partial_saturation += response_boundaries(wl, partial, threshold=0)
@@ -658,11 +656,12 @@ def plotly_tso_fluxes(
 
     fig = go.Figure()
     for j,tso in enumerate(tso_list):
-        wl = tso['report_in']['1d']['extracted_flux'][0]
+        wl = tso['wl']
+        wl_mask = tso['report']['1d']['wl_mask']
         fluxes = [
-            tso['report_in']['1d']['extracted_flux'][1],
-            tso['report_out']['1d']['extracted_flux'][1],
-            tso['report_out']['1d']['extracted_bg_only'][1],
+            tso['flux_in'] / tso['time_in'],
+            tso['flux_out'] / tso['time_out'],
+            tso['report']['1d']['extracted_bg_only'][1][wl_mask],
         ]
         show_legend = j == 0
         for i in range(len(fluxes)):
@@ -676,8 +675,7 @@ def plotly_tso_fluxes(
                 showlegend=show_legend,
             ))
 
-    # Saturation (take report with highest e-/sec)
-    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    report = tso['report']
     wl, partial = report['1d']['n_partial_saturated']
     wl, full = report['1d']['n_full_saturated']
     partial_saturation = response_boundaries(wl, partial, threshold=0)
@@ -740,10 +738,10 @@ def plotly_tso_snr(
 
     fig = go.Figure()
     for j,tso in enumerate(tso_list):
-        wl = tso['report_in']['1d']['sn'][0]
+        wl = tso['wl']
         snr = [
-            tso['report_in']['1d']['sn'][1],
-            tso['report_out']['1d']['sn'][1],
+            tso['flux_in'] / np.sqrt(tso['var_in']),
+            tso['flux_out'] / np.sqrt(tso['var_out']),
         ]
         show_legend = j == 0
         for i in range(len(snr)):
@@ -757,8 +755,7 @@ def plotly_tso_snr(
                 showlegend=show_legend,
             ))
 
-    # Saturation (take report with highest e-/sec)
-    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    report = tso['report']
     wl, partial = report['1d']['n_partial_saturated']
     wl, full = report['1d']['n_full_saturated']
     partial_saturation = response_boundaries(wl, partial, threshold=0)
@@ -816,9 +813,9 @@ def plotly_tso_2d(tso, heatmap_name):
     """
     # TBD: Think how to multipanel MRS heatmaps
     if isinstance(tso, list):
-        report = tso[0]['report_out']
+        report = tso[0]['report']
     else:
-        report = tso['report_out']
+        report = tso['report']
     inst = report['input']['configuration']['instrument']['instrument']
     mode = report['input']['configuration']['instrument']['mode']
     heatmap = report['2d'][heatmap_name]

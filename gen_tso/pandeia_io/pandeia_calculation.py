@@ -27,6 +27,7 @@ from .pandeia_interface import (
     set_depth_scene,
     save_tso,
     simulate_tso,
+    jwst_convolve,
     tso_print,
 )
 from .pandeia_defaults import (
@@ -53,6 +54,46 @@ except:
 sed_types = get_sed_types()
 
 
+def _update_in_transit(tso):
+    """
+    Update a TSO output dictionary with the in-transit values
+    nint_obs = 605
+    nint_out = 446
+    nint_in = nint_obs - nint_out
+    """
+    wl = tso['wl']
+    dt_out = tso['time_out']
+    flux_out = tso['flux_out']
+    report = tso['report']
+
+    nint_out = report['scalar']['total_integrations']
+    nint_in = report['scalar']['total_integrations_in']
+    mask = report['1d']['wl_mask']
+
+    # Convolve spectrum at instrumental resolving power
+    inst = report['input']['configuration']['instrument']['instrument']
+    wl_model, depth_model = tso['input_depth']
+    tso['depth_spectrum'] = jwst_convolve(wl_model, depth_model, wl, inst)
+
+    # Reconstruct in-transit flux from out_flux and depth
+    dt_in = tso['time_in'] = dt_out * nint_in/nint_out
+    tso['flux_in'] = dt_in * (flux_out/dt_out) * (1.0 - tso['depth_spectrum'])
+
+    # Reconstruct in-transit uncertainty
+    ins_config = get_instrument_config('jwst', inst)
+    npix = report['scalar']['extraction_area']
+    read_noise = read_noise_variance(report, ins_config)
+    read_noise_var = 2.0 * read_noise**2.0 * nint_in * npix
+
+    # Last-minus-first (LMF) noise:
+    lmf_var = (
+        np.abs(tso['flux_in']) +
+        report['1d']['extracted_bg_only'][1][mask] * dt_in +
+        read_noise_var
+    )
+    tso['var_in'] = lmf_var
+    return tso
+
 class PandeiaCalculation():
     """
     A class to interface with the pandeia.engine package.
@@ -67,7 +108,6 @@ class PandeiaCalculation():
 
         Spectroscopy: instrument  mode
                       miri        lrsslitless
-                      miri        lrsslit
                       miri        mrs_ts
                       nircam      lw_tsgrism
                       nircam      sw_tsgrism
@@ -257,7 +297,7 @@ class PandeiaCalculation():
         filter = self.calc['configuration']['instrument']['filter']
         conf = get_instrument_config('jwst', self.instrument)
 
-        if self.mode == 'bots':
+        if self.mode == 'bots' and disperser != 'prism':
             subarray = self.calc['configuration']['detector']['subarray']
             filter = f'{disperser}/{filter}'
             throughput = bots_throughputs[subarray][filter]
@@ -269,14 +309,12 @@ class PandeiaCalculation():
                 bounds = bounds[0]
             return bounds
 
-        if self.mode in ['lw_tsgrism', 'target_acq', 'lw_ts', 'sw_ts']:
+        if self.mode in ['bots', 'lw_tsgrism', 'target_acq', 'lw_ts', 'sw_ts']:
             config = conf['range'][aperture][filter]
         elif self.mode in ['sw_tsgrism']:
             ranges = conf['range'][aperture]['dhs0_2']
             ranges.update(conf['range'][aperture]['dhs0_1'])
             config = ranges[filter]
-        elif self.mode in ['lrsslit']:
-            config = conf['range'][aperture]
         elif self.mode in ['lrsslitless', 'mrs_ts']:
             config = conf['range'][aperture][disperser]
         elif self.mode in ['imaging_ts']:
@@ -820,8 +858,7 @@ class PandeiaCalculation():
             - time_out: Out-of-transit/eclipse measuring time (seconds)
             - flux_out: Out-of-transit/eclipse flux (e-)
             - var_out:  Out-of-transit/eclipse
-            - report_in:  In-transit/eclipse pandeia output report
-            - report_out:  Out-of-transit/eclipse pandeia output report
+            - report:  Out-of-transit/eclipse pandeia output report
 
         Examples
         --------
@@ -902,12 +939,11 @@ class PandeiaCalculation():
         # Scale in or out transit flux rates
         scene = self.calc['scene'][0]
         star_scene, depth_scene = set_depth_scene(scene, obs_type, depth_model)
+        # Out of transit/eclipse scene
         if obs_type == 'eclipse':
-            scene_in = star_scene
-            scene_out = depth_scene
+            tso_scene = depth_scene
         elif obs_type == 'transit':
-            scene_in = depth_scene
-            scene_out = star_scene
+            tso_scene = star_scene
 
         if aperture is None:
             aperture = self.calc['configuration']['instrument']['aperture']
@@ -943,9 +979,8 @@ class PandeiaCalculation():
         tso = []
         for config in configs:
             tso_run = self._tso_calculation(
-                config, scene_in, scene_out, transit_dur, obs_dur,
+                config, tso_scene, transit_dur, obs_dur, depth_model,
             )
-            tso_run['input_depth'] = depth_model
             tso.append(tso_run)
         if len(tso) == 1:
              tso = tso[0]
@@ -955,68 +990,52 @@ class PandeiaCalculation():
         return tso
 
 
-    def _tso_calculation(
-            self, config, scene_in, scene_out, transit_dur, obs_dur,
-        ):
+    def _tso_calculation(self, config, scene, transit_dur, obs_dur, depth_model):
         """
         (the real function that) runs a TSO calculation.
         """
         aperture, disperser, filter, subarray, readout, order, ngroup = config
         self.set_config(disperser, filter, subarray, readout, aperture, order)
 
-        # Now that everything is defined I can turn durations into integs:
+        # Now that everything is defined I can turn durations into integs
         inst = self.instrument
         subarray = self.calc['configuration']['detector']['subarray']
         readout = self.calc['configuration']['detector']['readout_pattern']
         if transit_dur is not None:
-            transit_integs, _ = bin_search_exposure_time(
+            nint_in, _ = bin_search_exposure_time(
                 inst, subarray, readout, ngroup, transit_dur,
             )
         if obs_dur is not None:
-            obs_integs, _ = bin_search_exposure_time(
+            nint_obs, _ = bin_search_exposure_time(
                 inst, subarray, readout, ngroup, obs_dur,
             )
-        if obs_integs <= transit_integs:
+        if nint_obs <= nint_in:
             raise ValueError(
                 "Number of integrations for the total observation duration "
                 "is <= in-transit integrations"
             )
-
-        # Compute observed fluxes and noises:
-        self.calc['scene'][0] = scene_in
-        report_in, wl, flux_in, variances_in, time_in = self.calc_noise(
-            nint=transit_integs, ngroup=ngroup,
+        # Compute observed fluxes and noises
+        nint_out = nint_obs - nint_in
+        self.calc['scene'][0] = scene
+        report, wl, flux, variances, time = self.calc_noise(
+            nint=nint_out, ngroup=ngroup,
         )
-        var_lmf_in = variances_in[0]
+        var_lmf = variances[0]
 
-        out_transit_integs = obs_integs - transit_integs
-        self.calc['scene'][0] = scene_out
-        report_out, wl, flux_out, variances_out, time_out = self.calc_noise(
-            nint=out_transit_integs, ngroup=ngroup,
-        )
-        var_lmf_out = variances_out[0]
-
+        report['scalar']['total_integrations_in'] = nint_in
+        report['scalar']['total_integrations_obs'] = nint_in + nint_out
         # Mask out un-illumnated wavelengths (looking at you, G395H)
-        mask = flux_in > 1e-6 * np.median(flux_in)
-        wl = wl[mask]
-        flux_in = flux_in[mask]
-        flux_out = flux_out[mask]
-        var_in = var_lmf_in[mask]
-        var_out = var_lmf_out[mask]
-        obs_depth = 1 - (flux_in/time_in) / (flux_out/time_out)
-
+        mask = flux > 1e-6 * np.median(flux)
+        report['1d']['wl_mask'] = mask
         tso = {
-            'wl': wl,
-            'depth_spectrum': obs_depth,
-            'time_in': time_in,
-            'flux_in': flux_in,
-            'var_in': var_in,
-            'time_out': time_out,
-            'flux_out': flux_out,
-            'var_out': var_out,
-            'report_in': report_in,
-            'report_out': report_out,
+            'wl': wl[mask],
+            'time_out': time,
+            'flux_out': flux[mask],
+            'var_out': var_lmf[mask],
+            'report': report,
+            'input_depth': depth_model,
         }
+        tso = _update_in_transit(tso)
         return tso
 
 
@@ -1096,8 +1115,8 @@ class PandeiaCalculation():
             The TSO object to be saved.  If not specified, assume the latest
             TSO computed by this PandeiaCalculation object.
         lightweight: bool
-            If True, remove the '2d' and '3d' fields from 'report_out' and
-            'report_in' to reduce the file size.
+            If True, remove the '2d' and '3d' fields from 'report'
+            to reduce the file size.
         """
         if tso is None:
             tso = self.tso

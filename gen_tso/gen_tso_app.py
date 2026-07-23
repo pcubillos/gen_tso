@@ -1599,26 +1599,20 @@ def server(input, output, session):
             # The planet
             tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
-                reports = (
-                    [report['report_in']['scalar'] for report in tso],
-                    [report['report_out']['scalar'] for report in tso],
-                )
-                warnings = tso[0]['report_out']['warnings']
+                report = [_tso['report']['scalar'] for _tso in tso]
+                warnings = tso[0]['report']['warnings']
             else:
-                reports = (
-                    tso['report_in']['scalar'],
-                    tso['report_out']['scalar'],
-                )
-                warnings = tso['report_out']['warnings']
+                report = tso['report']['scalar']
+                warnings = tso['report']['warnings']
         else:
             if isinstance(tso, list):
-                reports = [report['scalar'] for report in tso]
+                report = [report['scalar'] for report in tso]
                 warnings = tso[0]['warnings']
             else:
-                reports = tso['scalar'], None
+                report = tso['scalar']
                 warnings = tso['warnings']
         tso_run['stats'] = jwst._print_pandeia_stats(
-            inst, mode, reports[0], reports[1], format='html',
+            inst, mode, report, format='html',
         )
         tso_run['warnings'] = warnings
 
