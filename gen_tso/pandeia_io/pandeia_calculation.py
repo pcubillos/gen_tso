@@ -77,7 +77,7 @@ def _update_in_transit(tso):
 
     # Reconstruct in-transit flux from out_flux and depth
     dt_in = tso['time_in'] = dt_out * nint_in/nint_out
-    tso['flux_in'] = dt_in * (flux_out/dt_out) * (1.0 - tso['depth_spectrum'])
+    tso['flux_in'] = flux_out * (1.0 - tso['depth_spectrum'])
 
     # Reconstruct in-transit uncertainty
     ins_config = get_instrument_config('jwst', inst)
@@ -87,7 +87,7 @@ def _update_in_transit(tso):
 
     # Last-minus-first (LMF) noise:
     lmf_var = (
-        np.abs(tso['flux_in']) +
+        np.abs(tso['flux_in']) * dt_in +
         report['1d']['extracted_bg_only'][1][mask] * dt_in +
         read_noise_var
     )
@@ -788,22 +788,30 @@ class PandeiaCalculation():
             ngroup, nint, disperser, filter, subarray, readout, aperture,
         )
 
-        # Flux:
         measurement_time = report['scalar']['measurement_time']
-        flux = report['1d']['extracted_flux'][1] * measurement_time
+        if 'single_exposure_time_pixel' in report['scalar']:
+            exp_frac = report['scalar']['single_exposure_time_pixel']
+            stripe_time = report['scalar']['single_exposure_time_stripes']
+            measurement_time *= exp_frac / stripe_time
+        # Source and background flux rates (e- per second)
         wl = report['1d']['extracted_flux'][0]
+        flux = report['1d']['extracted_flux'][1]
+        background_var = report['1d']['extracted_bg_only'][1]
 
-        # Background variance:
-        background_var = report['1d']['extracted_bg_only'][1] * measurement_time
         # Read noise variance:
         ins_config = get_instrument_config(self.telescope, self.instrument)
         read_noise = read_noise_variance(report, ins_config)
         npix = report['scalar']['extraction_area']
         read_noise_var = 2.0 * read_noise**2.0 * nint * npix
+
         # Pandeia (multiaccum) noise:
         shot_var = (report['1d']['extracted_noise'][1] * measurement_time)**2.0
         # Last-minus-first (LMF) noise:
-        lmf_var = np.abs(flux) + background_var + read_noise_var
+        lmf_var = (
+            np.abs(flux) * measurement_time +
+            background_var * measurement_time +
+            read_noise_var
+        )
 
         variances = lmf_var, shot_var, background_var, read_noise_var
 
@@ -853,11 +861,11 @@ class PandeiaCalculation():
             - wl: instrumental wavelength sampling (microns)
             - depth_spectrum: Transit/eclipse depth spectrum at instrumental wl
             - time_in: In-transit/eclipse measuring time (seconds)
-            - flux_in: In-transit/eclipse flux (e-)
-            - var_in:  In-transit/eclipse variance
+            - flux_in: In-transit/eclipse flux (e-/s)
+            - var_in:  In-transit/eclipse time-integrated variance (e-²)
             - time_out: Out-of-transit/eclipse measuring time (seconds)
-            - flux_out: Out-of-transit/eclipse flux (e-)
-            - var_out:  Out-of-transit/eclipse
+            - flux_out: Out-of-transit/eclipse flux (e-/s)
+            - var_out:  Out-of-transit/eclipse time-integrated variance (e-²)
             - report:  Out-of-transit/eclipse pandeia output report
 
         Examples
@@ -1023,6 +1031,7 @@ class PandeiaCalculation():
         var_lmf = variances[0]
 
         report['scalar']['total_integrations_in'] = nint_in
+        report['scalar']['total_integrations_out'] = nint_out
         report['scalar']['total_integrations_obs'] = nint_in + nint_out
         # Mask out un-illumnated wavelengths (looking at you, G395H)
         mask = flux > 1e-6 * np.median(flux)

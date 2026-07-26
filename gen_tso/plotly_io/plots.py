@@ -659,8 +659,8 @@ def plotly_tso_fluxes(
         wl = tso['wl']
         wl_mask = tso['report']['1d']['wl_mask']
         fluxes = [
-            tso['flux_in'] / tso['time_in'],
-            tso['flux_out'] / tso['time_out'],
+            tso['flux_in'],
+            tso['flux_out'],
             tso['report']['1d']['extracted_bg_only'][1][wl_mask],
         ]
         show_legend = j == 0
@@ -740,8 +740,8 @@ def plotly_tso_snr(
     for j,tso in enumerate(tso_list):
         wl = tso['wl']
         snr = [
-            tso['flux_in'] / np.sqrt(tso['var_in']),
-            tso['flux_out'] / np.sqrt(tso['var_out']),
+            tso['flux_in']*tso['time_in'] / np.sqrt(tso['var_in']),
+            tso['flux_out']*tso['time_out'] / np.sqrt(tso['var_out']),
         ]
         show_legend = j == 0
         for i in range(len(snr)):

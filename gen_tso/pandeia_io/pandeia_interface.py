@@ -1346,8 +1346,8 @@ def simulate_tso(
     """
     dt_in = tso['time_in']
     dt_out = tso['time_out']
-    flux_in = tso['flux_in'] * n_obs
-    flux_out = tso['flux_out'] * n_obs
+    flux_in = tso['flux_in'] * dt_in * n_obs
+    flux_out = tso['flux_out'] * dt_out * n_obs
     var_in = tso['var_in'] * n_obs * err_scale**2.0
     var_out = tso['var_out'] * n_obs * err_scale**2.0
     wl = tso['wl']
