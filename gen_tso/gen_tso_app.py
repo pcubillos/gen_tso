@@ -320,6 +320,10 @@ app_ui = ui.page_fluid(
         .action-link .action-label:empty {
             margin-left: 0.0em !important;
         }
+        .accordion-button {
+            padding-top: 0.35rem;
+            padding-bottom: 0.35rem;
+        }
         """
     ),
     ui.layout_columns(
@@ -1098,12 +1102,24 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Filters",
-                    pops.filter_popover,
                     cs.custom_card(
                         output_widget("plotly_filters", fillable=True),
                         body_args=dict(class_='m-0 p-0'),
                         full_screen=True,
-                        height='250px',
+                        height='275px',
+                    ),
+                    ui.card(
+                        ui.card_body(
+                            ui.input_switch(
+                                id="filters_switch",
+                                label="Display other filters",
+                                value=False,
+                            ),
+                            class_="px-2 py-1 m-0 gap-2",
+                            style=card_style,
+                        ),
+                        fill=False,
+                        class_="p-0 m-0",
                     ),
                 ),
                 ui.nav_panel(
@@ -1125,22 +1141,142 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Stellar SED",
-                    pops.sed_popover,
                     cs.custom_card(
                         output_widget("plotly_sed", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
                         height='350px',
                     ),
+                    ui.accordion(
+                        ui.accordion_panel(
+                            ui.markdown("**Plot configurations**"),
+                            ui.card(
+                                ui.card_body(
+                                    ui.layout_column_wrap(
+                                        'Resolution',
+                                        ui.input_numeric(
+                                            id='plot_sed_resolution',
+                                            label="",
+                                            value=0.0,
+                                            min=0.0, max=3000.0, step=50.0,
+                                        ),
+                                        ui.div(
+                                            ui.input_action_button(
+                                                id="reset_sed",
+                                                label="reset",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            style="text-align: right;"
+                                        ),
+                                        ui.markdown("λ scale"),
+                                        ui.input_select(
+                                            "plot_sed_xscale",
+                                            label="",
+                                            choices=['linear', 'log'],
+                                            selected='log',
+                                        ),
+                                        None,
+                                        ui.markdown("λ range"),
+                                        ui.input_numeric(
+                                            id='sed_wl_min', label='',
+                                            value=0.5, min=0.3, max=30.0, step=0.15,
+                                        ),
+                                        ui.input_numeric(
+                                            id='sed_wl_max', label='',
+                                            value=28.0, min=0.5, max=30.0, step=1.0,
+                                        ),
+                                        width=1/3,
+                                        fixed_width=False,
+                                        gap='5px',
+                                        fill=False,
+                                        fillable=True,
+                                        class_="p-0 m-0",
+                                    ),
+                                    class_="px-2 py-1 m-0 gap-2",
+                                    style=card_style,
+                                ),
+                                fill=False,
+                                class_="p-0 m-0",
+                            ),
+                            class_="p-1 m-0",
+                            value="sec_2",
+                        ),
+                        id="sed_controls",
+                        open=False,
+                    ),
                 ),
                 ui.nav_panel(
                     ui.output_text('transit_depth_label'),
-                    pops.planet_popover,
                     cs.custom_card(
                         output_widget("plotly_depth", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
                         height='350px',
+                    ),
+                    ui.accordion(
+                        ui.accordion_panel(
+                            ui.markdown("**Plot configurations**"),
+                            ui.card(
+                                ui.card_body(
+                                    ui.layout_column_wrap(
+                                        'Resolution',
+                                        ui.input_numeric(
+                                            id='depth_resolution',
+                                            label="",
+                                            value=250.0,
+                                            min=0.0, max=3000.0, step=25.0,
+                                        ),
+                                        ui.div(
+                                            ui.input_action_button(
+                                                id="reset_depth",
+                                                label="reset",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            style="text-align: right;"
+                                        ),
+                                        "Depth units",
+                                        ui.input_select(
+                                            id="plot_depth_units",
+                                            label="",
+                                            choices=depth_units,
+                                            selected='percent',
+                                        ),
+                                        None,
+                                        ui.markdown("λ scale"),
+                                        ui.input_select(
+                                            "plot_depth_xscale",
+                                            label="",
+                                            choices=['linear', 'log'],
+                                            selected='log',
+                                        ),
+                                        None,
+                                        ui.markdown("λ range"),
+                                        ui.input_numeric(
+                                            id='depth_wl_min', label='',
+                                            value=0.6, min=0.3, max=30.0, step=0.15,
+                                        ),
+                                        ui.input_numeric(
+                                            id='depth_wl_max', label='',
+                                            value=28.0, min=0.5, max=30.0, step=1.0,
+                                        ),
+                                        width=1/3,
+                                        fixed_width=False,
+                                        gap='5px',
+                                        fill=False,
+                                        fillable=True,
+                                        class_="p-0 m-0",
+                                    ),
+                                    class_="px-2 py-1 m-0 gap-2",
+                                    style=card_style,
+                                ),
+                                fill=False,
+                                class_="p-0 m-0",
+                            ),
+                            class_="p-1 m-0",
+                            value="sec_2",
+                        ),
+                        id="depth_controls",
+                        open=False,
                     ),
                 ),
                 ui.nav_panel(
@@ -1637,9 +1773,6 @@ def server(input, output, session):
         )
         saturation_label.set(sat_label)
         warning_text.set(warnings)
-
-        #print(inst, mode, aperture, disperser, filter, subarray, readout, order)
-        #print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
 
@@ -1983,20 +2116,6 @@ def server(input, output, session):
             label=detector.disperser_label,
             choices=choices,
             selected=disperser,
-        )
-
-        selected = input.filter_filter.get()
-        if detector.obs_type == 'acquisition':
-            choices = [detector.instrument]
-        else:
-            choices = [detector.instrument, 'all']
-
-        if selected != 'all' or detector.obs_type=='acquisition':
-            selected = None
-        ui.update_radio_buttons(
-            "filter_filter",
-            choices=choices,
-            selected=selected,
         )
 
 
@@ -3066,7 +3185,7 @@ def server(input, output, session):
     # Viewers
     @render_plotly
     @reactive.event(
-        input.filter_filter, input.instrument, input.mode,
+        input.filters_switch, input.instrument, input.mode,
         input.aperture, input.disperser, input.filter, input.subarray,
     )
     def plotly_filters():
@@ -3079,7 +3198,7 @@ def server(input, output, session):
 
         throughputs, t_config = get_throughput(input)
         inst, mode, key, filter = t_config
-        show_all = input.filter_filter.get() == 'all'
+        show_all = input.filters_switch.get()
         fig = plots.plotly_filters(
             throughputs, inst, mode, key, filter, show_all,
         )
@@ -3108,12 +3227,10 @@ def server(input, output, session):
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
-        units = input.plot_sed_units.get()
         resolution = input.plot_sed_resolution.get()
 
         fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
-            units=units,
             wl_range=wl_range, wl_scale=wl_scale,
             resolution=resolution,
             throughput=throughput,
