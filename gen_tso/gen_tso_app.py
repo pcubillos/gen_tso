@@ -1181,7 +1181,7 @@ app_ui = ui.page_fluid(
                                         ),
                                         ui.markdown("λ scale"),
                                         ui.input_select(
-                                            "plot_sed_xscale",
+                                            id="plot_sed_xscale",
                                             label="",
                                             choices=['linear', 'log'],
                                             selected='log',
@@ -1214,7 +1214,7 @@ app_ui = ui.page_fluid(
                             class_="p-1 m-0",
                             value="sed_accordion",
                         ),
-                        open=True,
+                        open=False,
                     ),
                 ),
                 ui.nav_panel(
@@ -1237,11 +1237,12 @@ app_ui = ui.page_fluid(
                                             label="",
                                             value=250.0,
                                             min=0.0, max=3000.0, step=25.0,
+                                            update_on='blur',
                                         ),
                                         ui.div(
                                             ui.input_action_button(
-                                                id="reset_depth",
-                                                label="reset",
+                                                id="reset_depth_config",
+                                                label="reset configs",
                                                 class_="btn btn-outline-primary btn-sm",
                                             ),
                                             style="text-align: right;"
@@ -1256,7 +1257,7 @@ app_ui = ui.page_fluid(
                                         None,
                                         ui.markdown("λ scale"),
                                         ui.input_select(
-                                            "plot_depth_xscale",
+                                            id="plot_depth_xscale",
                                             label="",
                                             choices=['linear', 'log'],
                                             selected='log',
@@ -1265,11 +1266,14 @@ app_ui = ui.page_fluid(
                                         ui.markdown("λ range"),
                                         ui.input_numeric(
                                             id='depth_wl_min', label='',
-                                            value=0.6, min=0.3, max=30.0, step=0.15,
+                                            value='',
+                                            min=0.3, max=30, step=0.15,
+                                            update_on='blur',
                                         ),
                                         ui.input_numeric(
                                             id='depth_wl_max', label='',
-                                            value=28.0, min=0.5, max=30.0, step=1.0,
+                                            value=28, min=0, max=30, step=1,
+                                            update_on='blur',
                                         ),
                                         width=1/3,
                                         fixed_width=False,
@@ -1285,9 +1289,8 @@ app_ui = ui.page_fluid(
                                 class_="p-0 m-0",
                             ),
                             class_="p-1 m-0",
-                            value="sec_2",
+                            value="depth_accordion",
                         ),
-                        id="depth_controls",
                         open=False,
                     ),
                 ),
@@ -2884,6 +2887,8 @@ def server(input, output, session):
             'depth_clear_tooltip',
             f'Clear all bookmarked {obs_geometry} spectra',
         )
+        units = 'percent' if input.obs_geometry.get()=='transit' else 'ppm'
+        ui.update_select(id="plot_depth_units", selected=units)
 
 
     @reactive.effect
@@ -3406,18 +3411,29 @@ def server(input, output, session):
         wl_scale = input.plot_depth_xscale.get()
         wl_range = [input.depth_wl_min.get(), input.depth_wl_max.get()]
         units = input.plot_depth_units.get()
-        resolution = input.depth_resolution.get()
+        resolution = _safe_num(input.depth_resolution.get(), default=200.0)
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
         fig = plots.plotly_depth_spectra(
             depth_models, model_names, current_model,
             units=units,
-            wl_range=wl_range, wl_scale=wl_scale,
+            wl_range=wl_range,
+            wl_scale=wl_scale,
             resolution=resolution,
             obs_geometry=obs_geometry,
             throughput=throughput,
         )
         return fig
+
+    @reactive.effect
+    @reactive.event(input.reset_depth_config)
+    def _():
+        units = 'percent' if input.obs_geometry.get()=='transit' else 'ppm'
+        ui.update_numeric(id='depth_resolution', value=250.0)
+        ui.update_select(id="plot_depth_units", selected=units)
+        ui.update_select(id="plot_depth_xscale", selected='log')
+        ui.update_numeric(id='depth_wl_min', value='')
+        ui.update_numeric(id='depth_wl_max', value='')
 
 
     @render_plotly
