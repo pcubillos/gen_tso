@@ -58,7 +58,6 @@ from gen_tso.app_utils import (
     parse_sed,
     _safe_num,
 )
-import gen_tso.viewer_popovers as pops
 from gen_tso.export_script import (
     export_script_fixed_values,
     export_script_calculated_values,
@@ -252,6 +251,17 @@ layout_kwargs = dict(
 )
 
 card_style = "background:#F5F5F5; !important;"
+
+tso_choices = {
+    'tso': 'TSO',
+    'fluxes': 'Flux rate',
+    'snr': 'S/N',
+    '2d_flux': '2D flux',
+    '2d_snr': '2D S/N',
+    '2d_saturation': '2D saturation',
+    '2d_groups': '2D groups',
+}
+
 
 app_ui = ui.page_fluid(
     # ESA Sky
@@ -1281,12 +1291,129 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "TSO",
-                    pops.tso_popover,
                     cs.custom_card(
                         output_widget("plotly_tso", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
                         height='400px',
+                    ),
+                    ui.accordion(
+                        ui.accordion_panel(
+                            ui.markdown("**Plot configurations**"),
+                            ui.card(
+                                ui.card_body(
+                                    ui.layout_column_wrap(
+                                        'Plot type:',
+                                        ui.input_select(
+                                            id="tso_plot",
+                                            label="",
+                                            choices=tso_choices,
+                                            selected='tso',
+                                        ),
+                                        ui.div(
+                                            ui.input_action_button(
+                                                id="reset_tso",
+                                                label="reset config",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            style="text-align: right;"
+                                        ),
+                                        ui.markdown("λ range:"),
+                                        ui.input_numeric(
+                                            id='tso_wl_min', label='',
+                                            value=None, min=0.5, max=30.0, step=0.1,
+                                        ),
+                                        ui.input_numeric(
+                                            id='tso_wl_max', label='',
+                                            value=None, min=0.5, max=30.0, step=0.1,
+                                        ),
+                                        ui.markdown("λ scale:"),
+                                        ui.input_select(
+                                            id="plot_tso_xscale",
+                                            label='',
+                                            choices=['linear', 'log'],
+                                            selected='linear',
+                                        ),
+                                        None,
+                                        width=1/3,
+                                        fixed_width=False,
+                                        gap='5px',
+                                        fill=False,
+                                        fillable=True,
+                                        class_="p-0 m-0",
+                                    ),
+                                    ui.panel_conditional(
+                                        "input.tso_plot == 'tso'",
+                                        ui.layout_column_wrap(
+                                            'Number of obs:',
+                                            ui.input_numeric(
+                                                id='n_obs',
+                                                label='',
+                                                value=1.0,
+                                                min=1.0, max=3000.0, step=1.0,
+                                            ),
+                                            None,
+                                            'Resolution:',
+                                            ui.input_numeric(
+                                                id='tso_resolution',
+                                                label='',
+                                                value=250.0,
+                                                min=25.0, max=3000.0, step=25.0,
+                                            ),
+                                            ui.input_switch(
+                                                id="noiseless_switch",
+                                                label="Noiseless",
+                                                value=False,
+                                            ),
+                                            'Error scale:',
+                                            ui.input_numeric(
+                                                id='tso_error_scale',
+                                                label='',
+                                                value=1.0,
+                                                min=0.0, step=0.1,
+                                            ),
+                                            ui.input_action_button(
+                                                id="redraw_tso",
+                                                label="Re-draw",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            "Depth range:",
+                                            ui.input_numeric(
+                                                id='tso_depth_min',
+                                                label='',
+                                                value=None,
+                                            ),
+                                            ui.input_numeric(
+                                                id='tso_depth_max',
+                                                label='',
+                                                value=None,
+                                            ),
+                                            "Depth units:",
+                                            ui.input_select(
+                                                id="plot_tso_units",
+                                                label="",
+                                                choices = depth_units,
+                                                selected='percent',
+                                            ),
+                                            width=1/3,
+                                            fixed_width=False,
+                                            gap='5px',
+                                            fill=False,
+                                            fillable=True,
+                                            class_="p-0 m-0",
+                                        ),
+                                    ),
+                                    class_="px-2 py-1 m-0 gap-2",
+                                    style=card_style,
+                                ),
+                                fill=False,
+                                class_="p-0 m-0",
+                            ),
+                            class_="p-1 m-0",
+                            value="sec_2",
+                        ),
+                        id="tso_controls",
+                        open=False,
                     ),
                 ),
                 id="tab",
@@ -1961,7 +2088,9 @@ def server(input, output, session):
 
             resolution = _safe_num(input.tso_resolution.get(), default=250)
             n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
-            tso_draw.set(draw(tso['tso'], resolution, n_obs))
+            noiseless = input.noiseless_switch.get()
+            err_scale = _safe_num(input.tso_error_scale.get(), default=1.0)
+            tso_draw.set(draw(tso['tso'], resolution, n_obs, noiseless, err_scale))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
             min_depth, max_depth, step = jwst._get_tso_depth_range(
@@ -3339,7 +3468,10 @@ def server(input, output, session):
 
 
     @reactive.effect
-    @reactive.event(input.redraw_tso, input.n_obs, input.tso_resolution)
+    @reactive.event(
+        input.redraw_tso, input.n_obs, input.tso_resolution,
+        input.noiseless_switch, input.tso_error_scale,
+    )
     def redraw_tso_scatter():
         tso_key = input.display_tso_run.get()
         if tso_key is None:
@@ -3349,7 +3481,9 @@ def server(input, output, session):
 
         n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
         resolution = _safe_num(input.tso_resolution.get(), default=250)
-        tso_draw.set(draw(tso['tso'], resolution, n_obs))
+        noiseless = input.noiseless_switch.get()
+        err_scale = _safe_num(input.tso_error_scale.get(), default=1.0)
+        tso_draw.set(draw(tso['tso'], resolution, n_obs, noiseless, err_scale))
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

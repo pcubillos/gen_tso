@@ -121,7 +121,7 @@ def get_saturation_values(
     return pixel_rate, full_well
 
 
-def draw(tso_list, resolution, n_obs):
+def draw(tso_list, resolution, n_obs, noiseless=False, err_scale=1.0):
     """
     Draw a random noised-up transit/eclipse depth realization from a TSO
     """
@@ -131,7 +131,9 @@ def draw(tso_list, resolution, n_obs):
     sims = []
     for tso in tso_list:
         bin_wl, bin_spec, bin_err, wl_widths = jwst.simulate_tso(
-           tso, n_obs=n_obs, resolution=resolution, noiseless=False,
+           tso, n_obs=n_obs, resolution=resolution,
+           noiseless=noiseless,
+           err_scale=err_scale,
         )
         sims.append({
             'wl': bin_wl,
