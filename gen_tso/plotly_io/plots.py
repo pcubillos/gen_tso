@@ -473,13 +473,11 @@ def plotly_depth_spectra(
     )
 
     fig.update_layout(legend=dict(
-        orientation="h",
-        entrywidth=1.0,
-        entrywidthmode='fraction',
-        yanchor="bottom",
-        xanchor="right",
-        y=1.02,
-        x=1
+        bgcolor="rgba(255, 255, 255, 0.6)",
+        yanchor="top",
+        xanchor="left",
+        y=0.99,
+        x=0.01,
     ))
     fig.update_layout(showlegend=True)
     return fig
