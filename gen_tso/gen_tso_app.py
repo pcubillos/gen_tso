@@ -1169,11 +1169,12 @@ app_ui = ui.page_fluid(
                                             label="",
                                             value=0.0,
                                             min=0.0, max=3000.0, step=50.0,
+                                            update_on='blur',
                                         ),
                                         ui.div(
                                             ui.input_action_button(
-                                                id="reset_sed",
-                                                label="reset",
+                                                id="reset_sed_config",
+                                                label="reset configs",
                                                 class_="btn btn-outline-primary btn-sm",
                                             ),
                                             style="text-align: right;"
@@ -1189,11 +1190,13 @@ app_ui = ui.page_fluid(
                                         ui.markdown("λ range"),
                                         ui.input_numeric(
                                             id='sed_wl_min', label='',
-                                            value=0.5, min=0.3, max=30.0, step=0.15,
+                                            value=0.5, min=0.3, max=30, step=0.15,
+                                            update_on='blur',
                                         ),
                                         ui.input_numeric(
                                             id='sed_wl_max', label='',
-                                            value=28.0, min=0.5, max=30.0, step=1.0,
+                                            value=28, min=0, max=30, step=1,
+                                            update_on='blur',
                                         ),
                                         width=1/3,
                                         fixed_width=False,
@@ -1209,10 +1212,9 @@ app_ui = ui.page_fluid(
                                 class_="p-0 m-0",
                             ),
                             class_="p-1 m-0",
-                            value="sec_2",
+                            value="sed_accordion",
                         ),
-                        id="sed_controls",
-                        open=False,
+                        open=True,
                     ),
                 ),
                 ui.nav_panel(
@@ -3356,7 +3358,7 @@ def server(input, output, session):
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
-        resolution = input.plot_sed_resolution.get()
+        resolution = _safe_num(input.plot_sed_resolution.get(), default=0.0)
 
         fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
@@ -3365,6 +3367,15 @@ def server(input, output, session):
             throughput=throughput,
         )
         return fig
+
+
+    @reactive.effect
+    @reactive.event(input.reset_sed_config)
+    def _():
+        ui.update_numeric(id='plot_sed_resolution', value=0.0)
+        ui.update_select(id="plot_sed_xscale", selected='log')
+        ui.update_numeric(id='sed_wl_min', value=0.5)
+        ui.update_numeric(id='sed_wl_max', value=28.0)
 
 
     @render_plotly
