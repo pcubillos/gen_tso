@@ -1163,7 +1163,7 @@ app_ui = ui.page_fluid(
                             ui.card(
                                 ui.card_body(
                                     ui.layout_column_wrap(
-                                        'Resolution',
+                                        'Resolution:',
                                         ui.input_numeric(
                                             id='plot_sed_resolution',
                                             label="",
@@ -1179,7 +1179,7 @@ app_ui = ui.page_fluid(
                                             ),
                                             style="text-align: right;"
                                         ),
-                                        ui.markdown("λ scale"),
+                                        ui.markdown("λ scale (µm):"),
                                         ui.input_select(
                                             id="plot_sed_xscale",
                                             label="",
@@ -1187,7 +1187,7 @@ app_ui = ui.page_fluid(
                                             selected='log',
                                         ),
                                         None,
-                                        ui.markdown("λ range"),
+                                        ui.markdown("λ range:"),
                                         ui.input_numeric(
                                             id='sed_wl_min', label='',
                                             value=0.5, min=0.3, max=30, step=0.15,
@@ -1231,7 +1231,7 @@ app_ui = ui.page_fluid(
                             ui.card(
                                 ui.card_body(
                                     ui.layout_column_wrap(
-                                        'Resolution',
+                                        'Resolution:',
                                         ui.input_numeric(
                                             id='depth_resolution',
                                             label="",
@@ -1247,7 +1247,7 @@ app_ui = ui.page_fluid(
                                             ),
                                             style="text-align: right;"
                                         ),
-                                        "Depth units",
+                                        "Depth units:",
                                         ui.input_select(
                                             id="plot_depth_units",
                                             label="",
@@ -1255,7 +1255,7 @@ app_ui = ui.page_fluid(
                                             selected='percent',
                                         ),
                                         None,
-                                        ui.markdown("λ scale"),
+                                        ui.markdown("λ scale (µm):"),
                                         ui.input_select(
                                             id="plot_depth_xscale",
                                             label="",
@@ -1263,7 +1263,7 @@ app_ui = ui.page_fluid(
                                             selected='log',
                                         ),
                                         None,
-                                        ui.markdown("λ range"),
+                                        ui.markdown("λ range:"),
                                         ui.input_numeric(
                                             id='depth_wl_min', label='',
                                             value='',
@@ -1317,20 +1317,24 @@ app_ui = ui.page_fluid(
                                         ),
                                         ui.div(
                                             ui.input_action_button(
-                                                id="reset_tso",
+                                                id="reset_tso_config",
                                                 label="reset config",
                                                 class_="btn btn-outline-primary btn-sm",
                                             ),
                                             style="text-align: right;"
                                         ),
-                                        ui.markdown("λ range:"),
+                                        ui.markdown("λ range (µm):"),
                                         ui.input_numeric(
                                             id='tso_wl_min', label='',
-                                            value=None, min=0.5, max=30.0, step=0.1,
+                                            value=None,
+                                            min=0.3, max=30.0, step=0.1,
+                                            update_on='blur',
                                         ),
                                         ui.input_numeric(
                                             id='tso_wl_max', label='',
-                                            value=None, min=0.5, max=30.0, step=0.1,
+                                            value=None,
+                                            min=0.3, max=30.0, step=1.0,
+                                            update_on='blur',
                                         ),
                                         ui.markdown("λ scale:"),
                                         ui.input_select(
@@ -1364,6 +1368,7 @@ app_ui = ui.page_fluid(
                                                 label='',
                                                 value=250.0,
                                                 min=25.0, max=3000.0, step=25.0,
+                                                update_on='blur',
                                             ),
                                             ui.input_switch(
                                                 id="noiseless_switch",
@@ -1376,6 +1381,7 @@ app_ui = ui.page_fluid(
                                                 label='',
                                                 value=1.0,
                                                 min=0.0, step=0.1,
+                                                update_on='blur',
                                             ),
                                             ui.input_action_button(
                                                 id="redraw_tso",
@@ -1387,11 +1393,13 @@ app_ui = ui.page_fluid(
                                                 id='tso_depth_min',
                                                 label='',
                                                 value=None,
+                                                update_on='blur',
                                             ),
                                             ui.input_numeric(
                                                 id='tso_depth_max',
                                                 label='',
                                                 value=None,
+                                                update_on='blur',
                                             ),
                                             "Depth units:",
                                             ui.input_select(
@@ -1415,10 +1423,9 @@ app_ui = ui.page_fluid(
                                 class_="p-0 m-0",
                             ),
                             class_="p-1 m-0",
-                            value="sec_2",
+                            value="tso_accordion",
                         ),
-                        id="tso_controls",
-                        open=False,
+                        open=True,
                     ),
                 ),
                 id="tab",
@@ -3475,6 +3482,20 @@ def server(input, output, session):
         elif plot_type in heatmaps:
             fig = plots.plotly_tso_2d(tso_run['tso'], heatmaps[plot_type])
         return fig
+
+
+    @reactive.effect
+    @reactive.event(input.reset_tso_config)
+    def _():
+        units = 'percent' if input.obs_geometry.get()=='transit' else 'ppm'
+        ui.update_numeric(id='tso_wl_min', value='')
+        ui.update_numeric(id='tso_wl_max', value='')
+        ui.update_numeric(id='tso_depth_min', value='')
+        ui.update_numeric(id='tso_depth_max', value='')
+        ui.update_select(id="plot_tso_units", selected=units)
+        ui.update_numeric(id='n_obs', value=1.0)
+        ui.update_numeric(id='tso_resolution', value=250.0)
+        ui.update_numeric(id='tso_error_scale', value=1.0)
 
     @reactive.effect
     @reactive.event(input.plot_tso_units)
