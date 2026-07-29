@@ -32,6 +32,7 @@ from .pandeia_interface import (
 )
 from .pandeia_defaults import (
     _spec_modes,
+    _photo_modes,
     _default_aperture_strategy,
     generate_all_instruments,
     get_sed_types,
@@ -72,8 +73,19 @@ def _update_in_transit(tso):
 
     # Convolve spectrum at instrumental resolving power
     inst = report['input']['configuration']['instrument']['instrument']
+    mode = report['input']['configuration']['instrument']['mode']
     wl_model, depth_model = tso['input_depth']
-    tso['depth_spectrum'] = jwst_convolve(wl_model, depth_model, wl, inst)
+    if mode in _photo_modes:
+        # 1D source throughput-weighted flux in number of electrons
+        wl_1d, sed_out = report['1d']['fp']
+        depth_spectrum_1d = jwst_convolve(wl_model, depth_model, wl_1d, inst)
+        sed_in = (1.0 - depth_spectrum_1d) * sed_out
+        # Band-integrated fluxes
+        band_out = np.trapezoid(sed_out, wl_1d)
+        band_in = np.trapezoid(sed_in, wl_1d)
+        tso['depth_spectrum'] = np.array([1.0-band_in/band_out])
+    else:
+        tso['depth_spectrum'] = jwst_convolve(wl_model, depth_model, wl, inst)
 
     # Reconstruct in-transit flux from out_flux and depth
     dt_in = tso['time_in'] = dt_out * nint_in/nint_out
@@ -93,6 +105,7 @@ def _update_in_transit(tso):
     )
     tso['var_in'] = lmf_var
     return tso
+
 
 class PandeiaCalculation():
     """
