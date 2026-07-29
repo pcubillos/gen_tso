@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pandeia.engine
 import plotly.graph_objects as go
+import pyratbay.tools as pt
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -1354,6 +1355,27 @@ app_ui = ui.page_fluid(
                                     ui.panel_conditional(
                                         "input.tso_plot == 'tso'",
                                         ui.layout_column_wrap(
+                                            "Depth range:",
+                                            ui.input_numeric(
+                                                id='tso_depth_min',
+                                                label='',
+                                                value=None, step=0.1,
+                                                update_on='blur',
+                                            ),
+                                            ui.input_numeric(
+                                                id='tso_depth_max',
+                                                label='',
+                                                value=None, step=0.1,
+                                                update_on='blur',
+                                            ),
+                                            "Depth units:",
+                                            ui.input_select(
+                                                id="plot_tso_units",
+                                                label="",
+                                                choices = depth_units,
+                                                selected='percent',
+                                            ),
+                                            None,
                                             'Number of obs:',
                                             ui.input_numeric(
                                                 id='n_obs',
@@ -1388,26 +1410,6 @@ app_ui = ui.page_fluid(
                                                 label="Re-draw",
                                                 class_="btn btn-outline-primary btn-sm",
                                             ),
-                                            "Depth range:",
-                                            ui.input_numeric(
-                                                id='tso_depth_min',
-                                                label='',
-                                                value=None,
-                                                update_on='blur',
-                                            ),
-                                            ui.input_numeric(
-                                                id='tso_depth_max',
-                                                label='',
-                                                value=None,
-                                                update_on='blur',
-                                            ),
-                                            "Depth units:",
-                                            ui.input_select(
-                                                id="plot_tso_units",
-                                                label="",
-                                                choices = depth_units,
-                                                selected='percent',
-                                            ),
                                             width=1/3,
                                             fixed_width=False,
                                             gap='5px',
@@ -1425,7 +1427,7 @@ app_ui = ui.page_fluid(
                             class_="p-1 m-0",
                             value="tso_accordion",
                         ),
-                        open=True,
+                        open=False,
                     ),
                 ),
                 id="tab",
@@ -1467,6 +1469,7 @@ def server(input, output, session):
     update_sed_flag = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
+    current_depth_units = reactive.Value(None)
     warning_text = reactive.Value('')
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
@@ -2101,11 +2104,6 @@ def server(input, output, session):
             tso_draw.set(draw(tso['tso'], resolution, n_obs, noiseless, err_scale))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
-            min_depth, max_depth, step = jwst._get_tso_depth_range(
-                tso['tso'], resolution, units,
-            )
-            ui.update_numeric('tso_depth_min', value=min_depth, step=step)
-            ui.update_numeric('tso_depth_max', value=max_depth, step=step)
 
 
     @render.image
@@ -3498,20 +3496,19 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.plot_tso_units)
     def rescale_tso_depths():
-        tso_key = input.display_tso_run.get()
-        if tso_key is None:
+        prev_units = current_depth_units.get()
+        if prev_units is None:
             return
-        key, tso_label = tso_key.split('_', maxsplit=1)
-        tso = tso_runs[key][tso_label]
-        resolution = _safe_num(input.tso_resolution.get(), default=250)
         units = input.plot_tso_units.get()
-
-        min_depth, max_depth, step = jwst._get_tso_depth_range(
-            tso['tso'], resolution, units,
-        )
-        ui.update_numeric('tso_depth_min', value=min_depth, step=step)
-        ui.update_numeric('tso_depth_max', value=max_depth, step=step)
-
+        min_depth = input.tso_depth_min.get()
+        max_depth = input.tso_depth_max.get()
+        if min_depth is not None:
+            min_depth = np.round(min_depth * pt.u(prev_units) / pt.u(units), 6)
+            ui.update_numeric('tso_depth_min', value=min_depth)
+        if max_depth is not None:
+            max_depth = np.round(max_depth * pt.u(prev_units) / pt.u(units), 6)
+            ui.update_numeric('tso_depth_max', value=max_depth)
+        current_depth_units.set(units)
 
     @reactive.effect
     @reactive.event(

@@ -593,18 +593,8 @@ def plotly_tso_spectra(
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
-    if depth_range is None:
-        ymax = ymax/u(units)
-        ymin = ymin/u(units)
-        dy = 0.1 * (ymax-ymin)
-        depth_range = [ymin-dy, ymax+dy]
-    ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
-    fig.update_yaxes(
-        title_text=ylabel,
-        title_standoff=0,
-        range=depth_range,
-    )
 
+    # Set wavelength axis
     if wl_range is None:
         wl_range = [None, None]
     default_wl_range = jwst._get_tso_wl_range(tso_list)
@@ -622,6 +612,22 @@ def plotly_tso_spectra(
         type=wl_scale,
     )
 
+    # Set depth axis
+    default_min_depth, default_max_depth, step = jwst._get_tso_depth_range(
+        tso_list, resolution, units,
+    )
+    if depth_range is None:
+        depth_range = None, None
+    if depth_range[0] is None:
+        depth_range[0] = default_min_depth
+    if depth_range[1] is None:
+        depth_range[1] = default_max_depth
+    ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
+    fig.update_yaxes(
+        title_text=ylabel,
+        title_standoff=0,
+        range=depth_range,
+    )
     fig.update_layout(legend=dict(
         orientation="h",
         entrywidth=1.0,
