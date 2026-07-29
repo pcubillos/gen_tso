@@ -58,9 +58,6 @@ sed_types = get_sed_types()
 def _update_in_transit(tso):
     """
     Update a TSO output dictionary with the in-transit values
-    nint_obs = 605
-    nint_out = 446
-    nint_in = nint_obs - nint_out
     """
     wl = tso['wl']
     dt_out = tso['time_out']

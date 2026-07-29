@@ -253,7 +253,7 @@ def plotly_filters(
     wl_range = [np.log10(0.6), np.log10(13.5)]
     wl_range = [np.log10(0.6), np.log10(28.0)]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -355,7 +355,7 @@ def plotly_sed_spectra(
             for wave in wl_range
         ]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -466,7 +466,7 @@ def plotly_depth_spectra(
             for wave in wl_range
         ]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -484,7 +484,7 @@ def plotly_depth_spectra(
 
 
 def plotly_tso_spectra(
-        tso_list, sim_depths=None, resolution=250.0, n_obs=1,
+        tso_list, sim_depths, resolution=250.0,
         model_label='model', instrument_label=None,
         units='percent', wl_range=None, wl_scale='linear',
         depth_range=None,
@@ -507,15 +507,10 @@ def plotly_tso_spectra(
     ymin = np.inf
     legends = []
     for i,tso in enumerate(tso_list):
-        if sim_depths is None:
-            bin_wl, bin_spec, bin_err, wl_err = jwst.simulate_tso(
-               tso, n_obs=n_obs, resolution=resolution, noiseless=False,
-            )
-        else:
-            bin_wl = sim_depths[i]['wl']
-            bin_spec = sim_depths[i]['depth']
-            bin_err = sim_depths[i]['uncert']
-            wl_err = sim_depths[i]['wl_widths']
+        bin_wl = sim_depths[i]['wl']
+        bin_spec = sim_depths[i]['depth']
+        bin_err = sim_depths[i]['uncert']
+        wl_err = sim_depths[i]['wl_widths']
 
         mode = tso['report']['input']['configuration']['instrument']['mode']
         if mode in jwst._photo_modes:
@@ -610,10 +605,18 @@ def plotly_tso_spectra(
         range=depth_range,
     )
 
-    if wl_scale == 'log' and wl_range is not None:
+    if wl_range is None:
+        wl_range = [None, None]
+    default_wl_range = jwst._get_tso_wl_range(tso_list)
+    if wl_range[0] is None:
+        wl_range[0] = default_wl_range[0]
+    if wl_range[1] is None:
+        wl_range[1] = default_wl_range[1]
+
+    if wl_scale == 'log':
         wl_range = [np.log10(wave) for wave in wl_range]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -706,7 +709,7 @@ def plotly_tso_fluxes(
     if wl_scale == 'log' and wl_range is not None:
         wl_range = [np.log10(wave) for wave in wl_range]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -786,7 +789,7 @@ def plotly_tso_snr(
     if wl_scale == 'log' and wl_range is not None:
         wl_range = [np.log10(wave) for wave in wl_range]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -844,7 +847,7 @@ def plotly_tso_2d(tso, heatmap_name):
         ylabel = 'wavelength (arcsec)'
     else:
         x = report['1d']['sn'][0]
-        xlabel = 'wavelength (um)'
+        xlabel = 'wavelength (µm)'
         ylabel = 'dispersion (arcsec)'
 
     # Strategy:

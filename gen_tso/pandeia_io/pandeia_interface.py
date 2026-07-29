@@ -1489,14 +1489,14 @@ def jwst_convolve(wl_model, depth_model, wl_jwst, inst, n_sigma=5):
     return inst_depth
 
 
-def _get_tso_wl_range(tso_run):
+def _get_tso_wl_range(runs):
     """
     Get the wavelength range covered by a TSO calculation
 
     Parameters
     ----------
     tso_run: Dictionary
-        A TSO calculation output as computed by run_pandeia() in the app.
+        A list of TSO calculations
     wl_scale: String
         Wavelength scale: 'linear' or 'log'.
 
@@ -1507,7 +1507,6 @@ def _get_tso_wl_range(tso_run):
     max_wl: Float
         Longer-wavelength boundary.
     """
-    runs = tso_run['tso']
     if not isinstance(runs, list):
         runs = [runs]
 
@@ -1543,14 +1542,14 @@ def _get_tso_wl_range(tso_run):
     return min_wl, max_wl
 
 
-def _get_tso_depth_range(tso_run, resolution, units):
+def _get_tso_depth_range(runs, resolution, units):
     """
     Get the transit/eclipse depth range covered by a TSO calculation
 
     Parameters
     ----------
-    tso_run: Dictionary
-        A TSO calculation output as computed by run_pandeia() in the app.
+    runs: Dictionary
+        A list of TSO calculations
     resolution: Float
         Spectral resolution at which to sample the spectrum.
     units: String
@@ -1565,11 +1564,10 @@ def _get_tso_depth_range(tso_run, resolution, units):
     step: Float
         A quarter of the peak-to-peak depth distance.
     """
-    runs = tso_run['tso']
     if not isinstance(runs, list):
         runs = [runs]
 
-    min_wl, max_wl = _get_tso_wl_range(tso_run)
+    min_wl, max_wl = _get_tso_wl_range(runs)
     max_depth = []
     min_depth = []
     for tso in runs:

@@ -2092,12 +2092,8 @@ def server(input, output, session):
             ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
             ui.update_numeric("teq_planet", value=tso['teq_planet'])
 
-        # TSO plot popover menu
+        # TSO plot menu
         if tso['is_tso']:
-            min_wl, max_wl = jwst._get_tso_wl_range(tso)
-            ui.update_numeric('tso_wl_min', value=min_wl)
-            ui.update_numeric('tso_wl_max', value=max_wl)
-
             resolution = _safe_num(input.tso_resolution.get(), default=250)
             n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
             noiseless = input.noiseless_switch.get()
@@ -2106,7 +2102,7 @@ def server(input, output, session):
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
             min_depth, max_depth, step = jwst._get_tso_depth_range(
-                tso, resolution, units,
+                tso['tso'], resolution, units,
             )
             ui.update_numeric('tso_depth_min', value=min_depth, step=step)
             ui.update_numeric('tso_depth_max', value=max_depth, step=step)
@@ -3452,7 +3448,6 @@ def server(input, output, session):
         tso_run = tso_runs[key][tso_label]
         wl_scale = input.plot_tso_xscale.get()
         wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
-
         plot_type = input.tso_plot.get()
         if plot_type == 'tso':
             units = input.plot_tso_units.get()
@@ -3460,12 +3455,15 @@ def server(input, output, session):
             depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
             planet = tso_run['depth_label']
             fig = plots.plotly_tso_spectra(
-                tso_run['tso'], sim_depths,
+                tso_run['tso'],
+                sim_depths,
                 resolution=input.tso_resolution.get(),
                 model_label=planet,
                 instrument_label=tso_run['inst_label'],
-                units=units, wl_range=wl_range, wl_scale=wl_scale,
-                depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
+                units=units,
+                wl_range=wl_range, wl_scale=wl_scale,
+                depth_range=depth_range,
+                obs_geometry=tso_run['obs_geometry'],
             )
         elif plot_type == 'fluxes':
             fig = plots.plotly_tso_fluxes(
@@ -3509,7 +3507,7 @@ def server(input, output, session):
         units = input.plot_tso_units.get()
 
         min_depth, max_depth, step = jwst._get_tso_depth_range(
-            tso, resolution, units,
+            tso['tso'], resolution, units,
         )
         ui.update_numeric('tso_depth_min', value=min_depth, step=step)
         ui.update_numeric('tso_depth_max', value=max_depth, step=step)
