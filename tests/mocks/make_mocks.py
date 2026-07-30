@@ -52,14 +52,14 @@ def mock_tso_calculation_multi():
     tso['var_in'] = tso['var_in'][::thin]
     tso['var_out'] = tso['var_out'][::thin]
 
-    for result in (tso['report_in'], tso['report_out']):
-        result['1d'] = {}
-        result['2d'] = {}
-        result['3d'] = {}
-        spec = result['input']['scene'][0]['spectrum']['sed']['spectrum']
-        wl, spectrum = spec
-        spec = wl[::2000], spectrum[::2000]
-        result['input']['scene'][0]['spectrum']['sed']['spectrum'] = spec
+    result = tso['report']
+    result['1d'] = {}
+    result['2d'] = {}
+    result['3d'] = {}
+    spec = result['input']['scene'][0]['spectrum']['sed']['spectrum']
+    wl, spectrum = spec
+    spec = wl[::2000], spectrum[::2000]
+    result['input']['scene'][0]['spectrum']['sed']['spectrum'] = spec
 
     with open('tso_calculation_nircam_lw_tsgrism.pkl', 'wb') as f:
         pickle.dump(tso, f)
@@ -84,14 +84,14 @@ def mock_tso_calculation_multi():
         report['var_in'] = report['var_in'][::thin]
         report['var_out'] = report['var_out'][::thin]
 
-        for result in (report['report_in'], report['report_out']):
-            result['1d'] = {}
-            result['2d'] = {}
-            result['3d'] = {}
-            spec = result['input']['scene'][0]['spectrum']['sed']['spectrum']
-            wl, spectrum = spec
-            spec = wl[::2000], spectrum[::2000]
-            result['input']['scene'][0]['spectrum']['sed']['spectrum'] = spec
+        result = report['report']
+        result['1d'] = {}
+        result['2d'] = {}
+        result['3d'] = {}
+        spec = result['input']['scene'][0]['spectrum']['sed']['spectrum']
+        wl, spectrum = spec
+        spec = wl[::2000], spectrum[::2000]
+        result['input']['scene'][0]['spectrum']['sed']['spectrum'] = spec
 
     with open('tso_calculation_miri_mrs_ts.pkl', 'wb') as f:
         pickle.dump(tso, f)
