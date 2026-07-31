@@ -414,13 +414,17 @@ def guess_event_type(obs):
     event = ''
 
     # Hardcoded patches for missing information:
-    if pid in ['2149', '2589', '3385', '5177', '5882', '6456', '7982', '9256', '9709', '11831']:
+    transit_pid = [
+        '2149', '2589', '3385', '4938', '5177', '5882', '6456',
+        '7982', '9256', '9436', '9709', '11831',
+    ]
+    if pid in transit_pid:
         return 'transit'
     if pid=='1274' and obs['observation'] in ['4', '5']:
         return 'eclipse'
     if pid in ['2488', '2765', '7686', '10300', '11712']:
         return 'phase curve'
-    if pid in ['7068']:
+    if pid in ['7068', '12492']:
         return 'stare'
 
     # Guess from orbital phase when phase constraints exist:
@@ -832,21 +836,23 @@ def get_planet_letters(obs, targets, verbose=False):
     info = f'{pid} {obs_id:3} {visit}  '
 
     # Start with the exceptions, hardcoded patching:
-    if pid=='5191':
-        return ['b', 'c']
-    if pid=='5177':
-        return ['b']
-    if pid=='8739':
-        return ['b']
-    if pid=='2420' and obs_id=='5' and visit=='1':
+    if pid == '2420' and obs_id=='5' and visit=='1':
         return ['c']
-    if pid=='3818' and obs_id=='2' and visit=='1':
+    if pid == '3818' and obs_id=='2' and visit=='1':
         return ['d']
-    if pid=='9235' and obs_id=='5':
+    if pid == '5177':
         return ['b']
+    if pid == '5191':
+        return ['b', 'c']
     if pid in ['7068', '10300']:
         return ['none']
-    if pid=='11302':
+    if pid == '8739':
+        return ['b']
+    if pid == '9235' and obs_id=='5':
+        return ['b']
+    if pid == '9436':
+        return ['c', 'e', 'f']
+    if pid == '11302':
         return ['b']
 
     target_name = obs['target_in_program']
