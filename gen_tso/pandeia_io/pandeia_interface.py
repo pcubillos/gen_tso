@@ -1486,7 +1486,7 @@ def jwst_convolve(wl_model, depth_model, wl_jwst, inst, n_sigma=5):
         flux_conv[i] = np.dot(weights, interp_depth[idx]) / w_sum
 
     inst_depth = np.interp(wl_jwst, wl_interp, flux_conv)
-    return inst_depth
+    return inst_depth[isort]
 
 
 def _get_tso_wl_range(runs):
