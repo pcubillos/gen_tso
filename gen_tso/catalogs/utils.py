@@ -238,6 +238,7 @@ def normalize_name(target):
     Mainly to resolve trexolists target names.
     """
     name = re.sub(r'\s+', ' ', target)
+    name = name.replace('_', ' ')
     # It's a case issue:
     name = name.replace('KEPLER', 'Kepler')
     name = name.replace('TRES', 'TrES')
@@ -259,7 +260,6 @@ def normalize_name(target):
         prefix_len = len(prefix)
         if name.startswith(prefix) and not name[prefix_len].isalpha():
             name = name.replace(f'{prefix}-', f'{prefix} ')
-            name = name.replace(f'{prefix}_', f'{prefix} ')
             if name[prefix_len] != ' ':
                 name = f'{prefix} ' + name[prefix_len:]
 
@@ -277,7 +277,7 @@ def normalize_name(target):
         name = name[:-1]
     if name.lower().endswith('d') and not name[-2].isalpha():
         name = name[:-1]
-    if name.endswith('_c'):
+    if name.endswith(' c'):
         name = name[:-2]
 
     # Custom corrections
@@ -285,6 +285,7 @@ def normalize_name(target):
     name = name.replace('-updated', '')
     name = name.replace('-copy', '')
     name = name.replace('-revised', '')
+    name = name.replace('MAIN', '')
     if name.endswith('-'):
         name = name[:-1]
 
