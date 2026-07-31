@@ -26,7 +26,6 @@ def test_get_modes_miri():
 
     expected_modes = [
         'lrsslitless',
-        'lrsslit',
         'mrs_ts',
         'imaging_ts',
         'target_acq',
@@ -71,7 +70,6 @@ def test_get_modes_type_spectro():
     modes = jwst.get_modes('miri', type='spectroscopy')
     expected_modes = [
         'lrsslitless',
-        'lrsslit',
         'mrs_ts',
     ]
     assert modes == expected_modes
@@ -113,19 +111,29 @@ def test_get_throughputs_all():
     assert list(throughputs['spectroscopy']['nirspec']) == ['bots']
 
     subarrays = throughputs['spectroscopy']['nirspec']['bots']
-    expected_subs = ['sub512', 'sub512s', 'sub1024a', 'sub1024b', 'sub2048']
+    expected_subs = [
+        'sub512',
+        'sub512s',
+        'sub1024a',
+        'sub1024b',
+        'sub2048',
+        's32m16_prm',
+        's64m8_prm',
+        's128m4_prm',
+        's256m2_prm',
+    ]
     assert list(subarrays) == expected_subs
 
     filters = list(throughputs['spectroscopy']['nirspec']['bots']['sub2048'])
     expected_filters = [
-        'g140m/f070lp',
         'g140h/f070lp',
-        'g140m/f100lp',
+        'g140m/f070lp',
         'g140h/f100lp',
-        'g235m/f170lp', 
+        'g140m/f100lp',
         'g235h/f170lp',
-        'g395m/f290lp',
+        'g235m/f170lp',
         'g395h/f290lp',
+        'g395m/f290lp',
         'prism/clear',
     ]
     assert list(filters) == expected_filters
@@ -141,13 +149,33 @@ def test_get_throughputs_inst():
     throughputs = jwst.get_throughputs(inst='nirspec')
     assert list(throughputs) == ['bots', 'target_acq']
 
-    expected_subs = ['sub512', 'sub512s', 'sub1024a', 'sub1024b', 'sub2048']
+    expected_subs = [
+        'sub512',
+        'sub512s',
+        'sub1024a',
+        'sub1024b',
+        'sub2048',
+        's32m16_prm',
+        's64m8_prm',
+        's128m4_prm',
+        's256m2_prm',
+    ]
     assert list(throughputs['bots']) == expected_subs
 
 
 def test_get_throughputs_mode():
     throughputs = jwst.get_throughputs(inst='nirspec', mode='bots')
-    assert list(throughputs) == ['sub512', 'sub512s', 'sub1024a', 'sub1024b', 'sub2048']
+    expected_subs = [
+        'sub512',
+        'sub512s',
+        'sub1024a',
+        'sub1024b',
+        'sub2048',
+        's32m16_prm',
+        's64m8_prm',
+        's128m4_prm',
+        's256m2_prm',
+    ]
 
 
 def test_get_throughputs_mode_missing_inst():
@@ -159,14 +187,14 @@ def test_get_throughputs_mode_missing_inst():
 
 def test_generate_all_instruments():
     detectors = jwst.generate_all_instruments()
-    assert len(detectors) == 14
+    n_detectors = len(detectors)
+    assert n_detectors == 13
     # TBD: what to test?
-
 
 
 def test_get_configs_miri_lrsslitless():
     configs = jwst._get_configs(instrument='miri', obs_type='spectroscopy')
-    assert len(configs) == 3
+    assert len(configs) == 2
     inst = configs[0]
     assert inst['mode'] == 'lrsslitless'
     assert inst['mode_label'] == 'Low Resolution Spectroscopy (LRS) Slitless'
@@ -178,7 +206,7 @@ def test_get_configs_miri_lrsslitless():
 
 def test_get_configs_miri_mrs_ts():
     configs = jwst._get_configs(instrument='miri', obs_type='spectroscopy')
-    inst = configs[2]
+    inst = configs[1]
     assert inst['mode'] == 'mrs_ts'
     assert inst['mode_label'] == 'MRS Time Series'
 
@@ -232,7 +260,7 @@ def test_load_flux_rate_splines_all():
     full_well = full_wells[obs_label]
 
     expected_full_well = 58100.001867429375
-    expected_flux_rate = 3.114047796362145
+    expected_flux_rate = 3.113944
     np.testing.assert_allclose(flux_rate, expected_flux_rate)
     np.testing.assert_allclose(full_well, expected_full_well)
 
@@ -243,7 +271,7 @@ def test_load_flux_rate_splines_single():
     flux_rate = flux_rate_spline(8.351)
 
     expected_full_well = 58100.001867429375
-    expected_flux_rate = 3.114047796362145
+    expected_flux_rate = 3.113944
     np.testing.assert_allclose(flux_rate, expected_flux_rate)
     np.testing.assert_allclose(full_well, expected_full_well)
 

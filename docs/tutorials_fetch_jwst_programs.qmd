@@ -37,7 +37,7 @@ The executable will be located inside the `bin` subfolder. We will need to
 get the absolute path to it, It should be something like:
 
 ```bash
-/Applications/APT\\ 2025.7.2/bin/apt
+/Applications/APT\\ 2026.3.2/bin/apt
 ```
 
 The following script shows how to fetch the APT and status for the programs:
@@ -49,7 +49,7 @@ from gen_tso.utils import KNOWN_PROGRAMS
 
 
 # Path to APT executable:
-apt_command = '/Applications/APT\\ 2025.7.2/bin/apt'
+apt_command = '/Applications/APT\\ 2026.3.2/bin/apt'
 
 # Fetch all TSO programs:
 programs = KNOWN_PROGRAMS
@@ -62,7 +62,7 @@ After you installed APT on Linux, search for the folder where it was
 installed.  The path to the executable should be something like this:
 
 ```bash
-/home/user/ast/apt/APT_2025.7.2/APT
+/home/user/ast/apt/APT_2026.3.2/APT
 ```
 
 The following script shows how to fetch the APT and status for the programs:
@@ -74,7 +74,7 @@ from gen_tso.utils import KNOWN_PROGRAMS
 
 
 # Path to APT executable:
-apt_command = '/home/user/ast/apt/APT_2025.7.2/APT'
+apt_command = '/home/user/ast/apt/APT_2026.3.2/bin/APT'
 
 # Fetch all TSO programs:
 programs = KNOWN_PROGRAMS
@@ -87,7 +87,7 @@ Either on a Linux or OSX machine, you can create an environmental variable
 in your bash pointing to the APT executable, e.g.:
 
 ```bash
-export APT='/Applications/APT\ 2025.7.2/bin/apt'
+export APT='/Applications/APT\ 2026.3.2/bin/APT'
 ```
 
 then you can directly use that environmental variable in the script.

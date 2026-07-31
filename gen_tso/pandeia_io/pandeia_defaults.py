@@ -35,7 +35,7 @@ inst_names = {
 }
 
 spec_dict = {
-    'miri': ['lrsslitless', 'lrsslit', 'mrs_ts'],
+    'miri': ['lrsslitless', 'mrs_ts'],
     'nircam': ['lw_tsgrism', 'sw_tsgrism'],
     'niriss': ['soss'],
     'nirspec': ['bots'],
@@ -129,10 +129,6 @@ _default_aperture_strategy = {
     'lrsslitless': dict(
         aperture_size = 0.6,
         sky_annulus = [1.0, 2.5],
-    ),
-    'lrsslit': dict(
-        aperture_size = 0.88,
-        sky_annulus = [0.88, 1.4],
     ),
     'mrs_ts': dict(
         aperture_size = 0.6,
@@ -357,6 +353,12 @@ def _get_configs(instrument=None, obs_type=None):
                 key = subarray if subarray in group_constraints else 'default'
                 constraints[subarray] = group_constraints[key]
             inst_dict['constraints']['groups'] = {'subarrays': constraints}
+        if mode == 'lrsslitless':
+            inst_dict['readouts'] = {
+                key: val
+                for key,val in inst_dict['readouts'].items()
+                if key=='fastr1'
+            }
 
         # NIRCam
         if mode == 'sw_tsgrism':
@@ -431,13 +433,12 @@ def _get_configs(instrument=None, obs_type=None):
                 for disp in inst_dict['dispersers']
             }
             inst_dict['constraints']['filters'] = {'dispersers': constraints}
-            constraints = {}
-            for disperser in inst_dict['dispersers']:
-                subs = list(inst_dict['subarrays'])
-                if disperser == 'prism':
-                    subs.remove('sub1024a')
-                constraints[disperser] = subs
+            constraints = {
+                disp: get_constraints(config, 'subarrays', mode, dispersers=disp)
+                for disp in inst_dict['dispersers']
+            }
             inst_dict['constraints']['subarrays'] = {'dispersers': constraints}
+            inst_dict['constraints']['subarrays']['dispersers']['prism'].remove('sub1024a')
 
         # NIRISS
         if mode == 'soss':
@@ -631,7 +632,7 @@ class Detector:
         if mode == 'mrs_ts':
             disperser_label = self.dispersers[disperser]
             label = f'{inst} / MRS / {disperser_label}'
-        elif mode in ['lrsslit', 'lrsslitless']:
+        elif mode == 'lrsslitless':
             label = f'{inst} / LRS / {mode[3:].upper()}'
         elif mode == 'imaging_ts':
             filter_label = self.filters[filter]
@@ -765,7 +766,7 @@ def generate_all_instruments():
         constraints = inst['constraints']
 
         aperture_label = 'Aperture'
-        if mode in ['lrsslit', 'lrsslitless']:
+        if mode == 'lrsslitless':
             disperser_label = 'Disperser'
             filter_label = ''
             filters = {'': ''}
@@ -797,7 +798,7 @@ def generate_all_instruments():
                         label = f"{dispersers[disperser]}/{filters[filter]}"
                         gratings[f'{disperser}/{filter}'] = label
             filters = gratings
-            default_indices = 0, 0, 7, 4, 1
+            default_indices = 0, 0, 6, 4, 1
         if mode == 'soss':
             disperser_label = 'Disperser'
             filter_label = 'Filter'
@@ -959,7 +960,7 @@ def make_save_label(
         return f'tso{target}_{inst}_{mode}_{aperture}.pickle'
     elif mode == 'imaging_ts':
         return f'tso{target}_{inst}_{mode}_{filter}.pickle'
-    elif mode in ['lrsslit', 'lrsslitless', 'soss']:
+    elif mode in ['lrsslitless', 'soss']:
         return f'tso{target}_{inst}_{mode}.pickle'
     elif mode == 'bots':
         return f'tso{target}_{inst}_{mode}_{disperser}.pickle'
@@ -990,7 +991,7 @@ def make_detector_label(
 
     if mode == 'mrs_ts':
         return f'MIRI MRS {disperser.upper()}'
-    if mode in ['lrsslit', 'lrsslitless']:
+    if mode == 'lrsslitless':
         return f'MIRI {mode.upper()}'
     if mode == 'imaging_ts':
         return f'MIRI {filter.upper()}'
@@ -1030,7 +1031,7 @@ def make_saturation_label(
         order = f'_O{order[0]}' if len(order)==1 else ''
         sat_label = f'{order}'
     elif mode == 'sw_tsgrism':
-        sat_label = f'_{aperture}_{subarray}'
+        sat_label = f'_{aperture}'
     elif mode == 'sw_ts':
         sat_label = f'_{aperture}'
     elif mode == 'mrs_ts':

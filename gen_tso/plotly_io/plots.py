@@ -253,7 +253,7 @@ def plotly_filters(
     wl_range = [np.log10(0.6), np.log10(13.5)]
     wl_range = [np.log10(0.6), np.log10(28.0)]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -355,20 +355,18 @@ def plotly_sed_spectra(
             for wave in wl_range
         ]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
     )
 
     fig.update_layout(legend=dict(
-        orientation="h",
-        entrywidth=1.0,
-        entrywidthmode='fraction',
-        yanchor="bottom",
+        bgcolor="rgba(255, 255, 255, 0.6)",
+        yanchor="top",
         xanchor="right",
-        y=1.02,
-        x=1
+        y=0.99,
+        x=0.99,
     ))
     fig.update_layout(showlegend=True)
     return fig
@@ -468,27 +466,25 @@ def plotly_depth_spectra(
             for wave in wl_range
         ]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
     )
 
     fig.update_layout(legend=dict(
-        orientation="h",
-        entrywidth=1.0,
-        entrywidthmode='fraction',
-        yanchor="bottom",
-        xanchor="right",
-        y=1.02,
-        x=1
+        bgcolor="rgba(255, 255, 255, 0.6)",
+        yanchor="top",
+        xanchor="left",
+        y=0.99,
+        x=0.01,
     ))
     fig.update_layout(showlegend=True)
     return fig
 
 
 def plotly_tso_spectra(
-        tso_list, sim_depths=None, resolution=250.0, n_obs=1,
+        tso_list, sim_depths, resolution=250.0,
         model_label='model', instrument_label=None,
         units='percent', wl_range=None, wl_scale='linear',
         depth_range=None,
@@ -511,17 +507,12 @@ def plotly_tso_spectra(
     ymin = np.inf
     legends = []
     for i,tso in enumerate(tso_list):
-        if sim_depths is None:
-            bin_wl, bin_spec, bin_err, wl_err = jwst.simulate_tso(
-               tso, n_obs=n_obs, resolution=resolution, noiseless=False,
-            )
-        else:
-            bin_wl = sim_depths[i]['wl']
-            bin_spec = sim_depths[i]['depth']
-            bin_err = sim_depths[i]['uncert']
-            wl_err = sim_depths[i]['wl_widths']
+        bin_wl = sim_depths[i]['wl']
+        bin_spec = sim_depths[i]['depth']
+        bin_err = sim_depths[i]['uncert']
+        wl_err = sim_depths[i]['wl_widths']
 
-        mode = tso['report_in']['input']['configuration']['instrument']['mode']
+        mode = tso['report']['input']['configuration']['instrument']['mode']
         if mode in jwst._photo_modes:
             input_wl, input_depth = tso['input_depth']
             wl_min = np.amin(input_wl)
@@ -568,12 +559,10 @@ def plotly_tso_spectra(
         ymax = np.amax([ymax, np.amax(spec)])
         ymin = np.amin([ymin, np.amin(spec)])
 
-    # Saturation (take report with highest e-/sec)
-    hi_flux = 'report_out' if obs_geometry=='transit' else 'report_in'
     partial_saturation = []
     full_saturation = []
     for i,tso in enumerate(tso_list):
-        report = tso[hi_flux]
+        report = tso['report']
         wl, partial = report['1d']['n_partial_saturated']
         wl, full = report['1d']['n_full_saturated']
         partial_saturation += response_boundaries(wl, partial, threshold=0)
@@ -604,27 +593,41 @@ def plotly_tso_spectra(
             'wl = %{x:.2f}<br>'+
             'depth = %{y:.3f}'
     )
+
+    # Set wavelength axis
+    if wl_range is None:
+        wl_range = [None, None]
+    default_wl_range = jwst._get_tso_wl_range(tso_list)
+    if wl_range[0] is None:
+        wl_range[0] = default_wl_range[0]
+    if wl_range[1] is None:
+        wl_range[1] = default_wl_range[1]
+
+    if wl_scale == 'log':
+        wl_range = [np.log10(wave) for wave in wl_range]
+    fig.update_xaxes(
+        title_text='wavelength (µm)',
+        title_standoff=0,
+        range=wl_range,
+        type=wl_scale,
+    )
+
+    # Set depth axis
+    default_min_depth, default_max_depth, step = jwst._get_tso_depth_range(
+        tso_list, resolution, units,
+    )
     if depth_range is None:
-        ymax = ymax/u(units)
-        ymin = ymin/u(units)
-        dy = 0.1 * (ymax-ymin)
-        depth_range = [ymin-dy, ymax+dy]
+        depth_range = None, None
+    if depth_range[0] is None:
+        depth_range[0] = default_min_depth
+    if depth_range[1] is None:
+        depth_range[1] = default_max_depth
     ylabel = f'{obs_geometry} depth{depth_units_label[units]}'
     fig.update_yaxes(
         title_text=ylabel,
         title_standoff=0,
         range=depth_range,
     )
-
-    if wl_scale == 'log' and wl_range is not None:
-        wl_range = [np.log10(wave) for wave in wl_range]
-    fig.update_xaxes(
-        title_text='wavelength (um)',
-        title_standoff=0,
-        range=wl_range,
-        type=wl_scale,
-    )
-
     fig.update_layout(legend=dict(
         orientation="h",
         entrywidth=1.0,
@@ -658,11 +661,12 @@ def plotly_tso_fluxes(
 
     fig = go.Figure()
     for j,tso in enumerate(tso_list):
-        wl = tso['report_in']['1d']['extracted_flux'][0]
+        wl = tso['wl']
+        wl_mask = tso['report']['1d']['wl_mask']
         fluxes = [
-            tso['report_in']['1d']['extracted_flux'][1],
-            tso['report_out']['1d']['extracted_flux'][1],
-            tso['report_out']['1d']['extracted_bg_only'][1],
+            tso['flux_in'],
+            tso['flux_out'],
+            tso['report']['1d']['extracted_bg_only'][1][wl_mask],
         ]
         show_legend = j == 0
         for i in range(len(fluxes)):
@@ -676,8 +680,7 @@ def plotly_tso_fluxes(
                 showlegend=show_legend,
             ))
 
-    # Saturation (take report with highest e-/sec)
-    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    report = tso['report']
     wl, partial = report['1d']['n_partial_saturated']
     wl, full = report['1d']['n_full_saturated']
     partial_saturation = response_boundaries(wl, partial, threshold=0)
@@ -712,7 +715,7 @@ def plotly_tso_fluxes(
     if wl_scale == 'log' and wl_range is not None:
         wl_range = [np.log10(wave) for wave in wl_range]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -740,10 +743,10 @@ def plotly_tso_snr(
 
     fig = go.Figure()
     for j,tso in enumerate(tso_list):
-        wl = tso['report_in']['1d']['sn'][0]
+        wl = tso['wl']
         snr = [
-            tso['report_in']['1d']['sn'][1],
-            tso['report_out']['1d']['sn'][1],
+            tso['flux_in']*tso['time_in'] / np.sqrt(tso['var_in']),
+            tso['flux_out']*tso['time_out'] / np.sqrt(tso['var_out']),
         ]
         show_legend = j == 0
         for i in range(len(snr)):
@@ -757,8 +760,7 @@ def plotly_tso_snr(
                 showlegend=show_legend,
             ))
 
-    # Saturation (take report with highest e-/sec)
-    report = tso['report_out'] if obs_geometry=='transit' else tso['report_in']
+    report = tso['report']
     wl, partial = report['1d']['n_partial_saturated']
     wl, full = report['1d']['n_full_saturated']
     partial_saturation = response_boundaries(wl, partial, threshold=0)
@@ -793,7 +795,7 @@ def plotly_tso_snr(
     if wl_scale == 'log' and wl_range is not None:
         wl_range = [np.log10(wave) for wave in wl_range]
     fig.update_xaxes(
-        title_text='wavelength (um)',
+        title_text='wavelength (µm)',
         title_standoff=0,
         range=wl_range,
         type=wl_scale,
@@ -816,9 +818,9 @@ def plotly_tso_2d(tso, heatmap_name):
     """
     # TBD: Think how to multipanel MRS heatmaps
     if isinstance(tso, list):
-        report = tso[0]['report_out']
+        report = tso[0]['report']
     else:
-        report = tso['report_out']
+        report = tso['report']
     inst = report['input']['configuration']['instrument']['instrument']
     mode = report['input']['configuration']['instrument']['mode']
     heatmap = report['2d'][heatmap_name]
@@ -845,19 +847,13 @@ def plotly_tso_2d(tso, heatmap_name):
     elif mode == 'mrs_ts':
         xlabel = 'arcsec'
         ylabel = 'arcsec'
-    elif mode == 'lrsslit':
-        y_min = report['transform']['wave_det_min']
-        y_max = report['transform']['wave_det_max']
-        y = np.linspace(y_min, y_max, ny)
-        xlabel = 'dispersion (arcsec)'
-        ylabel = 'wavelength (microns)'
     elif mode == 'lrsslitless':
         y = np.flip(y)
         xlabel = 'dispersion (arcsec)'
         ylabel = 'wavelength (arcsec)'
     else:
         x = report['1d']['sn'][0]
-        xlabel = 'wavelength (um)'
+        xlabel = 'wavelength (µm)'
         ylabel = 'dispersion (arcsec)'
 
     # Strategy:
@@ -874,9 +870,28 @@ def plotly_tso_2d(tso, heatmap_name):
             np.tile(-annulus[1], 2),
         ]
 
-    fig = go.Figure(
-        data=go.Heatmap(z=heatmap, x=x, y=y, showscale=False),
+    data = heatmap
+    if heatmap_name == 'ngroups_map':
+        z_safe = np.maximum(heatmap, 0.1)
+        heatmap = np.log10(z_safe)
+        val_fmt = 'value: %{customdata:.0f}'
+    else:
+        data = heatmap
+        val_fmt = 'value: %{customdata:.3f}'
+
+    hovertemplate = (
+        "x: %{x:.3f}<br>"
+        "y: %{y:.3f}<br>"
+        f"{val_fmt}"
+        "<extra></extra>"
     )
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=heatmap, x=x, y=y, showscale=False,
+            customdata=data, hovertemplate=hovertemplate,
+        ),
+    )
+
     if mode == 'mrs_ts':
         t = np.linspace(0.0, 2.0*np.pi, 100)
         for i, aper in enumerate(apertures):
@@ -916,7 +931,7 @@ def plotly_tso_2d(tso, heatmap_name):
                 color= 'limegreen'
                 dash = 'dash'
             showlegend = i in [0,2]
-            if mode in ['lrsslit', 'lrsslitless']:
+            if mode == 'lrsslitless':
                 xx = aper
                 yy = [np.amin(y), np.amax(y)]
             else:
@@ -932,9 +947,6 @@ def plotly_tso_2d(tso, heatmap_name):
             ))
 
     range = None
-    if mode == 'lrsslit':
-        range = [np.amax(y), np.amin(y)]
-
     fig.update_yaxes(
         title_text=ylabel,
         title_standoff=0,

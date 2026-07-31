@@ -109,8 +109,8 @@ def test_get_configs_miri_lrs(capsys):
     expected_captured = """apertures: ['imager']
 dispersers: ['p750l']
 filters: ['']
-subarrays: ['slitlessprism']
-readout patterns: ['fastr1', 'slowr1']
+subarrays: ['slitlessprism', 'slitlessprism_ip', 'slitlessprism_ips']
+readout patterns: ['fastr1']
 
 """
     assert captured.out == expected_captured
@@ -125,7 +125,7 @@ def test_get_configs_miri_mrs(capsys):
 dispersers: ['short', 'medium', 'long']
 filters: ['']
 subarrays: ['full']
-readout patterns: ['fastr1', 'slowr1']
+readout patterns: ['fastr1', 'slowr1', 'fastgrpavg8']
 
 """
     assert captured.out == expected_captured
@@ -168,7 +168,7 @@ def test_get_configs_nirspec_bots(capsys):
     captured = capsys.readouterr()
     expected_captured = """apertures: ['s1600a1']
 grating/filter pairs: ['g140h/f070lp', 'g140h/f100lp', 'g140m/f070lp', 'g140m/f100lp', 'g235h/f170lp', 'g235m/f170lp', 'g395h/f290lp', 'g395m/f290lp', 'prism/clear']
-subarrays: ['sub512', 'sub512s', 'sub1024a', 'sub1024b', 'sub2048']
+subarrays: ['sub512', 'sub512s', 'sub1024a', 'sub1024b', 'sub2048', 's32m16_prm', 's64m8_prm', 's128m4_prm', 's256m2_prm']
 readout patterns: ['nrs', 'nrsrapid']
 
 """
@@ -198,7 +198,7 @@ def test_get_configs_miri_acq(capsys):
     expected_captured = """apertures: ['imager']
 dispersers: ['']
 filters: ['f560w', 'f1000w', 'f1500w', 'fnd']
-subarrays: ['full', 'brightsky', 'sub256', 'sub128', 'sub64', 'slitlessprism']
+subarrays: ['full', 'brightsky', 'sub256', 'sub128', 'sub64', 'subslit', 'slitlessprism', 'slitlessprism_ip', 'slitlessprism_ips']
 readout patterns: ['fast', 'fastgrpavg', 'fastgrpavg8', 'fastgrpavg16', 'fastgrpavg32', 'fastgrpavg64']
 
 """
@@ -465,14 +465,14 @@ def test_calc_saturation_single():
         disperser='grismr', filter='f444w',
         readout='rapid', subarray='subgrism64',
     )
-    np.testing.assert_almost_equal(pixel_rate, 1243.1856689453125)
+    np.testing.assert_almost_equal(pixel_rate, 1242.89404296875)
     np.testing.assert_almost_equal(full_well, 58100.00)
 
 
 def test_calc_saturation_multiple():
     inst = 'miri'
     mode = 'mrs_ts'
-    pando = jwst.PandeiaCalculation(inst, mode)    
+    pando = jwst.PandeiaCalculation(inst, mode)
     pando.set_scene('phoenix', 'k2v', '2mass,ks', 8.351)
     ngroup = 2
     disperser = 'short'
@@ -484,7 +484,10 @@ def test_calc_saturation_multiple():
     pixel_rate, full_well = pando.get_saturation_values(
         disperser, filter, subarray, readout, ngroup, aperture,
     )
-    expected_rate = [163.1600037,  89.8821259,  28.5365067,   4.2614117]
+    expected_rate = [
+        162.9745330810547, 89.84233093261719,
+         28.51001739501953, 4.259731292724609,
+    ]
     expected_well = [193655.0, 193655.0, 193655.0, 193655.0]
     np.testing.assert_almost_equal(pixel_rate, expected_rate)
     np.testing.assert_almost_equal(full_well, expected_well)

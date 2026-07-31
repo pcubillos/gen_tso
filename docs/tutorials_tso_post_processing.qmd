@@ -60,15 +60,15 @@ print(*list(tso), sep='\n')
 
 ```bash
 wl
+time_out
+flux_out
+var_out
+report
+input_depth
 depth_spectrum
 time_in
 flux_in
 var_in
-time_out
-flux_out
-var_out
-report_in
-report_out
 ```
 
 That is, the true-model spectrum (the user input model):
@@ -85,26 +85,23 @@ Flux rates and noise spectra:
 
 - **flux_in**: Flux rate of source (e-/s) during transit/eclipse
 - **flux_out**: Flux rate of source (e-/s) out of transit/eclipse
-- **var_in**: Last-minus-first (LMF) variance of flux rate during transit/eclipse
-- **var_out**: Last-minus-first (LMF) variance of flux rate out of transit/eclipse
+- **var_in**: Last-minus-first (LMF) variance integrated over transit/eclipse (e-²)
+- **var_out**: Last-minus-first (LMF) variance integrated over out-of-transit/eclipse (e-²)
 
 Pandeia reports:
 
-- **report_in**: Pandeia report during transit/eclipse
-- **report_out**: Pandeia report out of transit/eclipse
+- **report**: Pandeia report for out of transit/eclipse
 
 Inside the Pandeia reports you can find all the important info, e.g., for the APT or ETC:
 
 ```python
-print(*list(tso['report_in']), sep='\n')
+print(*list(tso['report']), sep='\n')
 ```
 
 ```bash
 sub_reports
 input
 1d
-2d
-3d
 scalar
 information
 transform
@@ -114,16 +111,16 @@ web_report
 
 The input instrumental configuration:
 ```python
-tso['report_in']['input']['configuration']
+tso['report']['input']['configuration']
 ```
 
 ```bash
 {'detector': {'nexp': 1,
-  'ngroup': 12,
-  'nint': 654,
+  'ngroup': 14,
+  'nint': 1030,
   'readout_pattern': 'nrsrapid',
   'subarray': 'sub2048',
-  'max_total_groups': 7848},
+  'max_total_groups': 14420},
  'instrument': {'aperture': 's1600a1',
   'disperser': 'g395h',
   'filter': 'f290lp',
@@ -133,35 +130,40 @@ tso['report_in']['input']['configuration']
 
 Output info and stats:
 ```python
-tso['report_in']['scalar']
+tso['report']['scalar']
 ```
 
 ```bash
-{'total_exposure_time': 7682.1979200000005,
- 'all_dithers_time': 7682.1979200000005,
- 'exposure_time': 7682.1979200000005,
- 'measurement_time': 6488.988,
- 'saturation_time': 10.824,
- 'total_integrations': 654,
- 'duty_cycle': 0.921467537509109,
- 'cr_ramp_rate': 0.0025249442969293733,
- 'extraction_area': 6.60377358490566,
- 'background_area': 15.09433962264151,
- 'fraction_saturation': 0.6423806,
- 'sat_ngroups': 18,
- 'brightest_pixel': 3857.607,
+{'total_exposure_time': 13956.9944,
+ 'all_dithers_time': 13956.9944,
+ 'exposure_time': 13956.9944,
+ 'measurement_time': 12077.78,
+ 'saturation_time': 12.628,
+ 'photon_collect': 13006.84,
+ 'total_integrations': 1030,
+ 'duty_cycle': 0.9319227067971024,
+ 'cr_ramp_rate': 0.002945768346417602,
+ 'extraction_area': np.float64(6.60377358490566),
+ 'background_area': np.float64(15.09433962264151),
+ 'fraction_saturation': np.float64(0.7688891049429086),
+ 'sat_ngroups': np.int64(18),
+ 'sat_ngroupsp1': np.int64(19),
+ 'brightest_pixel': np.float32(3957.6965),
  'filter': 'f290lp',
  'disperser': 'g395h',
  'x_offset': 0,
  'y_offset': 0,
  'aperture_size': 0.7,
- 'sn': 5852.06580539357,
- 'extracted_flux': 5999.726482570287,
- 'extracted_noise': 1.0252322311619642,
- 'background_total': 14.10125780745106,
- 'background_sky': 0.07178441201334484,
- 'contamination': 0.9949093610659743,
- 'reference_wavelength': 2.9502564180027684,
- 'background': 0.14797295413227118}
+ 'sn': np.float64(8074.318615844359),
+ 'extracted_flux': np.float64(6164.919984708835),
+ 'extracted_noise': np.float64(0.7635220107132407),
+ 'background_total': np.float64(15.112639050658368),
+ 'background_sky': np.float64(0.07178508205930174),
+ 'contamination': np.float64(0.9952499969185611),
+ 'reference_wavelength': np.float64(2.9502564180027684),
+ 'background': np.float64(0.14797295413227118),
+ 'total_integrations_in': 567,
+ 'total_integrations_out': 1030,
+ 'total_integrations_obs': 1597}
 ```
 

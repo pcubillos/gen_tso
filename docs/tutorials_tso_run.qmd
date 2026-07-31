@@ -86,11 +86,8 @@ instruments and their respective modes:
 
   <tbody>
     <tr>
-        <td rowspan="3"><span data-qmd="__miri__"></span></td>
+        <td rowspan="2"><span data-qmd="__miri__"></span></td>
         <td>lrsslitless</td> <td>5.0 &#8211; 12</td>
-    </tr>
-    <tr>
-        <td>lrsslit</td> <td>5.0 &#8211; 12</td>
     </tr>
     <tr>
         <td>mrs_ts</td> <td>5.0 &#8211; 28</td>
@@ -286,14 +283,14 @@ col1, col2 = plt.cm.viridis(0.8), plt.cm.viridis(0.25)
 plt.figure(0, (8.5, 4))
 plt.clf()
 plt.subplot(121)
-plt.plot(tso['wl'], tso['flux_out'], c=col2, label='out of transit')
-plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
+plt.plot(tso['wl'], tso['flux_out']*tso['time_out'], c=col2, label='out of transit')
+plt.plot(tso['wl'], tso['flux_in']*tso['time_in'], c=col1, label='in transit')
 plt.legend(loc='best')
 plt.xlabel('Wavelength (um)')
 plt.ylabel('Total collected flux (e-)')
 plt.subplot(122)
-plt.plot(tso['wl'], tso['flux_out']/tso['time_out'], c=col2, label='out of transit')
-plt.plot(tso['wl'], tso['flux_in']/tso['time_in'], c=col1, label='in transit')
+plt.plot(tso['wl'], tso['flux_out'], c=col2, label='out of transit')
+plt.plot(tso['wl'], tso['flux_in'], c=col1, label='in transit')
 plt.legend(loc='best')
 plt.xlabel('Wavelength (um)')
 plt.ylabel('Flux rate (e-/s)')
@@ -305,7 +302,7 @@ plt.tight_layout()
 
 ## Save TSO outputs
 
-The latest TSO run for a given Pandeia object can be saved with this method: 
+The latest TSO run for a given Pandeia object can be saved with this method:
 ```python
 pando.save_tso(filename='tso_transit_WASP-80b_nircam_lw_f444w.picke')
 ```

@@ -632,10 +632,10 @@ def load_programs(grouped=False, csv_file=None):
     eval_keys = ['special_reqs', 'phase_reqs', 'between_reqs']
     for obs in observations:
         for key,val in obs.items():
-            if val == '':
-                obs[key] = None
-            elif key == 'planets':
+            if key == 'planets':
                 obs[key] = val.split()
+            elif val == '':
+                obs[key] = None
             elif key in int_keys:
                 obs[key] = int(val)
             elif key in float_keys:

@@ -75,13 +75,13 @@ def read_noise_variance(report, ins_config):
     report_config = report['input']['configuration']['instrument']
     if report_config['mode'] in ['sw_tsgrism', 'sw_ts']:
         aperture = report_config['aperture']
-        noise = ins_config['detector_config']['sw']['rn']
+        noise = ins_config['detector_config']['sw']['readnoise']
         if aperture not in noise:
             aperture = 'default'
         read_noise = noise[aperture]
         return read_noise
 
-    if report_config['mode'] in ['mrs_ts', 'lrsslit']:
+    if report_config['mode'] == 'mrs_ts':
         aperture = report_config['aperture']
         aperture = ins_config['aperture_config'][aperture]['detector']
     else:
@@ -90,7 +90,7 @@ def read_noise_variance(report, ins_config):
     if aperture not in ins_config['detector_config']:
         aperture = 'default'
 
-    read_noise = ins_config['detector_config'][aperture]['rn']
+    read_noise = ins_config['detector_config'][aperture]['readnoise']
     if isinstance(read_noise, dict):
         read_noise = read_noise['default']
 
@@ -421,11 +421,8 @@ def extract_flux_rate(reports, get_max=False):
     if not isinstance(reports, list):
         reports = [reports]
     # Unpack TSO dictionary
-    if 'report_in' in reports[0]:
-        reports = (
-            [report['report_in'] for report in reports] +
-            [report['report_out'] for report in reports]
-        )
+    if 'report' in reports[0]:
+        reports = [report['report'] for report in reports]
 
     ncalc = len(reports)
     brightest_pixel_rate = np.zeros(ncalc)
@@ -624,8 +621,8 @@ def groups_below_saturation(
         # Unpack instrumental configuration values:
         if not isinstance(reports, list):
             reports = [reports]
-        if 'report_in' in reports[0]:
-            report = reports[0]['report_in']
+        if 'report' in reports[0]:
+            report = reports[0]['report']
         else:
             report = reports[0]
         config = report['input']['configuration']
@@ -1250,8 +1247,8 @@ def save_tso(filename, tso, lightweight=True):
         The TSO object to be saved. This should be a dictionary-like
         structure as returned by pando.tso_calculation().
     lightweight : bool
-        If True, remove the '2d' and '3d' fields from 'report_out' and
-        'report_in' to reduce the file size.
+        If True, remove the '2d' and '3d' fields from 'report'
+        to reduce the file size.
         The original `tso` object is not modified.
     """
     if lightweight:
@@ -1261,10 +1258,9 @@ def save_tso(filename, tso, lightweight=True):
             tso_copy = [tso_copy]
 
         for _tso in tso_copy:
-            for rep in ['report_out', 'report_in']:
-                report = _tso[rep]
-                report.pop('2d', None)
-                report.pop('3d', None)
+            report = _tso['report']
+            report.pop('2d', None)
+            report.pop('3d', None)
         if not is_list:
             tso_copy = tso_copy[0]
     else:
@@ -1350,8 +1346,8 @@ def simulate_tso(
     """
     dt_in = tso['time_in']
     dt_out = tso['time_out']
-    flux_in = tso['flux_in'] * n_obs
-    flux_out = tso['flux_out'] * n_obs
+    flux_in = tso['flux_in'] * dt_in * n_obs
+    flux_out = tso['flux_out'] * dt_out * n_obs
     var_in = tso['var_in'] * n_obs * err_scale**2.0
     var_out = tso['var_out'] * n_obs * err_scale**2.0
     wl = tso['wl']
@@ -1363,7 +1359,7 @@ def simulate_tso(
         bin_vin = var_in
         bin_vout = var_out
         # get throughput's bandwidth
-        config = tso['report_in']['input']['configuration']['instrument']
+        config = tso['report']['input']['configuration']['instrument']
         inst = config['instrument']
         mode = config['mode']
         aperture = config['aperture']
@@ -1423,14 +1419,84 @@ def simulate_tso(
     return bin_wl[mask], bin_spec[mask], bin_err[mask], bin_widths[mask]
 
 
-def _get_tso_wl_range(tso_run):
+def jwst_convolve(wl_model, depth_model, wl_jwst, inst, n_sigma=5):
+    """
+    Convolve spectrum to JWST (wavelength-dependent) resolving power
+
+    Parameters
+    ----------
+    wl_model: 1D float array
+        Wavelength of transit/eclipse depth spectrum in microns
+    depth_model: 1D float array
+        Transit or eclipse depth spectrum to convolve
+    wl_jwst: 1D float array
+        Wavelength sampling of JWST, as output by a perform_calculation()
+        call, e.g.: wl_jwst = report['1d']['extracted_flux'][0]
+    inst: string
+        The JWST instrument (miri, nircam, niriss, or nirspec)
+    n_sigma: float
+        Extent of convolution kernel
+
+    Returns
+    -------
+    inst_depth: 1D float array
+        depth spectrum convolved to JWST resolving power and
+        interpolated at wl_jwst.
+    """
+    isort = np.argsort(wl_jwst)
+    wl_jwst = wl_jwst[isort]
+
+    inst_res = np.median(wl_jwst[1:]/np.ediff1d(wl_jwst))
+    wl_min = np.amin(wl_jwst) * (1.0-3.0/inst_res)
+    wl_max = np.amax(wl_jwst) * (1.0+3.0/inst_res)
+
+    # resample transit/eclipse depth at sufficiently high resolution
+    res = 50_000
+    wl_interp = constant_resolution_spectrum(wl_min, wl_max, res)
+    interp_func = si.interp1d(
+        wl_model, depth_model, bounds_error=False, fill_value=0.0,
+    )
+    interp_depth = interp_func(wl_interp)
+
+    # Resampling factor based on comparisons with outputs
+    resampling = 1.0 if inst=='nirspec' else 0.5
+    # Resolving power array
+    inst_res = 0.5 * resampling * wl_jwst[1:] / np.ediff1d(wl_jwst)
+    interp_func = si.interp1d(
+        wl_jwst[1:], inst_res, bounds_error=False,
+        fill_value=(inst_res[0], inst_res[-1]),
+    )
+    resolution = interp_func(wl_interp)
+
+    # Convert resolving power to gaussian sigma in ln-wavelength units
+    log_wl = np.log(wl_interp)
+    log_sigma = 1.0 / (2.355 * resolution)
+    sigma_pix = log_sigma / (log_wl[1] - log_wl[0])
+    nwave = len(wl_interp)
+    indices = np.arange(nwave)
+    lo_bound = np.clip(indices - sigma_pix * n_sigma, 0, nwave-1)
+    hi_bound = np.clip(indices + sigma_pix * n_sigma, 0, nwave-1)
+
+    # Convolve at each point
+    flux_conv = np.zeros_like(wl_interp, dtype=float)
+    for i in range(nwave):
+        idx = np.arange(lo_bound[i], hi_bound[i] + 1, dtype=int)
+        weights = np.exp(-0.5 * ((log_wl[idx] - log_wl[i]) / log_sigma[i])**2.0)
+        w_sum = np.sum(weights)
+        flux_conv[i] = np.dot(weights, interp_depth[idx]) / w_sum
+
+    inst_depth = np.interp(wl_jwst, wl_interp, flux_conv)
+    return inst_depth
+
+
+def _get_tso_wl_range(runs):
     """
     Get the wavelength range covered by a TSO calculation
 
     Parameters
     ----------
     tso_run: Dictionary
-        A TSO calculation output as computed by run_pandeia() in the app.
+        A list of TSO calculations
     wl_scale: String
         Wavelength scale: 'linear' or 'log'.
 
@@ -1441,14 +1507,13 @@ def _get_tso_wl_range(tso_run):
     max_wl: Float
         Longer-wavelength boundary.
     """
-    runs = tso_run['tso']
     if not isinstance(runs, list):
         runs = [runs]
 
     min_wl = np.zeros(len(runs))
     max_wl = np.zeros(len(runs))
     for i,tso in enumerate(runs):
-        config = tso['report_in']['input']['configuration']['instrument']
+        config = tso['report']['input']['configuration']['instrument']
         inst = config['instrument']
         mode = config['mode']
         aper = config['aperture']
@@ -1477,14 +1542,14 @@ def _get_tso_wl_range(tso_run):
     return min_wl, max_wl
 
 
-def _get_tso_depth_range(tso_run, resolution, units):
+def _get_tso_depth_range(runs, resolution, units):
     """
     Get the transit/eclipse depth range covered by a TSO calculation
 
     Parameters
     ----------
-    tso_run: Dictionary
-        A TSO calculation output as computed by run_pandeia() in the app.
+    runs: Dictionary
+        A list of TSO calculations
     resolution: Float
         Spectral resolution at which to sample the spectrum.
     units: String
@@ -1499,11 +1564,10 @@ def _get_tso_depth_range(tso_run, resolution, units):
     step: Float
         A quarter of the peak-to-peak depth distance.
     """
-    runs = tso_run['tso']
     if not isinstance(runs, list):
         runs = [runs]
 
-    min_wl, max_wl = _get_tso_wl_range(tso_run)
+    min_wl, max_wl = _get_tso_wl_range(runs)
     max_depth = []
     min_depth = []
     for tso in runs:
@@ -1514,7 +1578,7 @@ def _get_tso_depth_range(tso_run, resolution, units):
         d_min1 = np.amin(tso['depth_spectrum'] - 3*err_median)
         d_max1 = np.amax(tso['depth_spectrum'] + 3*err_median)
 
-        mode = tso['report_in']['input']['configuration']['instrument']['mode']
+        mode = tso['report']['input']['configuration']['instrument']['mode']
         if mode in _photo_modes:
             input_wl, input_depth = tso['input_depth']
             wl_min = np.amax([min_wl, np.amin(input_wl)])
@@ -1565,7 +1629,7 @@ def _print_pandeia_exposure(
     >>> )
     >>>
     >>> # Print from config dictionary:
-    >>> config = tso['report_out']['input']['configuration']
+    >>> config = tso['report']['input']['configuration']
     >>> print(jwst._print_pandeia_exposure(config=config))
     Exposure time: 13988.25 s (3.89 h)
     >>>
@@ -1633,8 +1697,8 @@ def _print_pandeia_saturation(
     if reports is not None:
         pixel_rate, full_well = extract_flux_rate(reports, get_max=True)
         # This is a TSO dict
-        if 'report_in' in reports[0]:
-            report = reports[0]['report_in']
+        if 'report' in reports[0]:
+            report = reports[0]['report']
         else:
             report = reports[0]
         config = report['input']['configuration']
@@ -1673,7 +1737,7 @@ def _print_pandeia_saturation(
     return sat_text
 
 
-def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
+def _print_pandeia_stats(inst, mode, reports, format=None):
     r"""
     Return a text summarizing the SNR, timings, and backround info
     from a perform_calculation() or a tso_calculation() output.
@@ -1684,12 +1748,8 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
         Instrument name.
     mode: String
         Instrument's mode.
-    report_in: Dictionary
+    report: Dictionary
         A tso_calculation() or pandeia's perform_calculation() output.
-    report_out: Dictionary
-        A pandeia's perform_calculation() output.
-        If not None, assume that the inputs reports are an in-transit
-        and out-of-transit pair.
     format: String
         If None format as plain text (e.g., for print() calls)
         If 'rich' format as rich/colorful text (e.g., for FormattedText())
@@ -1709,21 +1769,8 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
     >>> report = jwst.print_pandeia_report(inst, mode, result['scalar'])
     >>> print(report)
     """
-    if not isinstance(report_in, list):
-        report_in = [report_in]
-    rate_in = report_in[0]['extracted_flux']
-    if report_out == []:
-        report_out = None
-    if report_out is not None:
-        if not isinstance(report_out, list):
-           report_out = [report_out]
-        rate_out = report_out[0]['extracted_flux']
-
-    # Take report with more flux in it
-    if report_out is None or rate_in > rate_out:
-        reports = report_in
-    else:
-        reports = report_out
+    if not isinstance(reports, list):
+        reports = [reports]
 
     snr = ''
     flux = ''
@@ -1742,7 +1789,7 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
     if mode == 'target_acq' and inst in ['niriss', 'nircam']:
         min_snr = 30.0
 
-    for report in report_in:
+    for report in reports:
         sn = report['sn']
         snr += format_text(f"{sn:9.1f} ", danger=sn<min_snr, format=format)
         flux += f"{report['extracted_flux']:9.1f} "
@@ -1750,7 +1797,7 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
         pixel_rate += f"{report['brightest_pixel']:9.1f} "
         ref_wave += f"{report['reference_wavelength']:6.2f} "
         extract_area += f"{report['extraction_area']:6.2f} "
-        if report_in[0]['background_area'] is not None:
+        if reports[0]['background_area'] is not None:
             bkg_area += f"{report['background_area']:6.1f} "
             bkg_brightness += f"{report['background']:6.1f} "
             sky += f"{report['background_sky']:6.2f} "
@@ -1758,43 +1805,50 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
             bkg_source += f"{report['contamination']:6.2f} "
 
     background_info = ''
-    if report_in[0]['background_area'] is not None:
+    if reports[0]['background_area'] is not None:
         background_info = (
-            f"Area of background measurement:        {bkg_area} pixels\n"
-            f"Background surface brightness:         {bkg_brightness} MJy/sr\n"
-            f"Total sky flux in background aperture: {sky} e-/s\n"
-            f"Total flux in background aperture:     {bkg_flux} e-/s\n"
-            f"Background flux fraction from scene:   {bkg_source.rstrip()}\n"
+            f"Area of background measurement         {bkg_area} pixels\n"
+            f"Background surface brightness          {bkg_brightness} MJy/sr\n"
+            f"Total sky flux in background aperture  {sky} e-/s\n"
+            f"Total flux in background aperture      {bkg_flux} e-/s\n"
+            f"Background flux fraction from scene    {bkg_source.rstrip()}\n"
         )
 
-    cosmic_rays = f"{report_in[0]['cr_ramp_rate']:9.4f}"
+    cosmic_rays = f"{reports[0]['cr_ramp_rate']:9.4f}"
 
-    integs = ''
-    duty_cycle = ''
-    total_time = ''
-    exp_time = ''
-    dt_exposure = ''
-    dt_integ = ''
-    dt_fmt = '8.1f' if report_in[0]['total_exposure_time'] > 100 else '8.3f'
+    report = reports[0]
+    dt_fmt = '8.1f' if report['total_exposure_time'] > 100 else '8.3f'
     min_duty = 0.0 if mode == 'target_acq' else 0.49
-    reports = report_in[0:1]
-    if report_out is not None:
-        reports.append(report_out[0])
-    for report in reports:
-        integs += f"{report['total_integrations']:8d} "
-        duty = report['duty_cycle']
-        duty_cycle += format_text(
-            f"{duty:8.2f} ", warning=duty<min_duty, format=format,
-        )
-        total_time += f"{report['total_exposure_time']:{dt_fmt}} "
-        exp_time += f"{report['all_dithers_time']:{dt_fmt}} "
-        dt_exposure += f"{report['exposure_time']:{dt_fmt}} "
-        dt_integ += f"{report['measurement_time']:{dt_fmt}} "
 
-    if report_out is None:
-        tso_header = ''
-    else:
+    duty = report['duty_cycle']
+    precision = -np.floor(np.log10(duty))
+    precision = int(np.clip(precision+1, 2, np.inf))
+    duty_cycle = format_text(
+        f"{duty:.{precision}f}", warning=duty<min_duty, format=format,
+    )
+
+    total_exp_time = report['total_exposure_time']
+    dither_time = report['all_dithers_time']
+    exposure_time = report['exposure_time']
+    measurement_time = report['measurement_time']
+
+    integs = f"{report['total_integrations']:8d} "
+    total_time = f"{total_exp_time:{dt_fmt}}"
+    exp_time = f"{dither_time:{dt_fmt}}"
+    dt_exposure = f"{exposure_time:{dt_fmt}}"
+    dt_integ = f"{measurement_time:{dt_fmt}}"
+
+    tso_header = ''
+    if 'total_integrations_in' in report:
+        nint_in = report['total_integrations_in']
+        dt_factor = nint_in / report['total_integrations']
+        integs = f"{nint_in:8d} {integs}"
+        total_time = f"{dt_factor*total_exp_time:{dt_fmt}} {total_time}"
+        exp_time = f"{dt_factor*dither_time:{dt_fmt}} {exp_time}"
+        dt_exposure = f"{dt_factor*exposure_time:{dt_fmt}} {dt_exposure}"
+        dt_integ = f"{dt_factor*measurement_time:{dt_fmt}} {dt_integ}"
         tso_header = f"{'in-transit':>41}  out-transit\n"
+
     if mode == 'miri_ts' and len(reports)==4:
         channels = "CH1 CH2 CH3 CH4"
         band_header1 = f"{'':31s}{channels.replace(' ', '       ')}\n"
@@ -1807,22 +1861,20 @@ def _print_pandeia_stats(inst, mode, report_in, report_out=None, format=None):
         f"Signal-to-noise ratio    {snr.rstrip()}\n"
         f"Extracted flux           {flux} e-/s\n"
         f"Flux standard deviation  {flux_std} e-/s\n"
-        f"Brightest pixel rate     {pixel_rate} e-/s\n\n"
+        f"Brightest pixel rate     {pixel_rate} e-/s\n"
+        f"Duty cycle               {duty_cycle}\n\n"
 
         f"{tso_header}"
-        f"Integrations:                    {integs.rstrip()}\n"
-        f"Duty cycle:                      {duty_cycle.rstrip()}\n"
-        f"Total exposure time:             {total_time} s\n"
-        # Ignore exp_time since it always matches total_time (nexp=1)
-        #f"Single exposure time:            {exp_time} s\n"
-        f"First--last dt per exposure:     {dt_exposure} s\n"
-        f"Reset--last dt per integration:  {dt_integ} s\n\n"
+        f"Integrations                     {integs.rstrip()}\n"
+        f"Total exposure time              {total_time} s\n"
+        f"First--last dt per exposure      {dt_exposure} s\n"
+        f"Reset--last dt per integration   {dt_integ} s\n\n"
 
         f"{band_header2}"
-        f"Reference wavelength:                  {ref_wave} microns\n"
-        f"Area of extraction aperture:           {extract_area} pixels\n"
+        f"Reference wavelength                   {ref_wave} microns\n"
+        f"Area of extraction aperture            {extract_area} pixels\n"
         f"{background_info}"
-        f"Number of cosmic rays:   {cosmic_rays}  events/pixel/read"
+        f"Number of cosmic rays    {cosmic_rays}  events/pixel/read"
     )
 
     if format=='html':
@@ -1861,63 +1913,55 @@ def _print_pandeia_report(reports, format=None):
     >>> tso_report = jwst._print_pandeia_report(tso, format=None)
     >>> print(tso_report)
 
-    Exposure time: 21545.44 s (5.98 h)
-    Max fraction of saturation: 73.7%
-    ngroup below 80% saturation: 97
-    ngroup below 100% saturation: 122
+    Exposure time: 21607.44 s (6.00 h)
+    Max fraction of saturation: 68.6%
+    ngroup below 80% saturation: 104
+    ngroup below 100% saturation: 131
 
-    Signal-to-noise ratio       3484.8
-    Extracted flux              2043.0  e-/s
-    Flux standard deviation        0.6  e-/s
-    Brightest pixel rate        1354.7  e-/s
+    Signal-to-noise ratio       4852.0
+    Extracted flux              2082.3  e-/s
+    Flux standard deviation        0.4  e-/s
+    Brightest pixel rate        1300.0  e-/s
+    Duty cycle                   0.99
 
                                    in-transit  out-transit
-    Integrations:                         243      452
-    Duty cycle:                          0.98     0.98
-    Total exposure time:               7533.2  14012.3  s
-    First--last dt per exposure:       7533.2  14012.3  s
-    Reset--last dt per integration:    7366.4  13702.1  s
+    Integrations                          244      453
+    Total exposure time                7564.2  14043.3 s
+    First--last dt per exposure        7564.2  14043.3 s
+    Reset--last dt per integration     7396.7  13732.4 s
 
-    Reference wavelength:                    4.36  microns
-    Area of extraction aperture:             4.76  pixels
-    Area of background measurement:           6.3  pixels
+    Reference wavelength                     4.46  microns
+    Area of extraction aperture              9.52  pixels
+    Area of background measurement:          19.0  pixels
     Background surface brightness:            0.3  MJy/sr
-    Total sky flux in background aperture:   4.45  e-/s
-    Total flux in background aperture:      64.12  e-/s
-    Background flux fraction from scene:     0.93
-    Number of cosmic rays:      0.0072  events/pixel/read
+    Total sky flux in background aperture:   9.89  e-/s
+    Total flux in background aperture:      24.07  e-/s
+    Background flux fraction from scene:     0.59
+    Number of cosmic rays       0.0072  events/pixel/read
     """
     if not isinstance(reports, list):
         reports = [reports]
-    # This is a TSO dict
-    if 'report_in' in reports[0]:
-        report_in = [report['report_in'] for report in reports]
-        report_out = [report['report_out'] for report in reports]
-    # This is a perform_calculation dict
-    else:
-        report_in = reports
-        report_out = []
+    # Unpack if this is a TSO dict
+    if 'report' in reports[0]:
+        reports = [report['report'] for report in reports]
 
     # Put everything into a list to make things easier to handle:
-    if not isinstance(report_in, list):
-        report_in = [report_in]
-    if not isinstance(report_out, list):
-        report_out = [report_out]
+    if not isinstance(reports, list):
+        reports = [reports]
 
     # Exposure
-    config = report_in[0]['input']['configuration']
+    config = reports[0]['input']['configuration']
     inst = config['instrument']['instrument']
     mode = config['instrument']['mode']
     subarray = config['detector']['subarray']
     readout = config['detector']['readout_pattern']
     ngroup = config['detector']['ngroup']
     nint = config['detector']['nint']
-    if report_out != []:
-        nint += report_out[0]['input']['configuration']['detector']['nint']
+    if 'total_integrations_in' in reports[0]['scalar']:
+        nint += reports[0]['scalar']['total_integrations_in']
     text_report = _print_pandeia_exposure(inst, subarray, readout, ngroup, nint)
 
     # Saturation
-    reports = report_in + report_out
     pixel_rate, full_well = extract_flux_rate(reports, get_max=True)
     saturation_report = _print_pandeia_saturation(
         inst, subarray, readout, ngroup, pixel_rate, full_well,
@@ -1926,9 +1970,8 @@ def _print_pandeia_report(reports, format=None):
     text_report = f'{text_report}\n{saturation_report}'
 
     # Full report
-    scalar_in = [report['scalar'] for report in report_in]
-    scalar_out = [report['scalar'] for report in report_out]
-    stats = _print_pandeia_stats(inst, mode, scalar_in, scalar_out, format)
+    scalar = [report['scalar'] for report in reports]
+    stats = _print_pandeia_stats(inst, mode, scalar, format)
     text_report = f'{text_report}\n\n{stats}'
     if format == 'html':
         text_report = text_report.replace('\n', '<br>')

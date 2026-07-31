@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pandeia.engine
 import plotly.graph_objects as go
+import pyratbay.tools as pt
 from shiny import ui, render, reactive, req, App
 from shinywidgets import output_widget, render_plotly
 
@@ -58,7 +59,6 @@ from gen_tso.app_utils import (
     parse_sed,
     _safe_num,
 )
-import gen_tso.viewer_popovers as pops
 from gen_tso.export_script import (
     export_script_fixed_values,
     export_script_calculated_values,
@@ -226,6 +226,21 @@ heatmaps = {
     '2d_groups': 'ngroups_map',
 }
 
+# Instrument warnings
+stripes = [
+     'sub17stripe_soss',
+     'sub60stripe_soss',
+     'sub204stripe_soss',
+     'sub680stripe_soss',
+]
+nircam_warning = (
+    'WARNING: The SW Grism Time Series mode is still being calibrated; '
+    'the SNR and saturation estimates provided by the ETC '
+    'may therefore be outside the expected 10% accuracy level'
+)
+soss_warning = 'WARNING: The SOSS multi-stripe subarray is still being calibrated'
+
+
 layout_kwargs = dict(
     width=1/2,
     fixed_width=False,
@@ -235,6 +250,18 @@ layout_kwargs = dict(
     fillable=True,
     class_="pb-2 pt-0 m-0",
 )
+
+card_style = "background:#F5F5F5; !important;"
+
+tso_choices = {
+    'tso': 'TSO',
+    'fluxes': 'Flux rate',
+    'snr': 'S/N',
+    '2d_flux': '2D flux',
+    '2d_snr': '2D S/N',
+    '2d_saturation': '2D saturation',
+    '2d_groups': '2D groups',
+}
 
 
 app_ui = ui.page_fluid(
@@ -251,6 +278,13 @@ app_ui = ui.page_fluid(
         });
         """
     ),
+    # NASA link
+    ui.tags.script("""
+        Shiny.addCustomMessageHandler("set_nasa_href", function(msg) {
+            const link = document.getElementById("nasa_link");
+            if (link) link.href = msg.url;
+        });
+    """),
     # Copy to clipboard
     ui.HTML("""
         <script>
@@ -272,8 +306,34 @@ app_ui = ui.page_fluid(
     ),
     ui.tags.style(
         """
+        #run_pandeia{
+            font-weight: bold;
+            background-color: #EEBA0B;
+            color: #FFFFFF;
+            border-color: #CC9C00;
+        }
+        #run_pandeia:hover{
+            color:#000000;
+            background-color: #ffc60a;
+            border-color: #EEBA0B;
+        }
+        .warning {
+            color: #ffa500;
+            font-weight: bold;
+        }
+        .danger {
+            color: red;
+            font-weight: bold;
+        }
         .popover {
-            --bs-popover-max-width: 500px;
+            --bs-popover-max-width: 600px;
+        }
+        .action-link .action-label:empty {
+            margin-left: 0.0em !important;
+        }
+        .accordion-button {
+            padding-top: 0.35rem;
+            padding-bottom: 0.35rem;
         }
         """
     ),
@@ -292,7 +352,18 @@ app_ui = ui.page_fluid(
                 "status",
                 placement='bottom',
             ),
-            ', ',
+            ui.HTML(', '),
+            ui.tooltip(
+                ui.input_action_link(
+                    id='bibtex',
+                    label='',
+                    icon=fa.icon_svg("book-open-reader", fill='black',
+                    ),
+                ),
+                "citation",
+                placement='bottom',
+            ),
+            ui.HTML(', '),
             ui.tooltip(
                 ui.tags.a(
                     fa.icon_svg("book", fill='black'),
@@ -302,25 +373,15 @@ app_ui = ui.page_fluid(
                 "documentation",
                 placement='bottom',
             ),
-            ', ',
-            ui.tooltip(
-                ui.input_action_link(
-                    id='bibtex',
-                    label='',
-                    icon=fa.icon_svg("book-open-reader", fill='black'),
-                ),
-                "citation",
-                placement='bottom',
-            ),
-
-            ')',
+            ui.HTML(')'),
             style="font-size: 26px;",
         ),
-        ui.output_image("tso_logo", height='50px', inline=True),
-        col_widths=(11,1),
+        ui.output_image("tso_logo", inline=True),
+        col_widths=(11, 1),
         fixed_width=False,
         fill=False,
         fillable=True,
+        class_="p-0 m-0",
     ),
     # Instrument and detector modes:
     ui.layout_columns(
@@ -361,66 +422,68 @@ app_ui = ui.page_fluid(
         cs.custom_card(
             # current setup and TSO runs
             ui.layout_columns(
-                # Left
-                ui.input_select(
-                    id="display_tso_run",
-                    label=ui.tooltip(
-                        "Display TSO run:",
-                        "TSO runs will show here after a 'Run Pandeia' call",
-                        placement='right',
-                    ),
-                    choices=make_tso_labels(tso_runs),
-                    selected=[''],
-                    width='100%',
-                ),
-                # TBD: Set disabled based on existing TSOs
                 ui.layout_column_wrap(
+                    ui.card_header("TSO runs"),
+                    ui.tooltip(
+                        ui.input_select(
+                            id="display_tso_run",
+                            label='',
+                            choices=make_tso_labels(tso_runs),
+                            selected=[''],
+                            width='100%',
+                        ),
+                        "TSO runs will show here after a 'Run Pandeia' call",
+                        placement='top',
+                    ),
+                    ui.input_task_button(
+                        id="run_pandeia",
+                        label="Run Pandeia",
+                        label_busy="processing...",
+                        width='100%',
+                    ),
+                    heights_equal=False,
+                    width=1,
+                    gap='3px',
+                    class_="p-0 pb-2 m-0",
+                ),
+                ui.layout_column_wrap(
+                    # TBD: Set disabled based on existing TSOs
                     ui.input_action_button(
                         id="save_button",
                         label="Save TSO",
                         class_="btn btn-outline-success btn-sm",
                         disabled=False,
-                        width='110px',
+                        width='100%',
                     ),
                     ui.input_action_button(
                         id="delete_button",
                         label="Delete TSO",
                         class_='btn btn-outline-danger btn-sm',
                         disabled=False,
-                        width='110px',
+                        width='100%',
                     ),
+                    ui.panel_conditional(
+                        "input.mode == 'target_acq'",
+                        ui.input_radio_buttons(
+                            id='target_focus',
+                            label='',
+                            choices={
+                                'science': 'science target',
+                                'acquisition': 'acquisition',
+                            },
+                            selected='science',
+                        ),
+                    ),
+                    gap='1px',
                     width=1,
-                    gap='5px',
-                    class_="px-0 py-0 mx-0 my-0",
+                    class_="p-0 pt-2 m-0",
                 ),
                 col_widths=(9,3),
-                fill=True,
-                fillable=True,
+                heights_equal=False,
+                gap='8px',
+                class_="p-0 m-0",
             ),
-            ui.layout_columns(
-                ui.input_task_button(
-                    id="run_pandeia",
-                    label="Run Pandeia",
-                    label_busy="processing...",
-                    width='100%',
-                ),
-                ui.panel_conditional(
-                    "input.mode == 'target_acq'",
-                    ui.input_radio_buttons(
-                        id='target_focus',
-                        label='',
-                        choices={
-                            'science': 'sci target',
-                            'acquisition': 'acq target',
-                        },
-                        selected='science',
-                    ),
-                ),
-                col_widths=(9,3),
-                gap='10px',
-                class_="px-0 py-0 mx-0 my-0",
-            ),
-            body_args=dict(class_="p-2 m-1"),
+            body_args=dict(class_="py-0 px-2 m-0"),
         ),
         col_widths=[6,6],
     ),
@@ -430,67 +493,166 @@ app_ui = ui.page_fluid(
         # The target
         cs.custom_card(
             ui.card_header("Target", class_="bg-primary"),
-            ui.panel_well(
-                ui.popover(
-                    ui.span(
-                        fa.icon_svg("gear"),
-                        style="position:absolute; top: 5px; right: 7px;",
-                    ),
-                    ui.input_checkbox_group(
-                        id="target_filter",
-                        label='',
-                        choices={
-                            "transit": "transiting",
-                            "jwst": "JWST targets",
-                            "custom": "custom targets",
-                            "tess": "TESS candidates",
-                            "non_transit": "non-transiting",
-                        },
-                        selected=['jwst', 'transit'],
-                    ),
-                    title='Filter targets',
-                    placement="right",
-                    id="targets_popover",
-                ),
-                # Hidden section to hold switches for conditionals
-                ui.panel_conditional(
-                    'false',
-                    ui.input_action_button(
-                        id="konami_sequence_trigger",
-                        label="",
-                    ),
-                    ui.input_switch(
-                        id="is_custom",
-                        label="custom",
-                        value=False,
-                    ),
-                    ui.input_switch(
-                        id="has_sed_bookmarks",
-                        label="has SED",
-                        value=False,
-                    ),
-                    ui.input_switch(
-                        id="has_depth_bookmarks",
-                        label="has transits",
-                        value=False,
-                    ),
-                ),
-                # Customizing buttons
-                ui.panel_conditional(
-                    # Keep hidden while we fine-tune the customs details
-                    #"input.is_custom",
-                    "false",
-                    ui.layout_column_wrap(
-                        ui.input_action_button(
-                            id='save_custom_target',
-                            label='Save changes',
-                            class_='btn btn-outline-success btn-sm',
+            ui.card(
+                ui.card_body(
+                    ui.popover(
+                        ui.span(
+                            fa.icon_svg("gear"),
+                            style="position:absolute; top: 5px; right: 7px;",
                         ),
-                        #ui.input_action_button(
-                        #    id='clear_custom',
-                        #    label='Clear changes',
-                        #    class_='btn btn-outline-success btn-sm',
-                        #),
+                        ui.input_checkbox_group(
+                            id="target_filter",
+                            label='',
+                            choices={
+                                "transit": "transiting",
+                                "jwst": "JWST targets",
+                                "custom": "custom targets",
+                                "tess": "TESS candidates",
+                                "non_transit": "non-transiting",
+                            },
+                            selected=['jwst', 'transit'],
+                        ),
+                        title='Filter targets',
+                        placement="right",
+                        id="targets_popover",
+                    ),
+                    # Hidden section to hold switches for conditionals
+                    ui.panel_conditional(
+                        'false',
+                        ui.input_action_button(
+                            id="konami_sequence_trigger",
+                            label="",
+                        ),
+                        ui.input_switch(
+                            id="is_candidate",
+                            label="candidate",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="is_custom",
+                            label="custom",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="has_sed_bookmarks",
+                            label="has SED",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="has_depth_bookmarks",
+                            label="has transits",
+                            value=False,
+                        ),
+                        ui.input_switch(
+                            id="raise_detector_warning",
+                            label="detector warning",
+                            value=False,
+                        ),
+                    ),
+                    # Customizing buttons
+                    ui.panel_conditional(
+                        # Keep hidden while we fine-tune the customs details
+                        #"input.is_custom",
+                        "false",
+                        ui.layout_column_wrap(
+                            ui.input_action_button(
+                                id='save_custom_target',
+                                label='Save changes',
+                                class_='btn btn-outline-success btn-sm',
+                            ),
+                            #ui.input_action_button(
+                            #    id='clear_custom',
+                            #    label='Clear changes',
+                            #    class_='btn btn-outline-success btn-sm',
+                            #),
+                            width=1/2,
+                            fixed_width=False,
+                            heights_equal='all',
+                            gap='7px',
+                            fill=False,
+                            fillable=True,
+                        ),
+                    ),
+                    # The target
+                    ui.span(
+                        ui.HTML('<b>Science target</b> '),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='show_info',
+                                label='',
+                                icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
+                            ),
+                            'System info',
+                            id='target_info_tooltip',
+                            placement='top',
+                        ),
+                        #url has to be set with javascript, output_ui does not render nicely, ui.input_action_link() does not open in server side.
+                        ui.tooltip(
+                            ui.tags.a(
+                                fa.icon_svg("circle-info", fill='black'),
+                                id='nasa_link',
+                                href=f'{nasa_url}',
+                                target="_blank",
+                            ),
+                            "Open target's NASA Exoplanet Archive",
+                            id='nasa_tooltip',
+                            placement='top',
+                        ),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='show_observations',
+                                label='',
+                                icon=fa.icon_svg("circle-info", fill='gray'),
+                            ),
+                            'not a JWST target (yet)',
+                            id='jwst_tooltip',
+                            placement='top',
+                        ),
+                        ui.panel_conditional(
+                            "input.is_custom",
+                            ui.tooltip(
+                                fa.icon_svg("circle-info", fill='#15B01A', margin_left='-0.3em'),
+                                ui.markdown("This is a custom target"),
+                                placement='top',
+                            ),
+                        ),
+                        ui.panel_conditional(
+                            "input.is_candidate",
+                            ui.tooltip(
+                                fa.icon_svg("triangle-exclamation", fill='darkorange', margin_left='-0.3em'),
+                                ui.markdown("This is a *candidate* planet"),
+                                placement='top',
+                            ),
+                        ),
+                    ),
+                    ui.input_selectize(
+                        id='target',
+                        label='',
+                        choices=[target.planet for target in catalog.targets],
+                        selected='WASP-80 b',
+                        multiple=False,
+                    ),
+                    # Target props
+                    ui.layout_column_wrap(
+                        # Row 1
+                        ui.p("T_eff (K):"),
+                        ui.input_numeric("t_eff", "", value=1400, min=100, step=100),
+                        # Row 2
+                        ui.p("log(g):"),
+                        ui.input_numeric("log_g", "", value=4.5, min=0, step=0.1),
+                        # Row 3
+                        ui.input_select(
+                            id='magnitude_band',
+                            label='',
+                            choices=bands_dict,
+                            selected='2mass,ks',
+                        ),
+                        ui.input_numeric(
+                            id="magnitude",
+                            label="",
+                            value=10.0,
+                            step=0.1,
+                        ),
                         width=1/2,
                         fixed_width=False,
                         heights_equal='all',
@@ -498,369 +660,451 @@ app_ui = ui.page_fluid(
                         fill=False,
                         fillable=True,
                     ),
-                ),
-                # The target
-                ui.output_ui('target_label'),
-                ui.input_selectize(
-                    id='target',
-                    label='',
-                    choices=[target.planet for target in catalog.targets],
-                    selected='WASP-80 b',
-                    multiple=False,
-                ),
-                # Target props
-                ui.layout_column_wrap(
-                    # Row 1
-                    ui.p("T_eff (K):"),
-                    ui.input_numeric("t_eff", "", value=1400, min=100, step=100),
-                    # Row 2
-                    ui.p("log(g):"),
-                    ui.input_numeric("log_g", "", value=4.5, min=0, step=0.1),
-                    # Row 3
-                    ui.input_select(
-                        id='magnitude_band',
-                        label='',
-                        choices=bands_dict,
-                        selected='2mass,ks',
-                    ),
-                    ui.input_numeric(
-                        id="magnitude",
-                        label="",
-                        value=10.0,
-                        step=0.1,
-                    ),
-                    width=1/2,
-                    fixed_width=False,
-                    heights_equal='all',
-                    gap='7px',
-                    fill=False,
-                    fillable=True,
-                ),
-                ui.input_select(
-                    id="sed_type",
-                    label=ui.output_ui('stellar_sed_label'),
-                    choices={
-                        "phoenix": "phoenix",
-                        "k93models": "kurucz (k93models)",
-                        "bt_settl": "BT-Settl MLT (bt_settl)",
-                        "blackbody": "blackbody",
-                        "input": "input",
-                    },
-                    selected='phoenix',
-                ),
-                ui.input_select(
-                    id="sed",
-                    label="",
-                    choices=sed_dict['phoenix'],
-                    selected='g0v',
-                ),
-                class_="px-2 pt-2 pb-0 m-0",
-            ),
-            # The planet
-            ui.panel_well(
-                ui.popover(
                     ui.span(
-                        fa.icon_svg("gear"),
-                        style="position:absolute; top: 5px; right: 7px;",
-                    ),
-                    # Tdwell = 1.0 + 0.75 + T14 + 2*max(1, T14/2)
-                    ui.markdown(
-                        '*T*<sub>dur</sub> = *T*<sub>start</sub> + '
-                        '*T*<sub>set</sub> + *T*<sub>base</sub> + '
-                        '*T*<sub>tran</sub> + *T*<sub>base</sub>',
-                    ),
-                    ui.markdown(
-                        'Start time window (*T*<sub>start</sub>): 1h',
-                    ),
-                    ui.input_numeric(
-                        id="settling_time",
-                        label=ui.markdown(
-                            'Settling time (*T*<sub>set</sub>, h):',
+                        ui.HTML('<b>Stellar SED</b> '),
+                        # bookmarks, upload, and clear
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='bookmark_sed',
+                                label='',
+                                icon=fa.icon_svg("star", fill='black'),
+                            ),
+                            'Bookmark SED',
+                            id='sed_book_tooltip',
+                            placement='top',
                         ),
-                        value = 0.75,
-                        step = 0.25,
-                    ),
-                    ui.input_numeric(
-                        id="baseline_time",
-                        label=ui.markdown(
-                            'Baseline time (*T*<sub>base</sub>, t_dur):',
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='upload_sed',
+                                label='',
+                                icon=fa.icon_svg("file-arrow-up", fill='black'),
+                            ),
+                            'Upload SED',
+                            id='sed_up_tooltip',
+                            placement='top',
                         ),
-                        value = 0.5,
-                        step = 0.25,
+                        ui.panel_conditional(
+                            "input.has_sed_bookmarks",
+                            ui.tooltip(
+                                ui.input_action_link(
+                                    id='clear_sed_bookmarks',
+                                    label='',
+                                    icon=fa.icon_svg("circle-xmark", style='regular', fill='black'),
+                                ),
+                                'Clear all SED bookmarks',
+                                id='sed_clear_tooltip',
+                                placement='top',
+                            ),
+                        ),
                     ),
-                    ui.input_numeric(
-                        id="min_baseline_time",
-                        label='Minimum baseline time (h):',
-                        value = 1.0,
-                        step = 0.25,
-                    ),
-                    title='Observation duration',
-                    placement="right",
-                    id="obs_popover",
-                ),
-                ui.markdown("Observation"),
-                ui.layout_column_wrap(
-                    # Row 1
-                    ui.p("Type:"),
+
                     ui.input_select(
-                        id='obs_geometry',
+                        id="sed_type",
                         label='',
                         choices={
-                            'transit': 'Transit',
-                            'eclipse': 'Eclipse',
-                        }
+                            "phoenix": "phoenix",
+                            "k93models": "kurucz (k93models)",
+                            "bt_settl": "BT-Settl MLT (bt_settl)",
+                            "blackbody": "blackbody",
+                            "input": "input",
+                        },
+                        selected='phoenix',
                     ),
-                    # Row 2
-                    ui.output_text('transit_dur_label'),
-                    ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.1),
-                    # Row 3
-                    ui.p("Obs_dur (h):"),
-                    ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
-                    width=1/2,
-                    fixed_width=False,
-                    heights_equal='all',
-                    gap='7px',
-                    fill=False,
-                    fillable=True,
-                ),
-                ui.input_select(
-                    id="planet_model_type",
-                    label=ui.output_ui('depth_label_text'),
-                    choices=["Input"],
-                ),
-                ui.panel_conditional(
-                    "input.planet_model_type == 'Input'",
-                    ui.tooltip(
-                        ui.input_select(
-                            id="depth",
-                            label="",
-                            choices=list(spectra['transit']),
-                        ),
-                        '',
-                        id='depth_tooltip',
-                        placement='right',
+                    ui.input_select(
+                        id="sed",
+                        label="",
+                        choices=sed_dict['phoenix'],
+                        selected='g0v',
                     ),
+                    class_="px-2 py-1 pb-2 m-0 gap-2",
+                    style=card_style,
                 ),
-                ui.panel_conditional(
-                    "input.planet_model_type == 'Flat'",
-                    ui.layout_column_wrap(
-                        ui.p("Depth (%):"),
-                        ui.input_numeric(
-                            id="transit_depth",
-                            label="",
-                            value=0.5,
-                            step=0.1,
-                        ),
-                        **layout_kwargs,
-                    ),
-                ),
-                ui.panel_conditional(
-                    "input.planet_model_type == 'Blackbody'",
-                    ui.layout_column_wrap(
-                        ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
-                        ui.input_numeric(
-                            id="eclipse_depth",
-                            label="",
-                            value=0.05,
-                            step=0.1,
-                        ),
-                        ui.p("Temp (K):"),
-                        ui.input_numeric(
-                            id="teq_planet",
-                            label="",
-                            value=2000.0,
-                            step=100,
-                        ),
-                        **layout_kwargs,
-                    ),
-                ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
             ),
-            body_args=dict(class_="p-2 m-0"),
+
+            # The planet
+            ui.card(
+                ui.card_body(
+                    ui.popover(
+                        ui.span(
+                            fa.icon_svg("gear"),
+                            style="position:absolute; top: 5px; right: 7px;",
+                        ),
+                        # Tdwell = 1.0 + 0.75 + T14 + 2*max(1, T14/2)
+                        ui.markdown(
+                            '*T*<sub>dur</sub> = *T*<sub>start</sub> + '
+                            '*T*<sub>set</sub> + *T*<sub>base</sub> + '
+                            '*T*<sub>tran</sub> + *T*<sub>base</sub>',
+                        ),
+                        ui.markdown(
+                            'Start time window (*T*<sub>start</sub>): 1h',
+                        ),
+                        ui.input_numeric(
+                            id="settling_time",
+                            label=ui.markdown(
+                                'Settling time (*T*<sub>set</sub>, h):',
+                            ),
+                            value = 0.75,
+                            step = 0.25,
+                        ),
+                        ui.input_numeric(
+                            id="baseline_time",
+                            label=ui.markdown(
+                                'Baseline time (*T*<sub>base</sub>, t_dur):',
+                            ),
+                            value = 0.5,
+                            step = 0.25,
+                        ),
+                        ui.input_numeric(
+                            id="min_baseline_time",
+                            label='Minimum baseline time (h):',
+                            value = 1.0,
+                            step = 0.25,
+                        ),
+                        title='Observation duration',
+                        placement="right",
+                        id="obs_popover",
+                    ),
+                    ui.markdown("**Observation**"),
+                    ui.layout_column_wrap(
+                        # Row 1
+                        ui.p("Type:"),
+                        ui.input_select(
+                            id='obs_geometry',
+                            label='',
+                            choices={
+                                'transit': 'Transit',
+                                'eclipse': 'Eclipse',
+                            }
+                        ),
+                        # Row 2
+                        ui.output_text('transit_dur_label'),
+                        ui.input_numeric("t_dur", "", value=2.0, min=0, step=0.1),
+                        # Row 3
+                        ui.p("Obs_dur (h):"),
+                        ui.input_numeric("obs_dur", "", value=5.0, min=0, step=0.1),
+                        width=1/2,
+                        fixed_width=False,
+                        heights_equal='all',
+                        gap='7px',
+                        fill=False,
+                        fillable=True,
+                    ),
+                    ui.span(
+                        ui.output_ui('depth_label'),
+                        # bookmarks, upload, and clear
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='bookmark_depth',
+                                label='',
+                                icon=None,
+                            ),
+                            'Bookmark depth model',
+                            id='depth_book_tooltip',
+                            placement='top',
+                        ),
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='upload_depth',
+                                label='',
+                                icon=fa.icon_svg("file-arrow-up", fill='black'),
+                            ),
+                            "Upload depth model",
+                            id='depth_up_tooltip',
+                            placement='top',
+                        ),
+                        ui.panel_conditional(
+                            "input.has_depth_bookmarks",
+                            ui.tooltip(
+                                ui.input_action_link(
+                                    id='clear_depth_bookmarks',
+                                    label='',
+                                    icon=fa.icon_svg("circle-xmark", style='regular', fill='black'),
+                                ),
+                                'Clear all depth bookmarks',
+                                id='depth_clear_tooltip',
+                                placement='top',
+                            ),
+                        ),
+                    ),
+                    ui.input_select(
+                        id="planet_model_type",
+                        label='',
+                        choices=["Input"],
+                    ),
+                    ui.panel_conditional(
+                        "input.planet_model_type == 'Input'",
+                        ui.tooltip(
+                            ui.input_select(
+                                id="depth",
+                                label="",
+                                choices=list(spectra['transit']),
+                            ),
+                            '',
+                            id='depth_tooltip',
+                            placement='right',
+                        ),
+                    ),
+                    ui.panel_conditional(
+                        "input.planet_model_type == 'Flat'",
+                        ui.layout_column_wrap(
+                            ui.p("Depth (%):"),
+                            ui.input_numeric(
+                                id="transit_depth",
+                                label="",
+                                value=0.5,
+                                step=0.1,
+                            ),
+                            **layout_kwargs,
+                        ),
+                    ),
+                    ui.panel_conditional(
+                        "input.planet_model_type == 'Blackbody'",
+                        ui.layout_column_wrap(
+                            ui.HTML("<p>(Rp/Rs)<sup>2</sup> (%):</p>"),
+                            ui.input_numeric(
+                                id="eclipse_depth",
+                                label="",
+                                value=0.05,
+                                step=0.1,
+                            ),
+                            ui.p("Temp (K):"),
+                            ui.input_numeric(
+                                id="teq_planet",
+                                label="",
+                                value=2000.0,
+                                step=100,
+                            ),
+                            **layout_kwargs,
+                        ),
+                    ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
+                ),
+                fill=False,
+                class_="p-0 m-0",
+            ),
+            body_args=dict(class_="p-2 m-0 gap-3"),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         # The detector setup
         cs.custom_card(
             ui.card_header(
-                ui.output_ui(id='detector_label'),
+                ui.div(
+                    'Detector setup ',
+                    ui.panel_conditional(
+                        "input.raise_detector_warning",
+                        ui.tooltip(
+                            fa.icon_svg("triangle-exclamation", fill='gold'),
+                            'warning',
+                            id='detector_warning_tooltip',
+                            placement='top',
+                        ),
+                    ),
+                ),
                 class_="bg-primary",
             ),
             # pairing / aperture / disperser / filter
-            ui.panel_well(
-                ui.panel_conditional(
-                    "input.mode == 'sw_ts'",
-                    ui.input_select(
-                        id="pairing",
-                        label="LW Pairing",
-                        choices=pairings,
-                        selected=list(pairings)[1],
+            ui.card(
+                ui.card_body(
+                    ui.panel_conditional(
+                        "input.mode == 'sw_ts'",
+                        ui.input_select(
+                            id="pairing",
+                            label="LW Pairing",
+                            choices=pairings,
+                            selected=list(pairings)[1],
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "['sw_tsgrism', 'bots', 'sw_ts', 'lw_ts', 'target_acq'].includes(input.mode)",
-                    ui.input_select(
-                        id="aperture",
-                        label="Aperture",
-                        choices={},
-                        selected='',
+                    ui.panel_conditional(
+                        "['sw_tsgrism', 'bots', 'sw_ts', 'lw_ts', 'target_acq'].includes(input.mode)",
+                        ui.input_select(
+                            id="aperture",
+                            label="Aperture",
+                            choices={},
+                            selected='',
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "!['target_acq', 'imaging_ts', 'sw_ts', 'lw_ts', 'bots'].includes(input.mode)",
-                    ui.input_select(
-                        id="disperser",
-                        label="Disperser",
-                        choices={},
-                        selected='',
+                    ui.panel_conditional(
+                        "!['target_acq', 'imaging_ts', 'sw_ts', 'lw_ts', 'bots'].includes(input.mode)",
+                        ui.input_select(
+                            id="disperser",
+                            label="Disperser",
+                            choices={},
+                            selected='',
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "!['lrsslitless', 'lrsslit', 'mrs_ts'].includes(input.mode)",
-                    ui.input_select(
-                        id="filter",
-                        label="Filter",
-                        choices={},
-                        selected='',
+                    ui.panel_conditional(
+                        "!['lrsslitless', 'mrs_ts'].includes(input.mode)",
+                        ui.input_select(
+                            id="filter",
+                            label="Filter",
+                            choices={},
+                            selected='',
+                        ),
                     ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
             # subarray / readout / order
-            ui.panel_well(
-                ui.input_select(
-                    id="subarray",
-                    label="Subarray",
-                    choices=[''],
-                    selected='',
-                ),
-                ui.input_select(
-                    id="readout",
-                    label="Readout pattern",
-                    choices=[''],
-                    selected='',
-                ),
-                ui.panel_conditional(
-                    "input.mode == 'soss' && input.filter == 'clear'",
+            ui.card(
+                ui.card_body(
                     ui.input_select(
-                        id="order",
-                        label="Order",
-                        choices=['1'],
-                        selected='1',
+                        id="subarray",
+                        label="Subarray",
+                        choices=[''],
+                        selected='',
                     ),
+                    ui.input_select(
+                        id="readout",
+                        label="Readout pattern",
+                        choices=[''],
+                        selected='',
+                    ),
+                    ui.panel_conditional(
+                        "input.mode == 'soss' && input.filter == 'clear'",
+                        ui.input_select(
+                            id="order",
+                            label="Order",
+                            choices=['1'],
+                            selected='1',
+                        ),
+                    ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
             # groups and integrations
-            ui.panel_well(
-                cs.label_tooltip_button(
-                    label='Groups per integration ',
-                    icons=fa.icon_svg("circle-play", fill='black'),
-                    tooltips='Estimate saturation level',
-                    button_ids='calc_saturation',
-                    class_='pb-1',
-                ),
-                ui.panel_conditional(
-                    "input.mode == 'target_acq'",
-                    ui.input_select(
-                        id="ngroup_acq",
-                        label="",
-                        choices=['3'],
-                        selected='3',
+            ui.card(
+                ui.card_body(
+                    ui.span(
+                        'Groups per integration ',
+                        ui.tooltip(
+                            ui.input_action_link(
+                                id='calc_saturation',
+                                label='',
+                                icon=fa.icon_svg("circle-play", fill='black'),
+                            ),
+                            'Estimate saturation level',
+                            placement='top',
+                        ),
                     ),
-                ),
-                ui.panel_conditional(
-                    "input.mode != 'target_acq'",
-                    ui.input_numeric(
-                        id="ngroup",
-                        label="",
-                        value=2,
-                        min=2, max=10000,
+                    ui.panel_conditional(
+                        "input.mode == 'target_acq'",
+                        ui.input_select(
+                            id="ngroup_acq",
+                            label="",
+                            choices=['3'],
+                            selected='3',
+                        ),
                     ),
-                    ui.layout_columns(
+                    ui.panel_conditional(
+                        "input.mode != 'target_acq'",
                         ui.input_numeric(
-                            id="integrations",
-                            label="Integrations",
-                            value=1,
-                            min=1, max=100000,
+                            id="ngroup",
+                            label="",
+                            value=2,
+                            min=2, max=10000,
                         ),
-                        ui.input_switch(
-                            "integs_switch",
-                            "Match obs. duration",
-                            False,
+                        ui.layout_columns(
+                            ui.input_numeric(
+                                id="integrations",
+                                label="Integrations",
+                                value=1,
+                                min=1, max=100000,
+                            ),
+                            ui.input_switch(
+                                "integs_switch",
+                                "Match obs. duration",
+                                False,
+                            ),
+                            col_widths=[12,12],
+                            gap='4px',
+                            class_="px-0 pb-2 m-0",
                         ),
-                        col_widths=[12,12],
-                        gap='4px',
-                        class_="px-0 pb-2 m-0",
                     ),
+                    # Saturation goal
+                    ui.p("Saturation fraction (%)", class_='py-0 my-0'),
+                    ui.layout_column_wrap(
+                        ui.input_numeric(
+                            id="saturation_input_text",
+                            label="",
+                            value=80.0,
+                            min=1.0, max=100.0,
+                        ),
+                        ui.tooltip(
+                            ui.input_action_button(
+                                id="saturation_button",
+                                label="Set groups",
+                                class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
+                            ),
+                            'Update groups up to the saturation fraction',
+                            id="saturation_tooltip",
+                            placement="top",
+                        ),
+                        width=1/2,
+                        fixed_width=False,
+                        heights_equal='all',
+                        gap='7px',
+                        fill=False,
+                        fillable=True,
+                        class_="px-0 pt-0 pb-2 m-0",
+                    ),
+                    class_="px-2 py-1 m-0 gap-2",
+                    style=card_style,
                 ),
-                # Saturation goal
-                ui.p("Saturation fraction (%):", class_='py-0 my-0'),
-                ui.layout_column_wrap(
-                    ui.input_numeric(
-                        id="saturation_input_text",
-                        label="",
-                        value=80.0,
-                        min=1.0, max=100.0,
-                    ),
-                    ui.tooltip(
-                        ui.input_action_button(
-                            id="saturation_button",
-                            label="Set groups",
-                            class_="btn btn-outline-secondary btn-sm pt-1 mt-1",
-                        ),
-                        'Update groups up to the saturation fraction',
-                        id="saturation_tooltip",
-                        placement="top",
-                    ),
-                    width=1/2,
-                    fixed_width=False,
-                    heights_equal='all',
-                    gap='7px',
-                    fill=False,
-                    fillable=True,
-                    class_="px-0 pt-0 pb-2 m-0",
-                ),
-                class_="px-2 pt-2 pb-0 m-0",
+                fill=False,
+                class_="p-0 m-0",
             ),
             # Search nearby Gaia targets for acquisition
             ui.panel_conditional(
                 "input.mode == 'target_acq'",
-                ui.panel_well(
-                    ui.tooltip(
-                        ui.markdown('Acquisition targets'),
-                        'Gaia targets within 80" of science target',
-                        id="gaia_tooltip",
-                        placement="top",
+                ui.card(
+                    ui.card_body(
+                        ui.tooltip(
+                            ui.markdown('**Acquisition targets**'),
+                            'Gaia targets within 80" of science target',
+                            id="gaia_tooltip",
+                            placement="top",
+                        ),
+                        ui.layout_column_wrap(
+                            ui.input_task_button(
+                                id="search_gaia_ta",
+                                label="Search nearby targets",
+                                label_busy="processing...",
+                                class_='btn btn-outline-secondary btn-sm',
+                            ),
+                            ui.p("Select TA's SED:"),
+                            ui.input_select(
+                                id="ta_sed",
+                                label="",
+                                choices=[],
+                                selected='',
+                            ),
+                            ui.input_action_button(
+                                id="get_acquisition_target",
+                                label="Print acq. target data",
+                                class_='btn btn-outline-secondary btn-sm',
+                            ),
+                            width=1,
+                            heights_equal='row',
+                            gap='7px',
+                            class_="px-0 py-0 mx-0 my-0",
+                        ),
+                        class_="px-2 py-1 m-0 gap-2",
+                        style=card_style,
                     ),
-                    ui.layout_column_wrap(
-                        ui.input_task_button(
-                            id="search_gaia_ta",
-                            label="Search nearby targets",
-                            label_busy="processing...",
-                            class_='btn btn-outline-secondary btn-sm',
-                        ),
-                        ui.p("Select TA's SED:"),
-                        ui.input_select(
-                            id="ta_sed",
-                            label="",
-                            choices=[],
-                            selected='',
-                        ),
-                        ui.input_action_button(
-                            id="get_acquisition_target",
-                            label="Print acq. target data",
-                            class_='btn btn-outline-secondary btn-sm',
-                        ),
-                        width=1,
-                        heights_equal='row',
-                        gap='7px',
-                        class_="px-0 py-0 mx-0 my-0",
-                    ),
-                    class_="px-2 pt-2 pb-2 m-0",
+                    fill=False,
+                    class_="p-0 m-0",
                 ),
             ),
-            body_args=dict(class_="p-2 m-0"),
+            body_args=dict(class_="p-2 m-0 gap-3"),
         ),
 
         # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -869,12 +1113,24 @@ app_ui = ui.page_fluid(
             ui.navset_card_tab(
                 ui.nav_panel(
                     "Filters",
-                    pops.filter_popover,
                     cs.custom_card(
                         output_widget("plotly_filters", fillable=True),
                         body_args=dict(class_='m-0 p-0'),
                         full_screen=True,
-                        height='250px',
+                        height='275px',
+                    ),
+                    ui.card(
+                        ui.card_body(
+                            ui.input_switch(
+                                id="filters_switch",
+                                label="Display other filters",
+                                value=False,
+                            ),
+                            class_="px-2 py-1 m-0 gap-2",
+                            style=card_style,
+                        ),
+                        fill=False,
+                        class_="p-0 m-0",
                     ),
                 ),
                 ui.nav_panel(
@@ -896,32 +1152,282 @@ app_ui = ui.page_fluid(
                 ),
                 ui.nav_panel(
                     "Stellar SED",
-                    pops.sed_popover,
                     cs.custom_card(
                         output_widget("plotly_sed", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
                         height='350px',
                     ),
+                    ui.accordion(
+                        ui.accordion_panel(
+                            ui.markdown("**Plot configurations**"),
+                            ui.card(
+                                ui.card_body(
+                                    ui.layout_column_wrap(
+                                        'Resolution:',
+                                        ui.input_numeric(
+                                            id='plot_sed_resolution',
+                                            label="",
+                                            value=0.0,
+                                            min=0.0, max=3000.0, step=50.0,
+                                            update_on='blur',
+                                        ),
+                                        ui.div(
+                                            ui.input_action_button(
+                                                id="reset_sed_config",
+                                                label="reset configs",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            style="text-align: right;"
+                                        ),
+                                        ui.markdown("λ scale (µm):"),
+                                        ui.input_select(
+                                            id="plot_sed_xscale",
+                                            label="",
+                                            choices=['linear', 'log'],
+                                            selected='log',
+                                        ),
+                                        None,
+                                        ui.markdown("λ range:"),
+                                        ui.input_numeric(
+                                            id='sed_wl_min', label='',
+                                            value=0.5, min=0.3, max=30, step=0.15,
+                                            update_on='blur',
+                                        ),
+                                        ui.input_numeric(
+                                            id='sed_wl_max', label='',
+                                            value=28, min=0, max=30, step=1,
+                                            update_on='blur',
+                                        ),
+                                        width=1/3,
+                                        fixed_width=False,
+                                        gap='5px',
+                                        fill=False,
+                                        fillable=True,
+                                        class_="p-0 m-0",
+                                    ),
+                                    class_="px-2 py-1 m-0 gap-2",
+                                    style=card_style,
+                                ),
+                                fill=False,
+                                class_="p-0 m-0",
+                            ),
+                            class_="p-1 m-0",
+                            value="sed_accordion",
+                        ),
+                        open=False,
+                    ),
                 ),
                 ui.nav_panel(
                     ui.output_text('transit_depth_label'),
-                    pops.planet_popover,
                     cs.custom_card(
                         output_widget("plotly_depth", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
                         height='350px',
                     ),
+                    ui.accordion(
+                        ui.accordion_panel(
+                            ui.markdown("**Plot configurations**"),
+                            ui.card(
+                                ui.card_body(
+                                    ui.layout_column_wrap(
+                                        'Resolution:',
+                                        ui.input_numeric(
+                                            id='depth_resolution',
+                                            label="",
+                                            value=250.0,
+                                            min=0.0, max=3000.0, step=25.0,
+                                            update_on='blur',
+                                        ),
+                                        ui.div(
+                                            ui.input_action_button(
+                                                id="reset_depth_config",
+                                                label="reset configs",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            style="text-align: right;"
+                                        ),
+                                        "Depth units:",
+                                        ui.input_select(
+                                            id="plot_depth_units",
+                                            label="",
+                                            choices=depth_units,
+                                            selected='percent',
+                                        ),
+                                        None,
+                                        ui.markdown("λ scale (µm):"),
+                                        ui.input_select(
+                                            id="plot_depth_xscale",
+                                            label="",
+                                            choices=['linear', 'log'],
+                                            selected='log',
+                                        ),
+                                        None,
+                                        ui.markdown("λ range:"),
+                                        ui.input_numeric(
+                                            id='depth_wl_min', label='',
+                                            value='',
+                                            min=0.3, max=30, step=0.15,
+                                            update_on='blur',
+                                        ),
+                                        ui.input_numeric(
+                                            id='depth_wl_max', label='',
+                                            value=28, min=0, max=30, step=1,
+                                            update_on='blur',
+                                        ),
+                                        width=1/3,
+                                        fixed_width=False,
+                                        gap='5px',
+                                        fill=False,
+                                        fillable=True,
+                                        class_="p-0 m-0",
+                                    ),
+                                    class_="px-2 py-1 m-0 gap-2",
+                                    style=card_style,
+                                ),
+                                fill=False,
+                                class_="p-0 m-0",
+                            ),
+                            class_="p-1 m-0",
+                            value="depth_accordion",
+                        ),
+                        open=False,
+                    ),
                 ),
                 ui.nav_panel(
                     "TSO",
-                    pops.tso_popover,
                     cs.custom_card(
                         output_widget("plotly_tso", fillable=True),
                         body_args=dict(padding='0px'),
                         full_screen=True,
                         height='400px',
+                    ),
+                    ui.accordion(
+                        ui.accordion_panel(
+                            ui.markdown("**Plot configurations**"),
+                            ui.card(
+                                ui.card_body(
+                                    ui.layout_column_wrap(
+                                        'Plot type:',
+                                        ui.input_select(
+                                            id="tso_plot",
+                                            label="",
+                                            choices=tso_choices,
+                                            selected='tso',
+                                        ),
+                                        ui.div(
+                                            ui.input_action_button(
+                                                id="reset_tso_config",
+                                                label="reset config",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            style="text-align: right;"
+                                        ),
+                                        ui.markdown("λ range (µm):"),
+                                        ui.input_numeric(
+                                            id='tso_wl_min', label='',
+                                            value=None,
+                                            min=0.3, max=30.0, step=0.1,
+                                            update_on='blur',
+                                        ),
+                                        ui.input_numeric(
+                                            id='tso_wl_max', label='',
+                                            value=None,
+                                            min=0.3, max=30.0, step=1.0,
+                                            update_on='blur',
+                                        ),
+                                        ui.markdown("λ scale:"),
+                                        ui.input_select(
+                                            id="plot_tso_xscale",
+                                            label='',
+                                            choices=['linear', 'log'],
+                                            selected='linear',
+                                        ),
+                                        None,
+                                        width=1/3,
+                                        fixed_width=False,
+                                        gap='5px',
+                                        fill=False,
+                                        fillable=True,
+                                        class_="p-0 m-0",
+                                    ),
+                                    ui.panel_conditional(
+                                        "input.tso_plot == 'tso'",
+                                        ui.layout_column_wrap(
+                                            "Depth range:",
+                                            ui.input_numeric(
+                                                id='tso_depth_min',
+                                                label='',
+                                                value=None, step=0.1,
+                                                update_on='blur',
+                                            ),
+                                            ui.input_numeric(
+                                                id='tso_depth_max',
+                                                label='',
+                                                value=None, step=0.1,
+                                                update_on='blur',
+                                            ),
+                                            "Depth units:",
+                                            ui.input_select(
+                                                id="plot_tso_units",
+                                                label="",
+                                                choices = depth_units,
+                                                selected='percent',
+                                            ),
+                                            None,
+                                            'Number of obs:',
+                                            ui.input_numeric(
+                                                id='n_obs',
+                                                label='',
+                                                value=1.0,
+                                                min=1.0, max=3000.0, step=1.0,
+                                            ),
+                                            None,
+                                            'Resolution:',
+                                            ui.input_numeric(
+                                                id='tso_resolution',
+                                                label='',
+                                                value=250.0,
+                                                min=25.0, max=3000.0, step=25.0,
+                                                update_on='blur',
+                                            ),
+                                            ui.input_switch(
+                                                id="noiseless_switch",
+                                                label="Noiseless",
+                                                value=False,
+                                            ),
+                                            'Error scale:',
+                                            ui.input_numeric(
+                                                id='tso_error_scale',
+                                                label='',
+                                                value=1.0,
+                                                min=0.0, step=0.1,
+                                                update_on='blur',
+                                            ),
+                                            ui.input_action_button(
+                                                id="redraw_tso",
+                                                label="Re-draw",
+                                                class_="btn btn-outline-primary btn-sm",
+                                            ),
+                                            width=1/3,
+                                            fixed_width=False,
+                                            gap='5px',
+                                            fill=False,
+                                            fillable=True,
+                                            class_="p-0 m-0",
+                                        ),
+                                    ),
+                                    class_="px-2 py-1 m-0 gap-2",
+                                    style=card_style,
+                                ),
+                                fill=False,
+                                class_="p-0 m-0",
+                            ),
+                            class_="p-1 m-0",
+                            value="tso_accordion",
+                        ),
+                        open=False,
                     ),
                 ),
                 id="tab",
@@ -949,7 +1455,6 @@ app_ui = ui.page_fluid(
         col_widths=[3, 3, 6],
     ),
     title='Gen TSO',
-    theme=f'{ROOT}/data/base_theme.css',
 )
 
 
@@ -964,6 +1469,7 @@ def server(input, output, session):
     update_sed_flag = reactive.Value(None)
     update_depth_flag = reactive.Value(None)
     uploaded_units = reactive.Value(None)
+    current_depth_units = reactive.Value(None)
     warning_text = reactive.Value('')
     acq_target_list = reactive.Value(None)
     current_acq_science_target = reactive.Value(None)
@@ -974,6 +1480,22 @@ def server(input, output, session):
     tso_draw = reactive.Value(None)
     clipboard = reactive.Value('')
     latest_pandeia = reactive.Value(None)
+
+
+    # Invisible flags
+    @reactive.effect
+    @reactive.event(bookmarked_sed)
+    def _():
+        value = len(bookmarked_spectra['sed']) > 0
+        ui.update_switch('has_sed_bookmarks', value=value)
+
+    @reactive.effect
+    @reactive.event(bookmarked_depth)
+    def _():
+        obs_geometry = input.obs_geometry.get()
+        value = len(bookmarked_spectra[obs_geometry]) > 0
+        ui.update_switch('has_depth_bookmarks', value=value)
+
 
     # Track if current target has unsaved changes
     original_values = reactive.value({})
@@ -1182,20 +1704,20 @@ def server(input, output, session):
         clipboard.set(bibtex)
         ui.modal_show(m)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.update_trexo)
     def _():
         cat.fetch_trexolist()
         catalog, is_jwst, is_transit, is_confirmed = load_catalog()
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.update_nasa)
     def _():
         cat.update_exoplanet_archive()
         catalog, is_jwst, is_transit, is_confirmed = load_catalog()
         update_catalog_flag.set(~update_catalog_flag.get())
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.update_pysynphot)
     def _():
         status = update_synphot_files()
@@ -1355,26 +1877,20 @@ def server(input, output, session):
             # The planet
             tso_run['depth_model'] = depth_model
             if isinstance(tso, list):
-                reports = (
-                    [report['report_in']['scalar'] for report in tso],
-                    [report['report_out']['scalar'] for report in tso],
-                )
-                warnings = tso[0]['report_out']['warnings']
+                report = [_tso['report']['scalar'] for _tso in tso]
+                warnings = tso[0]['report']['warnings']
             else:
-                reports = (
-                    tso['report_in']['scalar'],
-                    tso['report_out']['scalar'],
-                )
-                warnings = tso['report_out']['warnings']
+                report = tso['report']['scalar']
+                warnings = tso['report']['warnings']
         else:
             if isinstance(tso, list):
-                reports = [report['scalar'] for report in tso]
+                report = [report['scalar'] for report in tso]
                 warnings = tso[0]['warnings']
             else:
-                reports = tso['scalar'], None
+                report = tso['scalar']
                 warnings = tso['warnings']
         tso_run['stats'] = jwst._print_pandeia_stats(
-            inst, mode, reports[0], reports[1], format='html',
+            inst, mode, report, format='html',
         )
         tso_run['warnings'] = warnings
 
@@ -1399,9 +1915,6 @@ def server(input, output, session):
         )
         saturation_label.set(sat_label)
         warning_text.set(warnings)
-
-        #print(inst, mode, aperture, disperser, filter, subarray, readout, order)
-        #print(sed_type, sed_model, norm_band, repr(norm_mag))
         print('~~ TSO done! ~~')
 
 
@@ -1435,7 +1948,7 @@ def server(input, output, session):
         order = tso['order']
         ngroup = tso['ngroup']
 
-        ui.update_navs('instrument', selected=instrument)
+        ui.update_navset('instrument', selected=instrument)
         mode_choices = modes[instrument]
         ui.update_select('mode', choices=mode_choices, selected=mode)
 
@@ -1582,29 +2095,22 @@ def server(input, output, session):
             ui.update_numeric("eclipse_depth", value=tso['rprs_sq'])
             ui.update_numeric("teq_planet", value=tso['teq_planet'])
 
-        # TSO plot popover menu
+        # TSO plot menu
         if tso['is_tso']:
-            min_wl, max_wl = jwst._get_tso_wl_range(tso)
-            ui.update_numeric('tso_wl_min', value=min_wl)
-            ui.update_numeric('tso_wl_max', value=max_wl)
-
             resolution = _safe_num(input.tso_resolution.get(), default=250)
             n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
-            tso_draw.set(draw(tso['tso'], resolution, n_obs))
+            noiseless = input.noiseless_switch.get()
+            err_scale = _safe_num(input.tso_error_scale.get(), default=1.0)
+            tso_draw.set(draw(tso['tso'], resolution, n_obs, noiseless, err_scale))
             units = 'percent'  if obs_geometry=='transit' else 'ppm'
             ui.update_select('plot_tso_units', selected=units)
-            min_depth, max_depth, step = jwst._get_tso_depth_range(
-                tso, resolution, units,
-            )
-            ui.update_numeric('tso_depth_min', value=min_depth, step=step)
-            ui.update_numeric('tso_depth_max', value=max_depth, step=step)
 
 
     @render.image
     def tso_logo():
         img = {
             "src": f'{ROOT}data/images/gen_tso_logo.png',
-            "height": "50px",
+            "height": "45px",
         }
         return img
 
@@ -1677,7 +2183,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Instrument and detector modes
-    @reactive.Effect(priority=3)
+    @reactive.effect(priority=3)
     @reactive.event(input.instrument)
     def _():
         inst = input.instrument.get()
@@ -1691,45 +2197,22 @@ def server(input, output, session):
         ui.update_select('mode', choices=mode_choices, selected=selected)
 
 
-    @render.ui
+    @reactive.effect
     @reactive.event(input.mode, input.subarray)
-    def detector_label():
+    def set_detector_label():
         mode = input.mode.get()
         subarray = input.subarray.get()
-        stripes = [
-             'sub17stripe_soss',
-             'sub60stripe_soss',
-             'sub204stripe_soss',
-             'sub680stripe_soss',
-        ]
-
         if mode == 'sw_tsgrism':
-            warning_txt = (
-                'The SW Grism Time Series mode is still being calibrated; '
-                'the SNR and saturation estimates provided by the ETC '
-                'may therefore be outside the expected 10% accuracy level'
-            )
+            ui.update_tooltip('detector_warning_tooltip', nircam_warning)
+            ui.update_switch('raise_detector_warning', value=True)
         elif subarray in stripes:
-            warning_txt = (
-                'The SOSS multi-stripe subgroup is still being calibrated; '
-                'particularly, ETC (pandeia) exposure times are per stripe.  '
-                'Gen TSO corrects it to match the APT values, as '
-                'recommended in the Jwebbinar 43.'
-            )
+            ui.update_tooltip('detector_warning_tooltip', soss_warning)
+            ui.update_switch('raise_detector_warning', value=True)
         else:
-            return 'Detector setup'
-
-        return ui.tooltip(
-            ui.div(
-                'Detector setup ',
-                fa.icon_svg("triangle-exclamation", fill='gold'),
-            ),
-            warning_txt,
-            placement='top',
-        )
+            ui.update_switch('raise_detector_warning', value=False)
 
 
-    @reactive.Effect(priority=2)
+    @reactive.effect(priority=2)
     @reactive.event(input.instrument, input.mode, input.pairing)
     def update_aperture_and_disperser():
         config = parse_instrument(input, 'mode', 'detector')
@@ -1770,22 +2253,8 @@ def server(input, output, session):
             selected=disperser,
         )
 
-        selected = input.filter_filter.get()
-        if detector.obs_type == 'acquisition':
-            choices = [detector.instrument]
-        else:
-            choices = [detector.instrument, 'all']
 
-        if selected != 'all' or detector.obs_type=='acquisition':
-            selected = None
-        ui.update_radio_buttons(
-            "filter_filter",
-            choices=choices,
-            selected=selected,
-        )
-
-
-    @reactive.Effect(priority=2)
+    @reactive.effect(priority=2)
     @reactive.event(input.instrument, input.mode, input.aperture)
     def update_filter():
         config = parse_instrument(input, 'mode', 'aperture', 'detector')
@@ -1810,7 +2279,7 @@ def server(input, output, session):
         )
 
 
-    @reactive.Effect(priority=1)
+    @reactive.effect(priority=1)
     @reactive.event(
         input.instrument, input.mode,
         input.aperture, input.disperser, input.filter,
@@ -1837,7 +2306,7 @@ def server(input, output, session):
         ui.update_select('subarray', choices=choices, selected=subarray)
 
 
-    @reactive.Effect(priority=1)
+    @reactive.effect(priority=1)
     @reactive.event(
         input.instrument, input.mode,
         input.aperture, input.disperser, input.subarray,
@@ -1863,7 +2332,7 @@ def server(input, output, session):
         ui.update_select('readout', choices=choices, selected=readout)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.run_pandeia)
     def _():
         target_focus = input.target_focus.get()
@@ -1989,7 +2458,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Target
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.target_filter, update_catalog_flag)
     def _():
         update_catalog_flag.get()
@@ -2023,6 +2492,21 @@ def server(input, output, session):
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
         planet = '' if target is None else target.planet
         ui.update_selectize('target', choices=targets, selected=planet)
+
+
+    @reactive.effect
+    @reactive.event(input.target)
+    async def _():
+        name = input.target.get()
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None:
+            return ''
+
+        url = f'{nasa_url}/{target.planet}'
+        await session.send_custom_message(
+            "set_nasa_href",
+            {"url": url}
+        )
 
 
     @reactive.effect
@@ -2085,6 +2569,8 @@ def server(input, output, session):
         """
         name = input.target.get()
         target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+        if target is None or not hasattr(target, 'programs'):
+            return
 
         programs_info.set(target.programs)
 
@@ -2197,87 +2683,47 @@ def server(input, output, session):
         )
 
 
-    @render.ui
+    @reactive.effect
     @reactive.event(input.target)
-    def target_label():
+    def update_target_icons():
         name = input.target.get()
-        target = next((t for t in catalog.targets if t.planet == name), None)
+        target = catalog.get_target(name, is_transit=None, is_confirmed=None)
+
+        # Aliases
+        if target is None:
+            info_label = 'System info'
+        else:
+            aliases = [alias for alias in target.aliases if alias != name]
+            if len(aliases) > 0:
+                aliases = ', '.join(aliases)
+                info_label = f"Also known as: {aliases}"
+            else:
+                info_label = 'System info'
+        ui.update_tooltip('target_info_tooltip', info_label)
+
+        # JWST flag
+        if target is None:
+            icon_color = 'gray'
+            tip = 'not a JWST target (yet)'
+        elif target.is_jwst_planet:
+            icon_color = '#FAC205'
+            tip = 'This is a JWST target'
+        elif target.is_jwst_host:
+            icon_color = 'goldenrod'
+            tip = ui.markdown("This *host* is a JWST target")
+        else:
+            icon_color = 'gray'
+            tip = 'not a JWST target (yet)'
+        icon = fa.icon_svg("circle-info", fill=icon_color)
+
+        ui.update_action_link('show_observations', icon=icon)
+        ui.update_tooltip('jwst_tooltip', tip)
 
         if target is None:
-            return ui.span('Science target')
+            return
 
-        if len(target.aliases) > 0:
-            aliases = ', '.join(target.aliases)
-            info_label = f"Also known as: {aliases}"
-        else:
-            info_label = 'System info'
-        info_tooltip = ui.tooltip(
-            ui.input_action_link(
-                id='show_info',
-                label='',
-                icon=fa.icon_svg("circle-info", fill='cornflowerblue'),
-            ),
-            info_label,
-            placement='top',
-        )
-
-        if target.is_jwst_host:
-            if target.is_jwst_planet:
-                tip = "This is a JWST target"
-                fill_color = '#FAC205'
-            else:
-                tip = ui.markdown("This *host* is a JWST target")
-                fill_color = 'goldenrod'
-            trexolists_tooltip = ui.tooltip(
-                ui.input_action_link(
-                    id='show_observations',
-                    label='',
-                    icon=fa.icon_svg("circle-info", fill=fill_color),
-                ),
-                tip,
-                placement='top',
-            )
-        else:
-            trexolists_tooltip = ui.tooltip(
-                fa.icon_svg("circle-info", fill='gray'),
-                'not a JWST target (yet)',
-                placement='top',
-            )
-
-        if target.is_confirmed:
-            candidate_tooltip = None
-        else:
-            candidate_tooltip = ui.tooltip(
-                fa.icon_svg("triangle-exclamation", fill='darkorange'),
-                ui.markdown("This is a *candidate* planet"),
-                placement='top',
-            )
-
-        custom_badge = None
-        is_custom = getattr(target, "is_custom", False)
-        if is_custom:
-            custom_badge = ui.tooltip(
-                fa.icon_svg("circle-info", fill='#15B01A'),
-                "This is a custom target",
-                placement='top',
-            )
-
-        return ui.span(
-            'Science target ',
-            info_tooltip,
-            ui.tooltip(
-                ui.tags.a(
-                    fa.icon_svg("circle-info", fill='black'),
-                    href=f'{nasa_url}/{target.planet}',
-                    target="_blank",
-                ),
-                'See this target on the NASA Exoplanet Archive',
-                placement='top',
-            ),
-            trexolists_tooltip,
-            candidate_tooltip,
-            custom_badge,
-        )
+        # Confirmed or candidate
+        ui.update_switch('is_candidate', value=not target.is_confirmed)
 
 
     @reactive.effect
@@ -2361,7 +2807,7 @@ def server(input, output, session):
             ui.update_numeric('teq_planet', value=teq_planet)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.sed_type, input.t_eff, input.log_g, update_sed_flag)
     def choose_sed():
         sed_type = input.sed_type.get()
@@ -2386,41 +2832,24 @@ def server(input, output, session):
         ui.update_select("sed", choices=choices, selected=selected)
 
 
-    @render.ui
+    @reactive.effect
     @reactive.event(
         bookmarked_sed, input.sed,
         input.t_eff, input.magnitude_band, input.magnitude,
     )
-    def stellar_sed_label():
+    def update_sed_bookmark_icon():
         """Check current SED is bookmarked"""
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
         is_bookmarked = sed_label in bookmarked_spectra['sed']
         bookmarked_sed.set(is_bookmarked)
-        if is_bookmarked:
-            sed_icon = fa.icon_svg("star", style='solid', fill='gold')
-        else:
-            sed_icon = fa.icon_svg("star", style='regular', fill='black')
-
-        icons = [
-            sed_icon,
-            fa.icon_svg("file-arrow-up", fill='black'),
-            fa.icon_svg("circle-xmark", style='regular', fill='black'),
-        ]
-        texts = [
-            'Bookmark SED',
-            'Upload SED',
-            'Clear all SED bookmarks',
-        ]
-        return cs.label_tooltip_button(
-            label='Stellar SED model: ',
-            icons=icons,
-            tooltips=texts,
-            button_ids=['sed_bookmark', 'upload_sed', 'clear_sed_bookmarks']
-        )
+        style = 'solid' if is_bookmarked else 'regular'
+        fill = 'gold' if is_bookmarked else 'black'
+        sed_icon = fa.icon_svg("star", style=style, fill=fill)
+        ui.update_action_link('bookmark_sed', icon=sed_icon)
 
 
-    @reactive.Effect
-    @reactive.event(input.sed_bookmark)
+    @reactive.effect
+    @reactive.event(input.bookmark_sed)
     def _():
         """Toggle bookmarked SED"""
         sed_type, sed_model, norm_band, norm_mag, sed_label = parse_sed(input, spectra)
@@ -2438,7 +2867,7 @@ def server(input, output, session):
         else:
             bookmarked_spectra['sed'].remove(sed_label)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.clear_sed_bookmarks)
     def _():
         """Clear all bookmarked SEDs"""
@@ -2448,39 +2877,39 @@ def server(input, output, session):
         ui.notification_show("Cleared all SED bookmarks", type="message", duration=3)
 
 
-    @render.ui
+    @reactive.effect
+    @reactive.event(input.obs_geometry)
+    def _():
+        """Set depth model label"""
+        obs_geometry = f'{input.obs_geometry.get()} depth'
+        ui.update_tooltip('depth_up_tooltip', f'Upload {obs_geometry} spectrum')
+        ui.update_tooltip('depth_book_tooltip', f'Bookmark {obs_geometry} spectrum')
+        ui.update_tooltip(
+            'depth_clear_tooltip',
+            f'Clear all bookmarked {obs_geometry} spectra',
+        )
+        units = 'percent' if input.obs_geometry.get()=='transit' else 'ppm'
+        ui.update_select(id="plot_depth_units", selected=units)
+
+
+    @reactive.effect
     @reactive.event(
         bookmarked_depth, input.obs_geometry, input.planet_model_type,
         input.depth, input.transit_depth, input.eclipse_depth, input.teq_planet,
     )
-    def depth_label_text():
-        """Set depth model label"""
+    def update_depth_bookmark_icon():
+        """Check current transit-depth is bookmarked"""
         obs_geometry = input.obs_geometry.get()
         depth_label = planet_model_name(input)
-
         is_bookmarked = depth_label in bookmarked_spectra[obs_geometry]
         bookmarked_depth.set(is_bookmarked)
+
         fill = 'royalblue' if is_bookmarked else 'gray'
-        depth_icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
-        icons = [
-            depth_icon,
-            fa.icon_svg("file-arrow-up", fill='black'),
-            fa.icon_svg("circle-xmark", style='regular', fill='black'),
-        ]
-        texts = [
-            f'Bookmark {obs_geometry} depth model',
-            f'Upload {obs_geometry} depth model',
-            f'Clear all {obs_geometry} depth bookmarks',
-        ]
-        return cs.label_tooltip_button(
-            label=f"{obs_geometry.capitalize()} depth spectrum: ",
-            icons=icons,
-            tooltips=texts,
-            button_ids=['bookmark_depth', 'upload_depth', 'clear_depth_bookmarks'],
-        )
+        icon = fa.icon_svg("earth-americas", style='solid', fill=fill)
+        ui.update_action_link('bookmark_depth', icon=icon)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.bookmark_depth)
     def _():
         """Toggle bookmarked depth model"""
@@ -2503,7 +2932,7 @@ def server(input, output, session):
         else:
             bookmarked_spectra[obs_geometry].remove(depth_label)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.clear_depth_bookmarks)
     def _():
         """Clear bookmarked depth models for the current geometry"""
@@ -2549,6 +2978,13 @@ def server(input, output, session):
         ui.update_tooltip('depth_tooltip', tooltip_text)
 
 
+    @render.ui
+    @reactive.event(input.obs_geometry)
+    def depth_label():
+        """Set depth model label"""
+        obs_geometry = input.obs_geometry.get()
+        return ui.HTML(f'<b>{obs_geometry.capitalize()} spectra</b> '),
+
     @render.text
     @reactive.event(input.obs_geometry)
     def transit_dur_label():
@@ -2570,7 +3006,7 @@ def server(input, output, session):
         n_warn = len(warnings)
         return ui.HTML(f'<div style="color:red;">Warnings ({n_warn})</div>')
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(
         input.t_dur, input.settling_time, input.baseline_time,
         input.min_baseline_time,
@@ -2708,7 +3144,7 @@ def server(input, output, session):
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
     # Detector setup
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.mode, input.subarray)
     def update_orders():
         config = parse_instrument(input, 'mode', 'subarray', 'detector')
@@ -2723,7 +3159,7 @@ def server(input, output, session):
         ui.update_select('order', choices=choices, selected=order)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.mode, input.subarray)
     def update_groups_input():
         config = parse_instrument(
@@ -2749,7 +3185,7 @@ def server(input, output, session):
             ui.update_numeric(id="ngroup", value=ngroup)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.calc_saturation)
     def calculate_saturation_level():
         config = parse_instrument(
@@ -2782,7 +3218,7 @@ def server(input, output, session):
         saturation_label.set(sat_label)
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(
         input.integs_switch, input.obs_dur, input.mode,
         input.instrument, input.ngroup, input.readout, input.subarray,
@@ -2814,7 +3250,7 @@ def server(input, output, session):
         ui.update_numeric('integrations', value=integs)
 
 
-    @reactive.Effect
+    @reactive.effect
     def _():
         """
         Update the desired saturation limit only when there is a valid
@@ -2886,7 +3322,7 @@ def server(input, output, session):
     # Viewers
     @render_plotly
     @reactive.event(
-        input.filter_filter, input.instrument, input.mode,
+        input.filters_switch, input.instrument, input.mode,
         input.aperture, input.disperser, input.filter, input.subarray,
     )
     def plotly_filters():
@@ -2899,7 +3335,7 @@ def server(input, output, session):
 
         throughputs, t_config = get_throughput(input)
         inst, mode, key, filter = t_config
-        show_all = input.filter_filter.get() == 'all'
+        show_all = input.filters_switch.get()
         fig = plots.plotly_filters(
             throughputs, inst, mode, key, filter, show_all,
         )
@@ -2911,7 +3347,7 @@ def server(input, output, session):
         bookmarked_sed.get() # (make panel reactive to remove all bookmarks)
         update_sed_flag.get()
 
-        input.sed_bookmark.get()  # (make panel reactive to sed_bookmark)
+        input.bookmark_sed.get()  # (make panel reactive to bookmark_sed)
         throughput = get_throughput(input, evaluate=True)
         if throughput is None:
             return
@@ -2928,17 +3364,24 @@ def server(input, output, session):
 
         wl_scale = input.plot_sed_xscale.get()
         wl_range = [input.sed_wl_min.get(), input.sed_wl_max.get()]
-        units = input.plot_sed_units.get()
-        resolution = input.plot_sed_resolution.get()
+        resolution = _safe_num(input.plot_sed_resolution.get(), default=0.0)
 
         fig = plots.plotly_sed_spectra(
             sed_models, model_names, current_model,
-            units=units,
             wl_range=wl_range, wl_scale=wl_scale,
             resolution=resolution,
             throughput=throughput,
         )
         return fig
+
+
+    @reactive.effect
+    @reactive.event(input.reset_sed_config)
+    def _():
+        ui.update_numeric(id='plot_sed_resolution', value=0.0)
+        ui.update_select(id="plot_sed_xscale", selected='log')
+        ui.update_numeric(id='sed_wl_min', value=0.5)
+        ui.update_numeric(id='sed_wl_max', value=28.0)
 
 
     @render_plotly
@@ -2969,18 +3412,29 @@ def server(input, output, session):
         wl_scale = input.plot_depth_xscale.get()
         wl_range = [input.depth_wl_min.get(), input.depth_wl_max.get()]
         units = input.plot_depth_units.get()
-        resolution = input.depth_resolution.get()
+        resolution = _safe_num(input.depth_resolution.get(), default=200.0)
 
         depth_models = [spectra[obs_geometry][model] for model in model_names]
         fig = plots.plotly_depth_spectra(
             depth_models, model_names, current_model,
             units=units,
-            wl_range=wl_range, wl_scale=wl_scale,
+            wl_range=wl_range,
+            wl_scale=wl_scale,
             resolution=resolution,
             obs_geometry=obs_geometry,
             throughput=throughput,
         )
         return fig
+
+    @reactive.effect
+    @reactive.event(input.reset_depth_config)
+    def _():
+        units = 'percent' if input.obs_geometry.get()=='transit' else 'ppm'
+        ui.update_numeric(id='depth_resolution', value=250.0)
+        ui.update_select(id="plot_depth_units", selected=units)
+        ui.update_select(id="plot_depth_xscale", selected='log')
+        ui.update_numeric(id='depth_wl_min', value='')
+        ui.update_numeric(id='depth_wl_max', value='')
 
 
     @render_plotly
@@ -2992,7 +3446,6 @@ def server(input, output, session):
         tso_run = tso_runs[key][tso_label]
         wl_scale = input.plot_tso_xscale.get()
         wl_range = [input.tso_wl_min.get(), input.tso_wl_max.get()]
-
         plot_type = input.tso_plot.get()
         if plot_type == 'tso':
             units = input.plot_tso_units.get()
@@ -3000,12 +3453,15 @@ def server(input, output, session):
             depth_range = [input.tso_depth_min.get(), input.tso_depth_max.get()]
             planet = tso_run['depth_label']
             fig = plots.plotly_tso_spectra(
-                tso_run['tso'], sim_depths,
+                tso_run['tso'],
+                sim_depths,
                 resolution=input.tso_resolution.get(),
                 model_label=planet,
                 instrument_label=tso_run['inst_label'],
-                units=units, wl_range=wl_range, wl_scale=wl_scale,
-                depth_range=depth_range, obs_geometry=tso_run['obs_geometry'],
+                units=units,
+                wl_range=wl_range, wl_scale=wl_scale,
+                depth_range=depth_range,
+                obs_geometry=tso_run['obs_geometry'],
             )
         elif plot_type == 'fluxes':
             fig = plots.plotly_tso_fluxes(
@@ -3023,26 +3479,42 @@ def server(input, output, session):
             fig = plots.plotly_tso_2d(tso_run['tso'], heatmaps[plot_type])
         return fig
 
+
+    @reactive.effect
+    @reactive.event(input.reset_tso_config)
+    def _():
+        units = 'percent' if input.obs_geometry.get()=='transit' else 'ppm'
+        ui.update_numeric(id='tso_wl_min', value='')
+        ui.update_numeric(id='tso_wl_max', value='')
+        ui.update_numeric(id='tso_depth_min', value='')
+        ui.update_numeric(id='tso_depth_max', value='')
+        ui.update_select(id="plot_tso_units", selected=units)
+        ui.update_numeric(id='n_obs', value=1.0)
+        ui.update_numeric(id='tso_resolution', value=250.0)
+        ui.update_numeric(id='tso_error_scale', value=1.0)
+
     @reactive.effect
     @reactive.event(input.plot_tso_units)
     def rescale_tso_depths():
-        tso_key = input.display_tso_run.get()
-        if tso_key is None:
+        prev_units = current_depth_units.get()
+        if prev_units is None:
             return
-        key, tso_label = tso_key.split('_', maxsplit=1)
-        tso = tso_runs[key][tso_label]
-        resolution = _safe_num(input.tso_resolution.get(), default=250)
         units = input.plot_tso_units.get()
-
-        min_depth, max_depth, step = jwst._get_tso_depth_range(
-            tso, resolution, units,
-        )
-        ui.update_numeric('tso_depth_min', value=min_depth, step=step)
-        ui.update_numeric('tso_depth_max', value=max_depth, step=step)
-
+        min_depth = input.tso_depth_min.get()
+        max_depth = input.tso_depth_max.get()
+        if min_depth is not None:
+            min_depth = np.round(min_depth * pt.u(prev_units) / pt.u(units), 6)
+            ui.update_numeric('tso_depth_min', value=min_depth)
+        if max_depth is not None:
+            max_depth = np.round(max_depth * pt.u(prev_units) / pt.u(units), 6)
+            ui.update_numeric('tso_depth_max', value=max_depth)
+        current_depth_units.set(units)
 
     @reactive.effect
-    @reactive.event(input.redraw_tso, input.n_obs, input.tso_resolution)
+    @reactive.event(
+        input.redraw_tso, input.n_obs, input.tso_resolution,
+        input.noiseless_switch, input.tso_error_scale,
+    )
     def redraw_tso_scatter():
         tso_key = input.display_tso_run.get()
         if tso_key is None:
@@ -3052,7 +3524,9 @@ def server(input, output, session):
 
         n_obs = _safe_num(input.n_obs.get(), default=1, cast=int)
         resolution = _safe_num(input.tso_resolution.get(), default=250)
-        tso_draw.set(draw(tso['tso'], resolution, n_obs))
+        noiseless = input.noiseless_switch.get()
+        err_scale = _safe_num(input.tso_error_scale.get(), default=1.0)
+        tso_draw.set(draw(tso['tso'], resolution, n_obs, noiseless, err_scale))
 
 
     # ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -3184,7 +3658,7 @@ def server(input, output, session):
             )
 
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.search_gaia_ta)
     def _():
         name = input.target.get()

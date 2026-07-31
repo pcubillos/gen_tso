@@ -210,8 +210,8 @@ def test_extract_flux_rate_tso_calculation_single():
         tso = pickle.load(f)
 
     pixel_rate, full_well = jwst.extract_flux_rate(tso)
-    expected_rate = [1261.23925781, 1300.21447754]
-    expected_well = [58100.00016363, 58100.00129109]
+    expected_rate = 1300.003418
+    expected_well =  58100.00
     np.testing.assert_allclose(pixel_rate, expected_rate)
     np.testing.assert_allclose(full_well, expected_well)
 
@@ -222,12 +222,10 @@ def test_extract_flux_rate_tso_calculation_multi():
 
     pixel_rate, full_well = jwst.extract_flux_rate(tso)
     expected_rate = [
-        198.24740601, 105.90003204,  31.80119514,   4.46783495,
-        204.37779236, 109.17165375,  32.75593948,   4.55676889,
+        171.94064331,  94.99237823,  30.28599167,   4.42707539,
     ]
     expected_well = [
-        193654.99147199, 193654.99886718, 193654.98493823, 193654.99820043,
-        193654.99564498, 193655.00540975, 193655.004117  , 193654.99798687,
+        193655., 193655., 193655., 193655.,
     ]
     np.testing.assert_allclose(pixel_rate, expected_rate)
     np.testing.assert_allclose(full_well, expected_well)
@@ -355,17 +353,16 @@ def test_simulate_tso_spectroscopy():
         4.59706369, 4.68993366, 4.7846798 , 4.88134   , 4.9642892,
     ]
     expected_depths = [
-        2.9196140488e-02, 2.9133293446e-02, 2.9080333256e-02, 2.9072499494e-02,
-        2.9099833873e-02, 2.9181661142e-02, 2.9334961283e-02, 2.9401298674e-02,
-        2.9380711497e-02, 2.9308732552e-02, 2.9250589981e-02, 2.9310169251e-02,
-        2.9331140031e-02, 2.9383422601e-02, 2.9416677476e-02,
-
+        2.9196545579e-02, 2.9134314593e-02, 2.9080224692e-02, 2.9072449801e-02,
+        2.9099883515e-02, 2.9181569380e-02, 2.9335478709e-02, 2.9401551592e-02,
+        2.9380345689e-02, 2.9309751058e-02, 2.9250139531e-02, 2.9310651905e-02,
+        2.9330709484e-02, 2.9382891633e-02, 2.9418107852e-02,
     ]
     expected_errors = [
-        2.5216620191e-03, 9.7522860111e-05, 3.0456858027e-05, 2.8706507253e-05,
-        2.9208368639e-05, 2.9868139512e-05, 3.0767740663e-05, 3.3243328518e-05,
-        3.5617857052e-05, 3.8147765558e-05, 4.0227910565e-05, 4.3083460408e-05,
-        4.5791244642e-05, 4.9872653719e-05, 7.4568353154e-05,
+        2.5253217716e-03, 9.7612936806e-05, 3.0486436208e-05, 2.8734703569e-05,
+        2.9236510935e-05, 2.9896801417e-05, 3.0797282564e-05, 3.3276408152e-05,
+        3.5654182549e-05, 3.8187692637e-05, 4.0271415018e-05, 4.3131655146e-05,
+        4.5844653227e-05, 4.9933928932e-05, 7.4674152038e-05,
     ]
     np.testing.assert_allclose(bin_wl, expected_wl)
     np.testing.assert_allclose(bin_spec, expected_depths)
@@ -419,24 +416,23 @@ def test_simulate_tso_photometry_nircam():
 
     #print(' '.join([f'{val:.10e},' for val in depths]))
     #print(' '.join([f'{val:.10e},' for val in errors]))
+    print()
     expected_wl = [
-       2.50043643, 2.74658693, 2.98917097, 3.10777101, 3.23666866,
-       3.35436689, 3.52803571, 3.61482424, 4.05288935, 4.07232474,
-       4.27644969, 4.33293162, 4.62826397, 4.65428413, 4.7078885 ,
-       4.80988318,
+       2.50043543, 2.7465718 , 2.98916998, 3.10773441, 3.23666899, 3.35436561,
+       3.52802747, 3.61482073, 4.05288906, 4.07232531, 4.27645002, 4.33294086,
+       4.62826513, 4.65428398, 4.70788824, 4.80988544,
     ]
     expected_depths = [
-        2.9602355004e-02, 2.9673371794e-02, 2.9704446586e-02, 2.9605678087e-02,
-        2.9750499043e-02, 2.9726816999e-02, 2.9526299697e-02, 2.9459430372e-02,
-        2.9076237238e-02, 2.9157603316e-02, 2.9342234571e-02, 2.9243180952e-02,
-        2.9275989763e-02, 2.9279518701e-02, 2.9312241722e-02, 2.9349633790e-02,
-
+        2.9602639311e-02, 2.9674667655e-02, 2.9704794452e-02, 2.9598130404e-02,
+        2.9750535546e-02, 2.9726032477e-02, 2.9517752234e-02, 2.9456493302e-02,
+        2.9076360939e-02, 2.9159626393e-02, 2.9343073563e-02, 2.9248721959e-02,
+        2.9276323485e-02, 2.9279649525e-02, 2.9312320556e-02, 2.9350494206e-02,
     ]
     expected_errors = [
-        1.3840358487e-04, 7.4326836871e-05, 1.2111463701e-04, 5.6637595030e-05,
-        5.8597305401e-04, 1.2942307791e-04, 8.9283843176e-05, 1.4150529160e-04,
-        7.6607387286e-04, 1.6205714300e-04, 2.6322708714e-04, 1.1749776751e-04,
-        3.5311120708e-04, 1.3152440611e-03, 1.4757125324e-03, 3.2309278153e-04,
+        1.3563776030e-04, 6.6927071547e-05, 1.1278348462e-04, 4.9413682746e-05,
+        7.8240421584e-04, 1.1916367230e-04, 7.8228356427e-05, 1.3021354725e-04,
+        1.0179905174e-03, 1.4881912686e-04, 2.6493355789e-04, 1.0146284222e-04,
+        3.7215162445e-04, 1.8045466079e-03, 2.0398099365e-03, 3.2671752932e-04,
     ]
     np.testing.assert_allclose(wl0, expected_wl)
     np.testing.assert_allclose(depths, expected_depths)
@@ -493,14 +489,14 @@ def test_simulate_tso_photometry_miri():
 
     #print(' '.join([f'{val:.10e},' for val in depths]))
     #print(' '.join([f'{val:.10e},' for val in errors]))
-    expected_wl = 5.60136086,  7.53420869,  9.88160076, 11.2961649 , 12.70594686
+    expected_wl = 5.60136 ,  7.534211,  9.881597, 11.296162, 12.705953
     expected_depths = [
-        2.9531941371e-02, 2.9716732792e-02, 2.9197826341e-02,
-        2.9140093469e-02, 2.9250072922e-02,
+        2.9532111576e-02, 2.9716394810e-02, 2.9196761853e-02,
+        2.9140410612e-02, 2.9251485080e-02,
     ]
     expected_errors = [
-        2.5261903335e-04, 2.5860955286e-04, 5.1512651158e-04,
-        1.6119916090e-03, 1.1052531125e-03,
+        2.5248553476e-04, 2.5827388247e-04, 5.1763489402e-04,
+        1.6179957042e-03, 1.1127681232e-03,
     ]
     np.testing.assert_allclose(wl0, expected_wl)
     np.testing.assert_allclose(depths, expected_depths)
@@ -567,9 +563,9 @@ def test__print_pandeia_saturation_tso_calc():
         tso = pickle.load(f)
 
     text = jwst._print_pandeia_saturation(reports=tso, format=None)
-    expected_text = """Max fraction of saturation: 73.2%
-ngroup below 80% saturation: 273
-ngroup below 100% saturation: 341"""
+    expected_text = """Max fraction of saturation: 61.6%
+ngroup below 80% saturation: 324
+ngroup below 100% saturation: 405"""
     assert text == expected_text
 
 
@@ -621,25 +617,25 @@ Max fraction of saturation: 1.5%
 ngroup below 80% saturation: 104
 ngroup below 100% saturation: 131
 
-Signal-to-noise ratio        363.4
-Extracted flux              1815.8  e-/s
-Flux standard deviation        5.0  e-/s
-Brightest pixel rate        1300.2  e-/s
+Signal-to-noise ratio        331.8
+Extracted flux              2082.3  e-/s
+Flux standard deviation        6.3  e-/s
+Brightest pixel rate        1300.0  e-/s
+Duty cycle               0.66
 
-Integrations:                         683
-Duty cycle:                          0.66
-Total exposure time:                701.4  s
-First--last dt per exposure:        701.4  s
-Reset--last dt per integration:     232.6  s
+Integrations                          683
+Total exposure time                 701.4 s
+First--last dt per exposure         701.4 s
+Reset--last dt per integration      232.6 s
 
-Reference wavelength:                    4.46  microns
-Area of extraction aperture:             4.76  pixels
-Area of background measurement:           6.3  pixels
-Background surface brightness:            0.3  MJy/sr
-Total sky flux in background aperture:   4.94  e-/s
-Total flux in background aperture:      59.59  e-/s
-Background flux fraction from scene:     0.92
-Number of cosmic rays:      0.0002  events/pixel/read"""
+Reference wavelength                     4.46  microns
+Area of extraction aperture              9.52  pixels
+Area of background measurement           19.0  pixels
+Background surface brightness             0.3  MJy/sr
+Total sky flux in background aperture    9.89  e-/s
+Total flux in background aperture       24.07  e-/s
+Background flux fraction from scene      0.59
+Number of cosmic rays       0.0002  events/pixel/read"""
     assert report == expected_report
 
 
@@ -650,29 +646,29 @@ def test__print_pandeia_report_perform_calculation_multi():
 
     report = jwst._print_pandeia_report(result, format=None)
     expected_report = """Exposure time: 27858.63 s (7.74 h)
-Max fraction of saturation: 73.2%
-ngroup below 80% saturation: 273
-ngroup below 100% saturation: 341
+Max fraction of saturation: 61.6%
+ngroup below 80% saturation: 324
+ngroup below 100% saturation: 405
 
-Signal-to-noise ratio       1334.2    1265.2     960.1     179.2
-Extracted flux               225.1     147.4      46.2       2.0  e-/s
-Flux standard deviation        0.2       0.1       0.0       0.0  e-/s
-Brightest pixel rate         204.4     109.2      32.8       4.6  e-/s
+Signal-to-noise ratio       1400.8    1351.8     997.2     171.5
+Extracted flux               257.5     184.5      83.8       6.3  e-/s
+Flux standard deviation        0.2       0.1       0.1       0.0  e-/s
+Brightest pixel rate         171.9      95.0      30.3       4.4  e-/s
+Duty cycle               1.00
 
-Integrations:                          40
-Duty cycle:                          0.99
-Total exposure time:              27858.6  s
-First--last dt per exposure:      27858.6  s
-Reset--last dt per integration:   27639.4  s
+Integrations                           40
+Total exposure time               27858.6 s
+First--last dt per exposure       27858.6 s
+Reset--last dt per integration    27639.4 s
 
-Reference wavelength:                    5.35   8.15  12.50  19.29  microns
-Area of extraction aperture:             8.20   5.21   2.98   1.61  pixels
-Area of background measurement:          79.4   50.5   28.9   15.6  pixels
-Background surface brightness:            1.0   10.9   43.0  165.5  MJy/sr
-Total sky flux in background aperture:   0.29   0.82   2.98   2.44  e-/s
-Total flux in background aperture:       0.85   1.47   3.19   2.54  e-/s
-Background flux fraction from scene:     0.66   0.45   0.06   0.04
-Number of cosmic rays:      0.3122  events/pixel/read"""
+Reference wavelength                     5.35   8.15  12.50  19.29  microns
+Area of extraction aperture             32.79  20.83  11.93   6.42  pixels
+Area of background measurement          113.8   72.3   41.4   22.3  pixels
+Background surface brightness             1.1   10.8   38.3  183.2  MJy/sr
+Total sky flux in background aperture    1.30   3.58  11.98  12.09  e-/s
+Total flux in background aperture        3.68   6.32  12.98  12.50  e-/s
+Background flux fraction from scene      0.65   0.43   0.08   0.03
+Number of cosmic rays       0.3122  events/pixel/read"""
     assert report == expected_report
 
 
@@ -686,26 +682,26 @@ Max fraction of saturation: 68.6%
 ngroup below 80% saturation: 104
 ngroup below 100% saturation: 131
 
-Signal-to-noise ratio       3241.5
-Extracted flux              1761.3  e-/s
-Flux standard deviation        0.5  e-/s
-Brightest pixel rate        1261.2  e-/s
+Signal-to-noise ratio       4852.0
+Extracted flux              2082.3  e-/s
+Flux standard deviation        0.4  e-/s
+Brightest pixel rate        1300.0  e-/s
+Duty cycle               0.99
 
                                in-transit  out-transit
-Integrations:                         244      453
-Duty cycle:                          0.99     0.99
-Total exposure time:               7564.2  14043.3  s
-First--last dt per exposure:       7564.2  14043.3  s
-Reset--last dt per integration:    7396.7  13732.4  s
+Integrations                          244      453
+Total exposure time                7564.2  14043.3 s
+First--last dt per exposure        7564.2  14043.3 s
+Reset--last dt per integration     7396.7  13732.4 s
 
-Reference wavelength:                    4.46  microns
-Area of extraction aperture:             4.76  pixels
-Area of background measurement:           6.3  pixels
-Background surface brightness:            0.3  MJy/sr
-Total sky flux in background aperture:   4.94  e-/s
-Total flux in background aperture:      57.95  e-/s
-Background flux fraction from scene:     0.91
-Number of cosmic rays:      0.0072  events/pixel/read"""
+Reference wavelength                     4.46  microns
+Area of extraction aperture              9.52  pixels
+Area of background measurement           19.0  pixels
+Background surface brightness             0.3  MJy/sr
+Total sky flux in background aperture    9.89  e-/s
+Total flux in background aperture       24.07  e-/s
+Background flux fraction from scene      0.59
+Number of cosmic rays       0.0072  events/pixel/read"""
     assert report == expected_report
 
 
@@ -714,31 +710,31 @@ def test__print_pandeia_report_tso_calculation_multi():
         tso = pickle.load(f)
 
     report = jwst._print_pandeia_report(tso, format=None)
-    expected_report = """Exposure time: 20893.28 s (5.80 h)
-Max fraction of saturation: 73.2%
-ngroup below 80% saturation: 273
-ngroup below 100% saturation: 341
+    expected_report = """Exposure time: 22286.35 s (6.19 h)
+Max fraction of saturation: 61.6%
+ngroup below 80% saturation: 324
+ngroup below 100% saturation: 405
 
-Signal-to-noise ratio        657.0     623.0     472.3      87.5
-Extracted flux               218.4     142.9      44.8       1.9  e-/s
-Flux standard deviation        0.3       0.2       0.1       0.0  e-/s
-Brightest pixel rate         198.2     105.9      31.8       4.5  e-/s
+Signal-to-noise ratio       1015.0     979.4     722.5     124.2
+Extracted flux               257.5     184.5      83.8       6.3  e-/s
+Flux standard deviation        0.3       0.2       0.1       0.1  e-/s
+Brightest pixel rate         171.9      95.0      30.3       4.4  e-/s
+Duty cycle               1.00
 
                                in-transit  out-transit
-Integrations:                          10       20
-Duty cycle:                          0.99     0.99
-Total exposure time:               6962.6  13927.9  s
-First--last dt per exposure:       6962.6  13927.9  s
-Reset--last dt per integration:    6909.8  13819.7  s
+Integrations                           11       21
+Total exposure time                7660.4  14624.5 s
+First--last dt per exposure        7660.4  14624.5 s
+Reset--last dt per integration     7600.8  14510.7 s
 
-Reference wavelength:                    5.35   8.15  12.50  19.29  microns
-Area of extraction aperture:             8.20   5.21   2.98   1.61  pixels
-Area of background measurement:          79.4   50.5   28.9   15.6  pixels
-Background surface brightness:            1.0   10.9   43.0  165.5  MJy/sr
-Total sky flux in background aperture:   0.29   0.82   2.98   2.44  e-/s
-Total flux in background aperture:       0.83   1.45   3.18   2.54  e-/s
-Background flux fraction from scene:     0.65   0.44   0.06   0.04
-Number of cosmic rays:      0.3122  events/pixel/read"""
+Reference wavelength                     5.35   8.15  12.50  19.29  microns
+Area of extraction aperture             32.79  20.83  11.93   6.42  pixels
+Area of background measurement          113.8   72.3   41.4   22.3  pixels
+Background surface brightness             1.1   10.8   38.3  183.2  MJy/sr
+Total sky flux in background aperture    1.30   3.58  11.98  12.09  e-/s
+Total flux in background aperture        3.68   6.32  12.98  12.50  e-/s
+Background flux fraction from scene      0.65   0.43   0.08   0.03
+Number of cosmic rays       0.3122  events/pixel/read"""
     assert report == expected_report
 
 
@@ -746,10 +742,8 @@ def test_tso_print_plain(capsys):
     with open('mocks/tso_calculation_nircam_lw_tsgrism.pkl', 'rb') as f:
         result = pickle.load(f)
     # Make some troublesome figures
-    result['report_in']['scalar']['duty_cycle'] = 0.25
-    result['report_in']['input']['configuration']['detector']['ngroup'] = 130
-    result['report_out']['scalar']['duty_cycle'] = 0.25
-    result['report_out']['input']['configuration']['detector']['ngroup'] = 130
+    result['report']['scalar']['duty_cycle'] = 0.25
+    result['report']['input']['configuration']['detector']['ngroup'] = 130
 
     jwst.tso_print(result, format=None)
     captured = capsys.readouterr()
@@ -759,26 +753,26 @@ def test_tso_print_plain(capsys):
         "ngroup below 80% saturation: 104\r\n"
         "ngroup below 100% saturation: 131\r\n"
         "\r\n"
-        "Signal-to-noise ratio       3241.5\r\n"
-        "Extracted flux              1761.3  e-/s\r\n"
-        "Flux standard deviation        0.5  e-/s\r\n"
-        "Brightest pixel rate        1261.2  e-/s\r\n"
+        "Signal-to-noise ratio       4852.0\r\n"
+        "Extracted flux              2082.3  e-/s\r\n"
+        "Flux standard deviation        0.4  e-/s\r\n"
+        "Brightest pixel rate        1300.0  e-/s\r\n"
+        "Duty cycle               0.25\r\n"
         "\r\n"
         "                               in-transit  out-transit\r\n"
-        "Integrations:                         244      453\r\n"
-        "Duty cycle:                          0.25     0.25\r\n"
-        "Total exposure time:               7564.2  14043.3  s\r\n"
-        "First--last dt per exposure:       7564.2  14043.3  s\r\n"
-        "Reset--last dt per integration:    7396.7  13732.4  s\r\n"
+        "Integrations                          244      453\r\n"
+        "Total exposure time                7564.2  14043.3 s\r\n"
+        "First--last dt per exposure        7564.2  14043.3 s\r\n"
+        "Reset--last dt per integration     7396.7  13732.4 s\r\n"
         "\r\n"
-        "Reference wavelength:                    4.46  microns\r\n"
-        "Area of extraction aperture:             4.76  pixels\r\n"
-        "Area of background measurement:           6.3  pixels\r\n"
-        "Background surface brightness:            0.3  MJy/sr\r\n"
-        "Total sky flux in background aperture:   4.94  e-/s\r\n"
-        "Total flux in background aperture:      57.95  e-/s\r\n"
-        "Background flux fraction from scene:     0.91\r\n"
-        "Number of cosmic rays:      0.0072  events/pixel/read\r\n"
+        "Reference wavelength                     4.46  microns\r\n"
+        "Area of extraction aperture              9.52  pixels\r\n"
+        "Area of background measurement           19.0  pixels\r\n"
+        "Background surface brightness             0.3  MJy/sr\r\n"
+        "Total sky flux in background aperture    9.89  e-/s\r\n"
+        "Total flux in background aperture       24.07  e-/s\r\n"
+        "Background flux fraction from scene      0.59\r\n"
+        "Number of cosmic rays       0.0072  events/pixel/read\r\n"
     )
     assert captured.out == expected_report
 
