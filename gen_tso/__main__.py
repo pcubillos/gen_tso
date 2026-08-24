@@ -35,9 +35,20 @@ def main():
         sys.exit(0)
 
     # The real deal
+    if ':' in args.port:
+        index = args.port.index(':')
+        host = args.port[0:index]
+        port = int(args.port[index+1:])
+    else:
+        host = '127.0.0.1'
+        port = int(args.port)
     reload = args.debug
     app = os.path.join(ROOT, 'gen_tso_app.py')
-    run_app(app, reload=reload, launch_browser=True, dev_mode=False)
+
+    run_app(
+        app, reload=reload, launch_browser=True, dev_mode=False,
+        host=host, port=port,
+    )
 
 
 if __name__ == "__main__":

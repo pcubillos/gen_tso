@@ -75,7 +75,7 @@ def parser():
     parser = argparse.ArgumentParser(
         prog='tso',
         description='Launch the Gen TSO interactive application',
-        usage="tso [-h] [-v] [-m PATH] [-t FILE] [--debug]",
+        usage="tso [-h] [-v] [-m PATH] [-t FILE] [--port PORT] [--debug]",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
     )
@@ -101,6 +101,14 @@ def parser():
         metavar='FILE',
         action='store',
         help="include custom targets from input file",
+    )
+
+    parser.add_argument(
+        '--port',
+        action='store',
+        default='8000',
+        help="if port is int, launch from 127.0.0.1:port. If port is of "
+        "form 'host:port' launch with custom host:port (default: 8000)",
     )
 
     parser.add_argument(
