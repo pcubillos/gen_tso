@@ -1,17 +1,13 @@
 # ✨ Gen TSO ✨
 ### A general ETC interface for time-series observations with JWST
 
-<!--
-[![Tests](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/pcubillos/gen_tso/actions/workflows/python-package.yml)
-[![Conda Version](https://img.shields.io/conda/vn/conda-forge/gen_tso.svg)](https://anaconda.org/conda-forge/gen_tso)
--->
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/pcubillos/gen_tso/quarto-publish.yml?label=docs)](https://pcubillos.github.io/gen_tso/)
 [![PyPI](https://img.shields.io/pypi/v/gen_tso.svg)](https://pypi.org/project/gen_tso)
 [![GitHub License](https://img.shields.io/github/license/pcubillos/gen_tso?style=flat&color=blue)](https://github.com/pcubillos/gen_tso/blob/master/LICENSE)
 
 
-> Gen TSO is up to date with ``Pandeia`` version **2026.2**
+> Gen TSO is up to date with ``Pandeia`` version **2026.7** (JWST Cycle 6)
 
 
 ### Install as:
@@ -38,7 +34,7 @@ tso -h
 <summary>Click to expand</summary>
 
 ```shell
-usage: tso [-h] [-v] [-m PATH] [-t FILE] [--debug]
+usage: tso [-h] [-v] [-m PATH] [-t FILE] [--port PORT] [--debug]
 
 Launch the Gen TSO interactive application
 
@@ -49,6 +45,9 @@ options:
                         include custom SED and planet spectra from input path
   -t FILE, --targets FILE
                         include custom targets from input file
+  --port PORT           if port is int, launch from 127.0.0.1:port. If port is of
+                        form 'host:port' launch with custom host:port
+                        (default: 8000)
   --debug               run reloading the GUI when the source code is updated
 
 Other functionality:
@@ -61,7 +60,7 @@ Other functionality:
   --update_custom CSV   update custom targets from csv file
   --add_custom CSV      add new custom targets from csv file
 
-This is Gen TSO version 1.4.0
+This is Gen TSO version 1.5.2
 Copyright (c) 2025-2026 Patricio Cubillos. GPL-2.0 license
 Documentation at: https://pcubillos.github.io/gen_tso
 ```
